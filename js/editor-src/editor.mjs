@@ -810,9 +810,9 @@ function auxFileExtensions(placeholderText, onDocChange, dark, themeCompartment,
   ];
 }
 
-// Every `.ide-status-dot` on the page, not just the topbar one: the status strip
-// renders a second dot and must show the identical state, spinner and tooltip
-// rather than a lookalike. Module scope so every closure below can reach it.
+// Every `.ide-status-dot` on the page (the status strip's is the one): found,
+// not held, because the strip owns its node. Module scope so every closure
+// below can reach it.
 function statusDots() {
   if (typeof document === 'undefined') return [];
   return Array.from(document.querySelectorAll('.ide-status-dot'));
@@ -1166,14 +1166,6 @@ export function mount(parentEl, options = {}) {
   // Motions and editing verbs live on this side of the bundle seam.
   installEditorCommands();
 
-  const ideStatusDot = typeof document !== 'undefined'
-    ? document.getElementById('ide-status-dot')
-    : null;
-
-  function wireStatusDotErrorNavLocal() {
-    wireStatusDotErrorNav(ideStatusDot);
-  }
-
   let statusSettleWatchTimer = 0;
   let statusSettleWatchAttempts = 0;
 
@@ -1482,7 +1474,6 @@ export function mount(parentEl, options = {}) {
   // Let the IDE action layer reach the engine straight off the view, before the
   // global CurrentEditor handle is assigned by app.js.
   view._belSemanticEngine = semanticEngine;
-  wireStatusDotErrorNavLocal();
   if (/\.elf$/i.test(docPath)) view.dom.classList.add('jar-editor--elf');
 
   // The assembled program, with its prelude line count, so type queries ask about the right lines.

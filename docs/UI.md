@@ -20,7 +20,8 @@ the project name, the status strip, or a badge on a row.
 
 Each fact has one home. Where two surfaces could show it, one does and the other defers.
 
-- The checker dot hides while the strip is on.
+- The status strip is always there (no Off since 2026-09-30); the checker's dot lives in it, and
+  nothing in the header repeats it.
 - Sync's steady state is the cloud beside the project name. The strip speaks only when something
   needs you: offline, files that differ from the cloud, a failure.
 

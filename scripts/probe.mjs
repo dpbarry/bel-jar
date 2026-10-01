@@ -42,7 +42,7 @@ try {
     sameAsKeybindings: Commands.defaults().length === Keybindings.DEFAULTS.length,
   }));
   console.log('  registry:', JSON.stringify(reg));
-  check(reg.total === 162, `registry holds 162 commands (got ${reg.total})`);
+  check(reg.total === 166, `registry holds 166 commands (got ${reg.total})`);
   check(reg.unwired.length === 0, 'every palette command has behaviour attached', reg.unwired.join(', '));
   check(reg.chordedUnwired.length === 0,
     'every command that ships a chord has behaviour behind it', reg.chordedUnwired.join(', '));
@@ -62,13 +62,14 @@ try {
     chords: [...document.querySelectorAll('.jar-palette-item-shortcut')].length,
   }));
   console.log('  palette:', JSON.stringify(pal));
-  // 121 palette commands minus the 20 that `when()` gates out of an empty
+  // 125 palette commands minus the 21 that `when()` gates out of an empty
   // workspace: 4 Prover moves (no hole at the caret), 7 Harpoon lab commands
   // (no lab open), run.module / run.project (no suite, single file),
   // tab.next / tab.prev / tab.close-others / tab.close-right (one tab open),
-  // suite.add-file / suite.remove-file (no suite owns the directory).
-  // `cmdline.repeat` joins them until something has been typed on the line.
-  check(pal.rows === 101, `palette shows 101 of 121 with the rest gated (got ${pal.rows})`);
+  // suite.add-file / suite.remove-file (no suite owns the directory), run.stop
+  // (nothing running). `cmdline.repeat` joins them until something has been
+  // typed on the line.
+  check(pal.rows === 104, `palette shows 104 of 125 with the rest gated (got ${pal.rows})`);
   check(
     pal.sections.join(',') === 'File,Edit,Navigate,Prover,Run,View,Settings,Tools',
     'the Prover header survives on its two ungated reports',
@@ -117,7 +118,7 @@ try {
     unbound: [...document.querySelectorAll('.jar-kb__chord.is-empty')].length,
   }));
   console.log('  sheet:', JSON.stringify(sheet));
-  check(sheet.rows === 152, `sheet renders every bindable command (got ${sheet.rows})`);
+  check(sheet.rows === 156, `sheet renders every bindable command (got ${sheet.rows})`);
   check(
     sheet.sections.join(',') === 'File,Edit,Motion,Navigate,Prover,Run,View,Settings,Account,Tools',
     'sheet section headers appear once each, in SECTION_ORDER',
@@ -146,8 +147,8 @@ try {
     'and nothing inside it scrolls separately', scrollports.innerScrollports.join(' | '));
   check(scrollports.filterSticky === 'sticky',
     'the command filter sticks as you scroll past it', scrollports.filterSticky);
-  check(/152 commands · 20 bound/.test(sheet.count), 'filter count reads right', sheet.count);
-  check(sheet.unbound === 132, `unbound rows render as empty chords (got ${sheet.unbound})`);
+  check(/156 commands · 20 bound/.test(sheet.count), 'filter count reads right', sheet.count);
+  check(sheet.unbound === 136, `unbound rows render as empty chords (got ${sheet.unbound})`);
   await page.screenshot({ path: path.join(outDir, 'keybindings-sheet.png') });
 
   // ── filtering ───────────────────────────────────────────────────────────────
@@ -197,7 +198,7 @@ try {
   const bar0 = await page.evaluate(() => {
     const bar = document.querySelector('.jar-strip');
     return {
-      mode: StatusStrip.storedMode(),
+      mode: Settings.get('statusStrip'),
       inDom: !!bar,
       atViewportBottom: bar ? Math.abs(bar.getBoundingClientRect().bottom - window.innerHeight) <= 1 : false,
       fullWidth: bar ? Math.round(bar.getBoundingClientRect().width) === Math.round(document.body.getBoundingClientRect().width) : false,
@@ -206,7 +207,7 @@ try {
     };
   });
   console.log('  strip:', JSON.stringify(bar0));
-  check(bar0.mode === 'standard', `the bar is ON by default (got ${bar0.mode})`);
+  check(bar0.mode === 'standard', `the bar says a standard amount by default (got ${bar0.mode})`);
   check(bar0.inDom, 'the bar mounts without being asked');
   check(bar0.atViewportBottom, 'it sits on the bottom edge of the window');
   check(bar0.fullWidth, 'it spans the full window width, not one pane');
@@ -242,23 +243,19 @@ try {
   // ── status-dot parity ───────────────────────────────────────────────────────
   const parity = await page.evaluate(() => {
     const barDot = document.querySelector('.jar-strip .ide-status-dot');
-    const topDot = document.getElementById('ide-status-dot');
     const seg = document.querySelector('.jar-strip__seg--checker');
     return {
       barDotIsRealDot: !!barDot,
       barState: barDot ? barDot.getAttribute('data-live-state') : null,
-      topState: topDot ? topDot.getAttribute('data-live-state') : null,
-      topHidden: topDot ? getComputedStyle(topDot).display === 'none' : null,
-      ownsClass: document.documentElement.classList.contains('jar-strip-owns-status'),
+      dots: document.querySelectorAll('.ide-status-dot').length,
       cleanAction: seg ? seg.dataset.action : null,
       barTooltip: barDot ? barDot.getAttribute('aria-label') : null,
     };
   });
   console.log('  parity:', JSON.stringify(parity));
   check(parity.barDotIsRealDot, 'the bar hosts a real .ide-status-dot, not a lookalike');
-  check(parity.barState === parity.topState, 'both dots carry the same live state', `${parity.barState} vs ${parity.topState}`);
   check(parity.barState !== null, 'the bar dot is actually driven', String(parity.barState));
-  check(parity.ownsClass && parity.topHidden, 'with the bar up, the topbar dot is hidden — exactly one on screen');
+  check(parity.dots === 1, `the page's only status dot: nothing in the header stands in for the strip (${parity.dots})`);
   check(parity.cleanAction === 'run-default', 'a clean checker runs like the Run button', String(parity.cleanAction));
   check(!!parity.barTooltip, 'the bar dot carries the status tooltip', String(parity.barTooltip));
 
@@ -283,20 +280,13 @@ try {
   check(broken.action === 'next-problem', 'a broken checker jumps to the problem instead', JSON.stringify(broken));
   check(/2 errors/.test(broken.text), 'and says so in words', broken.text);
 
-  const offParity = await page.evaluate(async () => {
-    Settings.set('statusStrip', 'off');
+  const noOff = await page.evaluate(async () => {
+    const refused = !Settings.set('statusStrip', 'off');
     StatusStrip.apply();
     await new Promise((r) => requestAnimationFrame(r));
-    const topDot = document.getElementById('ide-status-dot');
-    return {
-      ownsClass: document.documentElement.classList.contains('jar-strip-owns-status'),
-      topVisible: topDot ? getComputedStyle(topDot).display !== 'none' : false,
-    };
+    return { refused, still: !!document.querySelector('.jar-strip'), value: Settings.get('statusStrip') };
   });
-  check(!offParity.ownsClass && offParity.topVisible,
-    'with the bar off, the topbar dot comes back', JSON.stringify(offParity));
-  await page.evaluate(() => { Settings.set('statusStrip', 'standard'); StatusStrip.apply(); });
-  await new Promise((r) => setTimeout(r, 250));
+  check(noOff.refused && noOff.still && noOff.value === 'standard', 'the strip cannot be turned off', JSON.stringify(noOff));
 
   // ── the goal renders as real Beluga, never raw ASCII ────────────────────────
   const goalRender = await page.evaluate(async () => {
@@ -389,12 +379,7 @@ try {
       return { ctlW: Math.round(c.width), left: Math.round(b.left - c.left), right: Math.round(c.right - b.right) };
     };
     const on = read();
-    Settings.set('statusStrip', 'off'); StatusStrip.apply();
-    await new Promise((r) => requestAnimationFrame(r));
-    const off = read();
-    Settings.set('statusStrip', 'standard'); StatusStrip.apply();
-    await new Promise((r) => requestAnimationFrame(r));
-    return { on, off };
+    return { on };
   });
   console.log('  topbar:', JSON.stringify(topbar));
   check(Math.abs(topbar.on.left - topbar.on.right) <= 2,

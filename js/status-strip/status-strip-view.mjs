@@ -23,7 +23,7 @@ import {
   toggle as toggleHistory, close as closeHistory, refresh as refreshHistory,
   isOpen as historyOpen,
 } from './status-strip-history-ui.mjs';
-import { toggle as toggleKeymap, close as closeKeymap, isOpen as keymapOpen } from './status-strip-keymap-ui.mjs';
+import { toggle as toggleKeymap, isOpen as keymapOpen } from './status-strip-keymap-ui.mjs';
 import { liveKeyLabel } from './status-strip-keys.mjs';
 
 const global = globalThis;
@@ -79,20 +79,31 @@ const state = {
   tabConflict: false,
   /** What sync is doing (Persist.syncSummary, pushed by js/account/sync-ui.mjs). */
   sync: null,
+  /** `{ total, done, unfinished }` — the engine's `proofProgress()`. */
+  proofs: null,
+  /** `{ name, index, count, upstreamErrors }` while the file is a suite member. */
+  suite: null,
+  /** `{ label, elapsedMs }` while an explicit Run can be stopped. */
+  run: null,
 };
+
+/** Pushed by the app on file switch and suite edits; the checker adds `upstreamErrors`. */
+let suiteBase = null;
+let upstreamErrors = [];
 
 let detail = 'standard';
 let rendered = '';
 
-export function storedMode() {
+/**
+ * How much the strip says (Settings > Keys > Status strip). It is always there:
+ * the goal at the caret, the holes left, the checker, sync and the command line
+ * all live in it, so there is no Off, and nothing elsewhere stands in for it.
+ */
+function detailLevel() {
   try {
     const v = Settings.get('statusStrip');
-    if (v === 'off' || v === 'compact' || v === 'standard' || v === 'detailed') return v;
-  } catch (_) { /* fall through to the default */ }
-  // On by default. A bar reporting the goal at the caret, the holes left and
-  // what the checker is doing earns its row for every style — it is not a
-  // modal-editing accessory, and a bar that shows almost nothing would be worse
-  // than no bar at all.
+    if (v === 'compact' || v === 'standard' || v === 'detailed') return v;
+  } catch (_) { /* before the settings exist: the default */ }
   return 'standard';
 }
 
@@ -129,32 +140,13 @@ function ensureRoot() {
   return root;
 }
 
-function ownStatusDot(owned) {
-  const root_ = typeof document !== 'undefined' ? document.documentElement : null;
-  if (root_) root_.classList.toggle('jar-strip-owns-status', !!owned);
-}
-
-function unmount() {
-  closeLine({ restore: false });
-  closeHistory();
-  closeKeymap();
-  if (root && root.parentNode) root.parentNode.removeChild(root);
-  root = null;
-  segmentHost = null;
-  commandHost = null;
-  messageEl = null;
-  mounted = false;
-  rendered = '';
-}
-
 /**
- * One persistent `.ide-status-dot`, reused across repaints.
- *
- * It carries the topbar dot's class on purpose: `data-live-state` styling, the
- * conic checking shimmer, and the rich lint tooltip all come from the existing
- * rules, and `editor.mjs` drives EVERY `.ide-status-dot` on the page from one
- * place. Re-creating it per repaint would drop its state between settlement
- * ticks and kill the spinner mid-spin, so the node outlives the render.
+ * One persistent `.ide-status-dot`, reused across repaints: the page's only
+ * one. `data-live-state` styling, the conic checking shimmer and the aria
+ * label all come from the dot's own rules, and `editor.mjs` drives every
+ * `.ide-status-dot` from one place. Re-creating it per repaint would drop its
+ * state between settlement ticks and kill the spinner mid-spin, so the node
+ * outlives the render.
  */
 let dotEl = null;
 
@@ -237,12 +229,40 @@ const ICONS = {
     { d: 'M10.6 2.9l3 3-3 3', stroke: true },
     { d: 'M13.4 5.9H6.5a3.4 3.4 0 0 0 0 6.8h2.3', stroke: true },
   ],
+  stop: [
+    { d: 'M5.5 4.5h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z', fill: true },
+  ],
 };
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** A ring filled clockwise from 12 o'clock to `ratio`; `pathLength` makes the dash a percentage. */
+function meterEl(ratio) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'jar-strip__meter');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const filled = Math.max(0, Math.min(1, ratio)) * 100;
+  // A round cap on a zero-length dash still paints a dot.
+  for (const [cls, dash] of filled > 0 ? [['track', 100], ['fill', filled]] : [['track', 100]]) {
+    const c = document.createElementNS(SVG_NS, 'circle');
+    c.setAttribute('class', 'jar-strip__meter-' + cls);
+    c.setAttribute('cx', '8');
+    c.setAttribute('cy', '8');
+    c.setAttribute('r', '5.75');
+    c.setAttribute('pathLength', '100');
+    c.setAttribute('stroke-dasharray', dash + ' 100');
+    c.setAttribute('transform', 'rotate(-90 8 8)');
+    svg.appendChild(c);
+  }
+  return svg;
+}
 
 function iconEl(name) {
   const parts = ICONS[name];
   if (!parts) return null;
-  const NS = 'http://www.w3.org/2000/svg';
+  const NS = SVG_NS;
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('class', 'jar-strip__icon');
   svg.setAttribute('viewBox', '0 0 16 16');
@@ -297,6 +317,7 @@ function segmentEl(seg) {
   if (seg.pressed != null) el.setAttribute('aria-expanded', seg.pressed ? 'true' : 'false');
   if (seg.pressed) el.classList.add('is-open');
   if (seg.dot) el.appendChild(statusDot());
+  if (seg.meter != null) el.appendChild(meterEl(seg.meter));
   if (seg.icon) {
     const glyph = iconEl(seg.icon);
     if (glyph) el.appendChild(glyph);
@@ -313,6 +334,12 @@ function segmentEl(seg) {
   if (seg.render === 'type') renderType(label, seg.text);
   else label.textContent = seg.text || '';
   el.appendChild(label);
+  if (seg.sub) {
+    const sub = document.createElement('span');
+    sub.className = 'jar-strip__sub';
+    sub.textContent = seg.sub;
+    el.appendChild(sub);
+  }
   return el;
 }
 
@@ -343,6 +370,9 @@ const ACTIONS = {
   'review-differences': () => global.Commands?.run('sync.review'),
   'review-offline': () => global.Commands?.run('sync.review-offline'),
   'sync-now': () => global.Commands?.run('sync.now'),
+  'next-unfinished': () => global.Commands?.run('nav.next-unfinished'),
+  'reveal-file': () => global.Commands?.run('view.reveal-file'),
+  'run-stop': () => global.Commands?.run('run.stop'),
   'undo': () => stepHistory('undo'),
   'redo': () => stepHistory('redo'),
   'keymap-menu': () => { toggleKeymap(syncKeymap); syncKeymap(); },
@@ -401,7 +431,7 @@ function paint() {
   // key that ends the recording, and that sentence changes with the vim mode
   // while its chip reads `REC` throughout. Left out, the repaint that follows a
   // mode change kept the stale instruction.
-  const signature = segments.map((s) => s.key + ':' + s.text + ':' + s.tone + ':' + (s.pressed ? '1' : '') + (s.disabled ? 'd' : '') + ':' + (s.title || '')).join('|');
+  const signature = segments.map((s) => s.key + ':' + s.text + ':' + (s.sub || '') + ':' + (s.meter ?? '') + ':' + s.tone + ':' + (s.pressed ? '1' : '') + (s.disabled ? 'd' : '') + ':' + (s.title || '')).join('|');
   if (signature === rendered) return;
   rendered = signature;
   const els = segments.map(segmentEl);
@@ -505,14 +535,8 @@ function setMessage(text, opts) {
 }
 
 function openCommandLine(prefix, opts) {
-  if (!mounted) {
-    // The command line needs a bar to live in; give it one for this session.
-    detail = 'standard';
-    mounted = true;
-    if (!ensureRoot()) { mounted = false; return false; }
-    ownStatusDot(true);
-    paint();
-  }
+  if (!mounted) apply(); // asked before init: the strip comes up now
+  if (!mounted) return false;
   return openLine(prefix || '', () => { rendered = ''; paint(); }, opts);
 }
 
@@ -535,7 +559,8 @@ function setEditorState(next) {
   // it, the builder read it, and the bar never showed a goal. A new piece of
   // editor state has to be added in BOTH places, here and in `state` above.
   for (const key of ['style', 'mode', 'pending', 'mark', 'macro', 'hasFile', 'line', 'col', 'selChars', 'selLines',
-    'inHole', 'goalPending', 'goal', 'holes', 'symbols', 'orca', 'orcaDetail', 'undoDepth', 'redoDepth', 'historyOpen', 'keymapOpen', 'tabConflict', 'sync']) {
+    'inHole', 'goalPending', 'goal', 'holes', 'symbols', 'orca', 'orcaDetail', 'undoDepth', 'redoDepth', 'historyOpen', 'keymapOpen', 'tabConflict', 'sync',
+    'proofs', 'suite', 'run']) {
     if (!(key in next) || state[key] === next[key]) continue;
     state[key] = next[key];
     changed = true;
@@ -614,22 +639,12 @@ function setOrca(running, detailText) {
 }
 
 function apply() {
-  const mode = storedMode();
-  detail = mode === 'off' ? 'standard' : mode;
-  if (mode === 'off') {
-    unmount();
-    ownStatusDot(false);
-    return;
-  }
+  detail = detailLevel();
   mounted = true;
   if (!ensureRoot()) {
-    mounted = false;
-    ownStatusDot(false);
+    mounted = false; // no <body> yet: init runs again at DOMContentLoaded
     return;
   }
-  // Exactly one status dot on screen: while the bar is up it owns it, so the
-  // topbar keeps the Run button and nothing else.
-  ownStatusDot(true);
   rendered = '';
   // Neither takeover is active on a fresh apply. Without this, a pending vim
   // sequence or an ex line interrupted by an editor rebuild leaves the segment
@@ -650,7 +665,8 @@ function apply() {
 function refreshProofState() {
   const ed = global.CurrentEditor;
   if (!ed) {
-    setEditorState({ holes: 0, symbols: NaN, goal: '', inHole: false, goalPending: false });
+    upstreamErrors = [];
+    setEditorState({ holes: 0, symbols: NaN, goal: '', inHole: false, goalPending: false, proofs: null, suite: suiteState() });
     return;
   }
   let holes = 0;
@@ -681,14 +697,61 @@ function refreshProofState() {
       parsePercent = st.parse && !st.parse.complete ? st.parse.percent : NaN;
     }
   } catch (_) { /* leave what we had */ }
+  let proofs = null;
+  try {
+    const eng = ed.getSemanticEngine?.();
+    proofs = eng?.proofProgress?.() || null;
+    upstreamErrors = Object.entries(eng?.memberDiagnostics?.() || {})
+      .filter(([, diags]) => (diags || []).some((d) => d.severity === 'error'))
+      .map(([name]) => name.slice(name.lastIndexOf('/') + 1));
+  } catch (_) { upstreamErrors = []; }
   setEditorState({
     holes,
     symbols,
     goal: goalState.goal,
     inHole: goalState.inHole,
     goalPending: !!goalState.goalPending,
+    proofs: sameProofs(state.proofs, proofs) ? state.proofs : proofs,
+    suite: suiteState(),
   });
   setDiagnostics({ errors: state.errors, warnings: state.warnings, checking, parsePercent });
+}
+
+const proofKey = (p) => (p ? p.done + '/' + p.total + ':' + p.unfinished.map((u) => u.name).join(',') : '');
+const sameProofs = (a, b) => proofKey(a) === proofKey(b);
+
+function suiteState() {
+  if (!suiteBase) return null;
+  const prev = state.suite;
+  const same = prev && prev.name === suiteBase.name && prev.index === suiteBase.index
+    && prev.count === suiteBase.count && prev.upstreamErrors.join('\n') === upstreamErrors.join('\n');
+  return same ? prev : { ...suiteBase, upstreamErrors: upstreamErrors.slice() };
+}
+
+function setSuite(next) {
+  suiteBase = next && next.name ? { name: next.name, index: next.index, count: next.count } : null;
+  if (!suiteBase) upstreamErrors = [];
+  setEditorState({ suite: suiteState() });
+}
+
+/**
+ * The explicit Run, timed here rather than by its owner: the clock is only
+ * the strip's concern. One tick a second is all a whole-second readout needs.
+ */
+let runTimer = 0;
+
+function setRun(next) {
+  if (runTimer) clearInterval(runTimer);
+  runTimer = 0;
+  if (!next) {
+    setEditorState({ run: null });
+    return;
+  }
+  const label = String(next.label || '');
+  const startedAt = Date.now();
+  const tick = () => setEditorState({ run: { label, elapsedMs: Date.now() - startedAt } });
+  tick();
+  runTimer = setInterval(tick, 1000);
 }
 
 function onLint(e) {
@@ -719,7 +782,6 @@ global.StatusStrip = {
   apply,
   setEditorState,
   setDiagnostics,
-  storedMode,
   refreshProofState,
   /**
    * The node Vim's own `:` and `/` inputs are mounted into. We keep the chrome;
@@ -734,7 +796,8 @@ global.StatusStrip = {
   setMessage,
   openCommandLine,
   openSearchLine: (forward) => {
-    if (!mounted) { detail = storedMode() === 'off' ? 'standard' : storedMode(); mounted = true; if (!ensureRoot()) { mounted = false; return false; } ownStatusDot(true); paint(); }
+    if (!mounted) apply();
+    if (!mounted) return false;
     return openSearch(forward, () => { rendered = ''; paint(); });
   },
   isCommandLineOpen: lineOpen,
@@ -752,6 +815,10 @@ global.StatusStrip = {
    * answers, and lowers it when the tab says goodbye.
    */
   setTabConflict: (on) => setEditorState({ tabConflict: !!on }),
+  /** `{ name, index, count }` while the active file is a member of a suite, else null. */
+  setSuite,
+  /** `{ label }` while an explicit Run can be stopped, else null. */
+  setRun,
   /**
    * Pushed by `install-edit-history.mjs` whenever the stack moves. ⛔ The strip
    * never polls the history: a widget that counts something has to be told when
@@ -765,7 +832,6 @@ global.StatusStrip = {
   openHistory,
   closeHistory,
   isHistoryOpen: historyOpen,
-  isMounted: () => mounted,
   element: () => root,
   _pure: { buildSegments, isResting },
 };

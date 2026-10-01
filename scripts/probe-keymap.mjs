@@ -1871,15 +1871,11 @@ try {
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       out[level] = count();
     }
-    Settings.set('statusStrip', 'off');
-    StatusStrip.apply();
-    out.off = !!document.querySelector('.jar-strip');
     return out;
   });
   console.log('  levels:', JSON.stringify(levels));
   check(levels.detailed >= levels.standard && levels.standard >= levels.compact,
     'verbosity levels are ordered', JSON.stringify(levels));
-  check(levels.off === false, 'Off removes the node entirely — no hidden element updating');
   await page.evaluate(() => { Settings.set('statusStrip', 'standard'); StatusStrip.apply(); });
 
   const realErrors = errors.filter((e) => !/favicon|Failed to load resource/i.test(e));

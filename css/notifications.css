@@ -495,10 +495,16 @@
 /* A menu someone just opened is what they are looking at. Toasts live in the
    top layer (above any z-index, so above menus), and one at the top right sat
    exactly over the account menu and took its clicks (found 2026-09-28): while
-   any menu is open, toasts fade back and let clicks through. */
-:root:has(.menu-root .menu) .toast-stack .toast {
-  opacity: 0.12;
+   any menu is open, toasts fade back and let clicks through.
+   ⛔ Resting toasts only: this outranks `.is-leaving`, and a leaving toast it
+   caught held at the dim level and then vanished. The dim stays well above
+   zero and quick so it reads as stepping back, not as a stalled dismiss. */
+:root:has(.menu-root .menu) .toast-stack .toast:not(.is-leaving) {
+  opacity: 0.35;
   pointer-events: none;
+  transition:
+    transform 340ms var(--ease-out),
+    opacity 140ms var(--ease-out);
 }
 
 /* Same anchors when promoted into the top layer above <dialog> backdrops. */

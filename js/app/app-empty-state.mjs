@@ -36,8 +36,6 @@
       if (mount) mount.classList.toggle('is-inactive', idle);
       var runBtn = document.getElementById('btn-load');
       if (runBtn) runBtn.disabled = idle;
-      var statusDot = document.getElementById('ide-status-dot');
-      if (statusDot) statusDot.hidden = idle;
     }
 
     return {

@@ -810,8 +810,8 @@
     // ── Keybindings and the keyboard ────────────────────────────────────────
     { id: "keybindings", section: "keybindings", default: {}, type: "json", normalize: cleanKeybindings },
     { id: "keymapStyle", section: "keybindings", default: "default", values: ["default", "vim", "emacs"] },
-    // null: the status strip picks its own default for the keymap style.
-    { id: "statusStrip", section: "keybindings", default: null, values: [null, "off", "compact", "standard", "detailed"] },
+    // How much the status strip says. It is always there: no Off (2026-09-30).
+    { id: "statusStrip", section: "keybindings", default: "standard", values: ["compact", "standard", "detailed"] },
     { id: "vimLeader", section: "keybindings", default: "\\", values: ["\\", ",", " "] },
     { id: "vimInsertEscape", section: "keybindings", default: "", values: ["", "jk", "jj", "kj"] },
     { id: "emacsYankSource", section: "keybindings", default: "system", values: ["system", "kill-ring"] },
@@ -1166,10 +1166,10 @@
     const t = emptyTree();
     if (!raw || typeof raw !== "object") return t;
     if (Array.isArray(raw.files)) {
-      const seen = /* @__PURE__ */ new Set();
+      const seen2 = /* @__PURE__ */ new Set();
       for (const f of raw.files) {
-        if (!f || typeof f.id !== "string" || !f.id || typeof f.name !== "string" || seen.has(f.id)) continue;
-        seen.add(f.id);
+        if (!f || typeof f.id !== "string" || !f.id || typeof f.name !== "string" || seen2.has(f.id)) continue;
+        seen2.add(f.id);
         t.files.push({ id: f.id, name: f.name });
       }
     }
@@ -1913,11 +1913,11 @@
         removeEmptyFolder(oldP);
       }
       var skip = reloc;
-      var seen = {};
+      var seen2 = {};
       for (var i = 0; i < moves.length; i++) {
         var from2 = moves[i].from;
-        if (!from2 || seen[from2]) continue;
-        seen[from2] = true;
+        if (!from2 || seen2[from2]) continue;
+        seen2[from2] = true;
         preserveEmptyFoldersAfterPath(from2, skip);
       }
     }
@@ -2739,10 +2739,10 @@
         return state2.editor.text;
       }
       function peekText() {
-        var read = providers3 && (typeof providers3.peekText === "function" ? providers3.peekText : typeof providers3.getText === "function" ? providers3.getText : null);
-        if (read) {
+        var read2 = providers3 && (typeof providers3.peekText === "function" ? providers3.peekText : typeof providers3.getText === "function" ? providers3.getText : null);
+        if (read2) {
           try {
-            var t = read();
+            var t = read2();
             if (t != null) return String(t);
           } catch (_) {
           }
@@ -3322,15 +3322,15 @@
       out.splice(at + 1, 0, { id: a.newFileId(), path: out[at].path, text: c.text, copyOf: c.of });
     }
     const taken = new Set(out.map((f) => f.path));
-    const seen = /* @__PURE__ */ new Set();
+    const seen2 = /* @__PURE__ */ new Set();
     for (const f of out) {
-      if (seen.has(f.path)) {
+      if (seen2.has(f.path)) {
         const from2 = f.path;
         f.path = conflictedCopyName(from2, taken);
         taken.add(f.path);
         notices2.push({ kind: f.copyOf ? "copied" : "renamed", path: f.path, from: from2 });
       }
-      seen.add(f.path);
+      seen2.add(f.path);
       delete f.copyOf;
     }
     const bf = new Set(a.base.folders);
@@ -3406,7 +3406,7 @@
       const rec = store3.get(SETTINGS_KEY);
       return cleanSyncedValues(rec && rec.values);
     }
-    function apply2(values) {
+    function apply3(values) {
       const rec = store3.get(SETTINGS_KEY);
       const cur = rec && rec.values && typeof rec.values === "object" ? rec.values : {};
       const next = {};
@@ -3451,7 +3451,7 @@
           continue;
         }
         const merged = mergeSettingValues(rec ? rec.values : {}, mine, head.values);
-        if (!sameValues(merged, mine)) apply2(merged);
+        if (!sameValues(merged, mine)) apply3(merged);
         writeRecord({ account, version: head.version, values: head.values, pending: null });
       }
       return { status: "busy" };
@@ -5828,6 +5828,9 @@
     { id: "nav.prev-decl", title: "Go to Previous Declaration", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
     { id: "nav.next-case", title: "Go to Next Case Branch", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
     { id: "nav.prev-case", title: "Go to Previous Case Branch", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
+    // A proof with a hole or an error; the status strip's progress segment.
+    { id: "nav.next-unfinished", title: "Go to Next Unfinished Proof", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
+    { id: "nav.prev-unfinished", title: "Go to Previous Unfinished Proof", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
     // The jump list. Everything above jumps; these are the way back.
     { id: "nav.jump-back", title: "Jump Back", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
     { id: "nav.jump-forward", title: "Jump Forward", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
@@ -6007,10 +6010,12 @@
     { id: "run.here", title: "Run Suite to Here", section: "Run", scope: "global", palette: true, keybindable: true },
     { id: "run.module", title: "Run Suite", section: "Run", scope: "global", palette: true, keybindable: true, ex: ["runs"] },
     { id: "run.project", title: "Run Project", section: "Run", scope: "global", palette: true, keybindable: true, ex: ["runp"] },
+    { id: "run.stop", title: "Stop Run", section: "Run", scope: "global", palette: true, keybindable: true },
     { id: "run.clear-output", title: "Clear Output", section: "Run", scope: "global", palette: true, keybindable: true },
     // ── View ───────────────────────────────────────────────────────────────────
     { id: "view.theme", title: "Toggle Theme", section: "View", scope: "global", palette: true, keybindable: true },
     { id: "view.explorer", title: "Toggle Explorer", section: "View", scope: "global", palette: true, keybindable: true },
+    { id: "view.reveal-file", title: "Reveal in Explorer", section: "View", scope: "global", palette: true, keybindable: true },
     { id: "view.library", title: "Toggle Library", section: "View", scope: "global", palette: true, keybindable: true },
     { id: "view.harpoon", title: "Toggle Harpoon", section: "View", scope: "global", palette: true, keybindable: true },
     // The `⟲` widget in the status strip is the same panel; a surface you can only
@@ -6588,24 +6593,40 @@
     "command",
     "selection",
     "goal",
+    "progress",
     "holes",
     "problems",
     "orca",
+    "run",
+    "runstop",
     "symbols",
     "spacer",
     "tab",
     "sync",
+    "suite",
     "undo",
     "redo",
     "history",
     "checker"
   ];
   var PRESETS = {
-    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "tab", "sync", "undo", "redo", "history", "checker"],
-    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "tab", "sync", "undo", "redo", "history", "checker"],
+    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "run", "runstop", "spacer", "tab", "sync", "undo", "redo", "history", "checker"],
+    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "progress", "holes", "problems", "orca", "run", "runstop", "spacer", "tab", "sync", "suite", "undo", "redo", "history", "checker"],
     detailed: SEGMENT_ORDER
   };
   var GOAL_MAX = 52;
+  var RUN_QUIET_MS = 2e3;
+  function runClock(ms) {
+    const s = Math.floor(Math.max(0, ms) / 1e3);
+    return s < 60 ? s + "s" : Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  }
+  function nameList(names, max = 3) {
+    if (names.length <= max) {
+      return names.length < 2 ? names.join("") : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+    }
+    return names.slice(0, max).join(", ") + " and " + (names.length - max) + " more";
+  }
+  var runVisible = (s) => !!(s.run && s.run.elapsedMs >= RUN_QUIET_MS);
   function plural(n, one, many) {
     return n + " " + (n === 1 ? one : many);
   }
@@ -6621,10 +6642,10 @@
     return "normal";
   }
   function stopSentence(s) {
-    const stop = s.macro && s.macro.stop || "";
-    if (!stop) return "Click to stop, or run the command again.";
+    const stop2 = s.macro && s.macro.stop || "";
+    if (!stop2) return "Click to stop, or run the command again.";
     const needsNormal = s.style === "vim" && vimTone(s.mode) !== "normal";
-    return "Press " + (needsNormal ? "Esc then " : "") + stop + " to stop, or click.";
+    return "Press " + (needsNormal ? "Esc then " : "") + stop2 + " to stop, or click.";
   }
   var BUILDERS = {
     /**
@@ -6750,6 +6771,28 @@
         grow: true
       };
     },
+    /**
+     * How many PROOFS are finished — `rec`s and `proof`s with no hole and no
+     * error. ⛔ Not a hole count: that is the next segment's fact, and one
+     * unfinished proof can hold many holes, or none and a type error.
+     *
+     * Only while there is something left to do, and only with two proofs or more:
+     * `0/1` says no more than the hole or error beside it.
+     */
+    progress(s) {
+      const p = s.proofs;
+      if (!s.hasFile || !p || p.total < 2 || p.done >= p.total) return null;
+      const names = (p.unfinished || []).map((u) => u.name).filter(Boolean);
+      return {
+        key: "progress",
+        text: p.done + "/" + p.total,
+        sub: "proved",
+        meter: p.done / p.total,
+        title: (names.length ? "Unfinished: " + nameList(names) + "\n" : "") + "Go to the next unfinished proof",
+        command: "nav.next-unfinished",
+        action: "next-unfinished"
+      };
+    },
     holes(s) {
       const n = s.holes || 0;
       if (!n) return null;
@@ -6788,6 +6831,25 @@
         tone: "busy",
         action: "open-harpoon"
       };
+    },
+    /**
+     * An explicit Run, once it has gone on long enough to wonder about. The
+     * output panel has its own progress bar; this is the one that is always on
+     * screen, and the only place with a way to stop.
+     */
+    run(s) {
+      if (!runVisible(s)) return null;
+      return {
+        key: "run",
+        text: "Running",
+        sub: runClock(s.run.elapsedMs),
+        tone: "busy",
+        title: s.run.label ? "Running " + s.run.label : "Running"
+      };
+    },
+    runstop(s) {
+      if (!runVisible(s)) return null;
+      return { key: "runstop", icon: "stop", title: "Stop run", command: "run.stop", action: "run-stop" };
     },
     symbols(s) {
       if (!Number.isFinite(s.symbols) || s.symbols <= 0) return null;
@@ -6841,6 +6903,32 @@
         return { key: "sync", text: "Couldn\u2019t sync", tone: "error", title: "Sync now", action: "sync-now" };
       }
       return null;
+    },
+    /**
+     * The suite this file is checked in, and where in it. Nothing else on screen
+     * says so: the tabs and the header name files and the project, never the
+     * .cfg whose earlier members this file is checked after. An earlier member
+     * that fails is this file's problem too, so it turns the segment amber.
+     */
+    suite(s) {
+      const x = s.suite;
+      if (!s.hasFile || !x || !x.name) return null;
+      const upstream = x.upstreamErrors || [];
+      const placed = x.count > 1 && x.index >= 0;
+      const lines = [
+        placed ? "File " + (x.index + 1) + " of " + x.count + " in suite " + x.name : "Suite " + x.name,
+        upstream.length ? (upstream.length === 1 ? "An earlier file has errors: " : "Earlier files have errors: ") + nameList(upstream) : "",
+        "Reveal in Explorer"
+      ];
+      return {
+        key: "suite",
+        text: x.name,
+        sub: placed ? x.index + 1 + "/" + x.count : "",
+        tone: upstream.length ? "warning" : "plain",
+        title: lines.filter(Boolean).join("\n"),
+        command: "view.reveal-file",
+        action: "reveal-file"
+      };
     },
     /**
      * Undo and redo, as one tray with the history beside them. The tray appears
@@ -7924,11 +8012,11 @@
     const resolve2 = typeof nameOf2 === "function" ? nameOf2 : () => null;
     const s = structuralOf(entry);
     const names = [];
-    const seen = /* @__PURE__ */ new Set();
+    const seen2 = /* @__PURE__ */ new Set();
     const add = (name) => {
       const n = String(name || "");
-      if (!n || seen.has(n)) return;
-      seen.add(n);
+      if (!n || seen2.has(n)) return;
+      seen2.add(n);
       names.push(n);
     };
     for (const f of s.created || []) add(f.name);
@@ -8514,14 +8602,22 @@
     /** A second tab has this project open. Standing, not a toast. */
     tabConflict: false,
     /** What sync is doing (Persist.syncSummary, pushed by js/account/sync-ui.mjs). */
-    sync: null
+    sync: null,
+    /** `{ total, done, unfinished }` — the engine's `proofProgress()`. */
+    proofs: null,
+    /** `{ name, index, count, upstreamErrors }` while the file is a suite member. */
+    suite: null,
+    /** `{ label, elapsedMs }` while an explicit Run can be stopped. */
+    run: null
   };
+  var suiteBase = null;
+  var upstreamErrors = [];
   var detail = "standard";
   var rendered = "";
-  function storedMode() {
+  function detailLevel() {
     try {
       const v = Settings.get("statusStrip");
-      if (v === "off" || v === "compact" || v === "standard" || v === "detailed") return v;
+      if (v === "compact" || v === "standard" || v === "detailed") return v;
     } catch (_) {
     }
     return "standard";
@@ -8548,22 +8644,6 @@
     build(commandHost, root);
     pane.appendChild(root);
     return root;
-  }
-  function ownStatusDot(owned) {
-    const root_ = typeof document !== "undefined" ? document.documentElement : null;
-    if (root_) root_.classList.toggle("jar-strip-owns-status", !!owned);
-  }
-  function unmount() {
-    close({ restore: false });
-    close2();
-    close3();
-    if (root && root.parentNode) root.parentNode.removeChild(root);
-    root = null;
-    segmentHost = null;
-    commandHost = null;
-    messageEl = null;
-    mounted = false;
-    rendered = "";
   }
   var dotEl = null;
   function statusDot() {
@@ -8603,12 +8683,36 @@
     redo: [
       { d: "M10.6 2.9l3 3-3 3", stroke: true },
       { d: "M13.4 5.9H6.5a3.4 3.4 0 0 0 0 6.8h2.3", stroke: true }
+    ],
+    stop: [
+      { d: "M5.5 4.5h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z", fill: true }
     ]
   };
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  function meterEl(ratio) {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "jar-strip__meter");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const filled = Math.max(0, Math.min(1, ratio)) * 100;
+    for (const [cls, dash] of filled > 0 ? [["track", 100], ["fill", filled]] : [["track", 100]]) {
+      const c = document.createElementNS(SVG_NS, "circle");
+      c.setAttribute("class", "jar-strip__meter-" + cls);
+      c.setAttribute("cx", "8");
+      c.setAttribute("cy", "8");
+      c.setAttribute("r", "5.75");
+      c.setAttribute("pathLength", "100");
+      c.setAttribute("stroke-dasharray", dash + " 100");
+      c.setAttribute("transform", "rotate(-90 8 8)");
+      svg.appendChild(c);
+    }
+    return svg;
+  }
   function iconEl(name) {
     const parts = ICONS[name];
     if (!parts) return null;
-    const NS = "http://www.w3.org/2000/svg";
+    const NS = SVG_NS;
     const svg = document.createElementNS(NS, "svg");
     svg.setAttribute("class", "jar-strip__icon");
     svg.setAttribute("viewBox", "0 0 16 16");
@@ -8649,6 +8753,7 @@
     if (seg.pressed != null) el8.setAttribute("aria-expanded", seg.pressed ? "true" : "false");
     if (seg.pressed) el8.classList.add("is-open");
     if (seg.dot) el8.appendChild(statusDot());
+    if (seg.meter != null) el8.appendChild(meterEl(seg.meter));
     if (seg.icon) {
       const glyph = iconEl(seg.icon);
       if (glyph) el8.appendChild(glyph);
@@ -8665,6 +8770,12 @@
     if (seg.render === "type") renderType(label, seg.text);
     else label.textContent = seg.text || "";
     el8.appendChild(label);
+    if (seg.sub) {
+      const sub = document.createElement("span");
+      sub.className = "jar-strip__sub";
+      sub.textContent = seg.sub;
+      el8.appendChild(sub);
+    }
     return el8;
   }
   function withKeys(seg) {
@@ -8690,6 +8801,9 @@
     "review-differences": () => global9.Commands?.run("sync.review"),
     "review-offline": () => global9.Commands?.run("sync.review-offline"),
     "sync-now": () => global9.Commands?.run("sync.now"),
+    "next-unfinished": () => global9.Commands?.run("nav.next-unfinished"),
+    "reveal-file": () => global9.Commands?.run("view.reveal-file"),
+    "run-stop": () => global9.Commands?.run("run.stop"),
     "undo": () => stepHistory("undo"),
     "redo": () => stepHistory("redo"),
     "keymap-menu": () => {
@@ -8733,7 +8847,7 @@
     const host2 = ensureRoot();
     if (!host2) return;
     const segments = buildSegments(state, detail).map(withKeys);
-    const signature = segments.map((s) => s.key + ":" + s.text + ":" + s.tone + ":" + (s.pressed ? "1" : "") + (s.disabled ? "d" : "") + ":" + (s.title || "")).join("|");
+    const signature = segments.map((s) => s.key + ":" + s.text + ":" + (s.sub || "") + ":" + (s.meter ?? "") + ":" + s.tone + ":" + (s.pressed ? "1" : "") + (s.disabled ? "d" : "") + ":" + (s.title || "")).join("|");
     if (signature === rendered) return;
     rendered = signature;
     const els = segments.map(segmentEl);
@@ -8796,16 +8910,8 @@
     }, MESSAGE_HOLD_MS);
   }
   function openCommandLine(prefix, opts) {
-    if (!mounted) {
-      detail = "standard";
-      mounted = true;
-      if (!ensureRoot()) {
-        mounted = false;
-        return false;
-      }
-      ownStatusDot(true);
-      paint2();
-    }
+    if (!mounted) apply();
+    if (!mounted) return false;
     return openLine(prefix || "", () => {
       rendered = "";
       paint2();
@@ -8842,7 +8948,10 @@
       "historyOpen",
       "keymapOpen",
       "tabConflict",
-      "sync"
+      "sync",
+      "proofs",
+      "suite",
+      "run"
     ]) {
       if (!(key in next) || state[key] === next[key]) continue;
       state[key] = next[key];
@@ -8901,20 +9010,12 @@
     setEditorState({ orca: !!running2, orcaDetail: running2 ? detailText || "" : "" });
   }
   function apply() {
-    const mode = storedMode();
-    detail = mode === "off" ? "standard" : mode;
-    if (mode === "off") {
-      unmount();
-      ownStatusDot(false);
-      return;
-    }
+    detail = detailLevel();
     mounted = true;
     if (!ensureRoot()) {
       mounted = false;
-      ownStatusDot(false);
       return;
     }
-    ownStatusDot(true);
     rendered = "";
     root.classList.remove("is-vim-line", "is-line-open");
     root.dataset.detail = detail;
@@ -8926,7 +9027,8 @@
   function refreshProofState() {
     const ed = global9.CurrentEditor;
     if (!ed) {
-      setEditorState({ holes: 0, symbols: NaN, goal: "", inHole: false, goalPending: false });
+      upstreamErrors = [];
+      setEditorState({ holes: 0, symbols: NaN, goal: "", inHole: false, goalPending: false, proofs: null, suite: suiteState() });
       return;
     }
     let holes = 0;
@@ -8954,14 +9056,51 @@
       }
     } catch (_) {
     }
+    let proofs = null;
+    try {
+      const eng = ed.getSemanticEngine?.();
+      proofs = eng?.proofProgress?.() || null;
+      upstreamErrors = Object.entries(eng?.memberDiagnostics?.() || {}).filter(([, diags]) => (diags || []).some((d) => d.severity === "error")).map(([name]) => name.slice(name.lastIndexOf("/") + 1));
+    } catch (_) {
+      upstreamErrors = [];
+    }
     setEditorState({
       holes,
       symbols,
       goal: goalState.goal,
       inHole: goalState.inHole,
-      goalPending: !!goalState.goalPending
+      goalPending: !!goalState.goalPending,
+      proofs: sameProofs(state.proofs, proofs) ? state.proofs : proofs,
+      suite: suiteState()
     });
     setDiagnostics({ errors: state.errors, warnings: state.warnings, checking, parsePercent });
+  }
+  var proofKey = (p) => p ? p.done + "/" + p.total + ":" + p.unfinished.map((u) => u.name).join(",") : "";
+  var sameProofs = (a, b) => proofKey(a) === proofKey(b);
+  function suiteState() {
+    if (!suiteBase) return null;
+    const prev = state.suite;
+    const same = prev && prev.name === suiteBase.name && prev.index === suiteBase.index && prev.count === suiteBase.count && prev.upstreamErrors.join("\n") === upstreamErrors.join("\n");
+    return same ? prev : { ...suiteBase, upstreamErrors: upstreamErrors.slice() };
+  }
+  function setSuite(next) {
+    suiteBase = next && next.name ? { name: next.name, index: next.index, count: next.count } : null;
+    if (!suiteBase) upstreamErrors = [];
+    setEditorState({ suite: suiteState() });
+  }
+  var runTimer = 0;
+  function setRun(next) {
+    if (runTimer) clearInterval(runTimer);
+    runTimer = 0;
+    if (!next) {
+      setEditorState({ run: null });
+      return;
+    }
+    const label = String(next.label || "");
+    const startedAt = Date.now();
+    const tick2 = () => setEditorState({ run: { label, elapsedMs: Date.now() - startedAt } });
+    tick2();
+    runTimer = setInterval(tick2, 1e3);
   }
   function onLint(e) {
     const d = e && e.detail || {};
@@ -8988,7 +9127,6 @@
     apply,
     setEditorState,
     setDiagnostics,
-    storedMode,
     refreshProofState,
     /**
      * The node Vim's own `:` and `/` inputs are mounted into. We keep the chrome;
@@ -9003,16 +9141,8 @@
     setMessage,
     openCommandLine,
     openSearchLine: (forward) => {
-      if (!mounted) {
-        detail = storedMode() === "off" ? "standard" : storedMode();
-        mounted = true;
-        if (!ensureRoot()) {
-          mounted = false;
-          return false;
-        }
-        ownStatusDot(true);
-        paint2();
-      }
+      if (!mounted) apply();
+      if (!mounted) return false;
       return openSearch(forward, () => {
         rendered = "";
         paint2();
@@ -9033,6 +9163,10 @@
      * answers, and lowers it when the tab says goodbye.
      */
     setTabConflict: (on) => setEditorState({ tabConflict: !!on }),
+    /** `{ name, index, count }` while the active file is a member of a suite, else null. */
+    setSuite,
+    /** `{ label }` while an explicit Run can be stopped, else null. */
+    setRun,
     /**
      * Pushed by `install-edit-history.mjs` whenever the stack moves. ⛔ The strip
      * never polls the history: a widget that counts something has to be told when
@@ -9046,7 +9180,6 @@
     openHistory,
     closeHistory: close2,
     isHistoryOpen: isOpen2,
-    isMounted: () => mounted,
     element: () => root,
     _pure: { buildSegments, isResting }
   };
@@ -9450,7 +9583,7 @@
   function buildEditorKeymap(runById, opts) {
     syncDefaults();
     var entries = [];
-    var seen = /* @__PURE__ */ Object.create(null);
+    var seen2 = /* @__PURE__ */ Object.create(null);
     var runners = runById || {};
     var fallback = opts && typeof opts.fallback === "function" ? opts.fallback : null;
     var omit = /* @__PURE__ */ Object.create(null);
@@ -9475,8 +9608,8 @@
       var run3 = runners[def.id] || (fallback ? fallback(def.id) : null);
       if (typeof run3 !== "function") continue;
       var cm = toCmKey(spec);
-      if (!cm || seen[cm]) continue;
-      seen[cm] = true;
+      if (!cm || seen2[cm]) continue;
+      seen2[cm] = true;
       (function(fn) {
         entries.push({ key: cm, run: function(view) {
           return !!fn(view);
@@ -9487,8 +9620,8 @@
     for (var f = 0; f < freed.length; f++) {
       if (omitDefaultSpecs[normalizeSpec(freed[f])]) continue;
       var fcm = toCmKey(freed[f]);
-      if (!fcm || seen[fcm]) continue;
-      seen[fcm] = true;
+      if (!fcm || seen2[fcm]) continue;
+      seen2[fcm] = true;
       entries.push({ key: fcm, run: function() {
         return true;
       } });
@@ -9780,7 +9913,7 @@
     if (seenCfg.has(key)) return [];
     seenCfg.add(key);
     const ordered = [];
-    const seen = /* @__PURE__ */ new Set();
+    const seen2 = /* @__PURE__ */ new Set();
     for (const entry of parseCfg(cfgText)) {
       const low = entry.toLowerCase();
       if (low.endsWith(".cfg")) {
@@ -9790,16 +9923,16 @@
         const subMap = cfgByDir[subDir];
         if (subMap?.[subName]) {
           for (const p of resolveCfgOrder(subDir, subMap[subName], cfgByDir, pathSet, seenCfg)) {
-            if (!seen.has(p)) {
-              seen.add(p);
+            if (!seen2.has(p)) {
+              seen2.add(p);
               ordered.push(p);
             }
           }
         }
       } else if (isCfgSourceEntry(entry)) {
         const full = joinPath(cfgDir, entry);
-        if (pathSet[full] && !seen.has(full)) {
-          seen.add(full);
+        if (pathSet[full] && !seen2.has(full)) {
+          seen2.add(full);
           ordered.push(full);
         }
       }
@@ -10160,15 +10293,15 @@
       if (cfgText) {
         const pathSet = Object.fromEntries(inDir.map((p) => [p, true]));
         const ordered = resolveCfgOrder(dir, cfgText, cfgByDir, pathSet, /* @__PURE__ */ new Set());
-        const seen = {};
+        const seen2 = {};
         for (const p of ordered) {
-          if (!seen[p]) {
-            seen[p] = true;
+          if (!seen2[p]) {
+            seen2[p] = true;
             out.push(p);
           }
         }
         for (const p of inDir) {
-          if (!seen[p]) out.push(p);
+          if (!seen2[p]) out.push(p);
         }
       } else {
         out.push(...inDir);
@@ -10191,10 +10324,10 @@
       if (cfgText) {
         const belSet = Object.fromEntries(files2.map((p) => [p, true]));
         const ordered = resolveCfgOrder(dir, cfgText, cfgByDir, belSet, /* @__PURE__ */ new Set());
-        const seen = Object.fromEntries(ordered.map((p) => [p, true]));
+        const seen2 = Object.fromEntries(ordered.map((p) => [p, true]));
         out.push(...ordered);
         for (const p of files2) {
-          if (!seen[p]) out.push(p);
+          if (!seen2[p]) out.push(p);
         }
       } else {
         out.push(...files2);
@@ -10422,11 +10555,11 @@
     if (!text || !prelude) return { text: text || "", preludeIssues: [] };
     const offset = prelude.offsetLines;
     const issues = [];
-    const seen = /* @__PURE__ */ new Set();
+    const seen2 = /* @__PURE__ */ new Set();
     function noteIssue(hit, src, index) {
       const k = `${hit.name}:${hit.line}`;
-      if (seen.has(k)) return;
-      seen.add(k);
+      if (seen2.has(k)) return;
+      seen2.add(k);
       issues.push({ name: hit.name, line: hit.line, message: messageAfter(src, index) });
     }
     let out = String(text);
@@ -14715,7 +14848,7 @@
       inner.style.transform = "";
       if (measure2() > 1) el8.classList.add("text-slide--playing");
     }
-    function stop() {
+    function stop2() {
       active5 = false;
       if (!el8.classList.contains("text-slide--playing")) return;
       var cur = window.getComputedStyle(inner).transform;
@@ -14735,7 +14868,7 @@
       inner.addEventListener("transitionend", returnHandler);
     }
     triggerEl.addEventListener("mouseenter", start);
-    triggerEl.addEventListener("mouseleave", stop);
+    triggerEl.addEventListener("mouseleave", stop2);
     if (typeof ResizeObserver !== "undefined") {
       var ro = new ResizeObserver(function() {
         if (active5) measure2();
@@ -20921,7 +21054,7 @@
     track2(document.getElementById("btn-reload"), "click", onReload);
     track2(document.getElementById("btn-settings"), "click", onSettings);
   }
-  function unmount2() {
+  function unmount() {
     if (!mounted2) return;
     mounted2 = false;
     while (teardown2.length) {
@@ -20942,7 +21075,7 @@
   }
   var Frame2 = {
     mount,
-    unmount: unmount2,
+    unmount,
     toggleTheme,
     isMounted: () => mounted2,
     pendingTeardown: () => teardown2.length
@@ -22453,14 +22586,14 @@
     isUnavailableReplVerb,
     unavailableReplVerbMessage,
     listReplVerbs: function() {
-      var seen = /* @__PURE__ */ Object.create(null);
+      var seen2 = /* @__PURE__ */ Object.create(null);
       var out = [];
       for (var i = 0; i < REPL_HELP_ROWS.length; i++) {
         var v = String(REPL_HELP_ROWS[i].cmd || "").split(/\s+/)[0];
         if (!v) continue;
         var key = v.toLowerCase();
-        if (seen[key]) continue;
-        seen[key] = true;
+        if (seen2[key]) continue;
+        seen2[key] = true;
         out.push(v);
       }
       return out;
@@ -22921,14 +23054,14 @@
   function suggestVerbs(token, verbs) {
     var list3 = verbs && verbs.length ? verbs : DEFAULT_VERBS;
     var t = String(token || "").toLowerCase();
-    var seen = /* @__PURE__ */ Object.create(null);
+    var seen2 = /* @__PURE__ */ Object.create(null);
     var out = [];
     for (var i = 0; i < list3.length; i++) {
       var v = String(list3[i] || "");
       if (!v) continue;
       var key = v.toLowerCase();
-      if (seen[key]) continue;
-      seen[key] = true;
+      if (seen2[key]) continue;
+      seen2[key] = true;
       if (t && key.indexOf(t) !== 0) continue;
       out.push({
         label: v,
@@ -24646,7 +24779,7 @@
       if (typeof BelEditor !== "undefined" && typeof BelEditor.normalizeAliasPairs === "function") {
         return BelEditor.normalizeAliasPairs(raw);
       }
-      var seen = /* @__PURE__ */ Object.create(null);
+      var seen2 = /* @__PURE__ */ Object.create(null);
       var out = [];
       (Array.isArray(raw) ? raw : []).forEach(function(item) {
         var from2 = "";
@@ -24656,8 +24789,8 @@
           to = String(item[1] || "");
         }
         from2 = from2.trim();
-        if (!from2 || to === "" || seen[from2]) return;
-        seen[from2] = true;
+        if (!from2 || to === "" || seen2[from2]) return;
+        seen2[from2] = true;
         out.push([from2, to]);
       });
       return out.sort(function(a, b) {
@@ -25959,15 +26092,14 @@
       panelBodies.keybindings,
       "status-strip",
       "Status strip",
-      "Goal at the caret, holes left, problems, checker state.",
+      "How much it says: goal at the caret, holes left, problems, checker state.",
       [
         { value: "standard", label: "Standard" },
         { value: "compact", label: "Compact" },
-        { value: "detailed", label: "Detailed" },
-        { value: "off", label: "Off" }
+        { value: "detailed", label: "Detailed" }
       ],
       function() {
-        return StatusStrip.storedMode();
+        return Settings.get("statusStrip");
       },
       function(p, v) {
         Settings.set("statusStrip", v);
@@ -33891,15 +34023,28 @@
     if (!btnRun) btnRun = document.getElementById("btn-run");
     if (!cmdInputEl2) cmdInputEl2 = document.getElementById("command-input");
   }
-  function setBelugaBusy(busy2) {
+  function setBelugaBusy(busy2, run3) {
     belugaBusy = !!busy2;
     ensureRunControls();
     if (btnLoad) btnLoad.disabled = belugaBusy;
     if (btnRun) btnRun.disabled = belugaBusy;
     if (cmdInputEl2) cmdInputEl2.disabled = belugaBusy;
+    var strip2 = global55.StatusStrip;
+    if (strip2 && strip2.setRun) strip2.setRun(belugaBusy && run3 && canStop() ? run3 : null);
   }
   function isBelugaBusy() {
     return belugaBusy;
+  }
+  function canStop() {
+    return belugaMode !== "fast" && typeof BelugaClient !== "undefined" && !!BelugaClient.cancelLoad;
+  }
+  function isStoppable() {
+    return belugaBusy && canStop();
+  }
+  function stop() {
+    if (!isStoppable() || !BelugaClient.cancelLoad()) return false;
+    if (global55.StatusStrip && global55.StatusStrip.setMessage) global55.StatusStrip.setMessage("Run stopped");
+    return true;
   }
   function modeToConfig(mode) {
     return mode === "fast" ? { thread: "main", build: "fast" } : { thread: "worker", build: "stable" };
@@ -34134,7 +34279,7 @@
     projectSpans = spans || null;
     var lineCount2 = code.split("\n").length;
     var t0 = performance.now();
-    setBelugaBusy(true);
+    setBelugaBusy(true, { label: opts.label || opts.displayName || "" });
     if (shouldShowRunProgress()) {
       RunProgress.start({ op: "load", lineCount: lineCount2 });
     }
@@ -34251,6 +34396,7 @@
     return runLoad(src.code, src.spans, {
       pinned: true,
       displayName: src.name,
+      label: "suite " + suite,
       caption: "run suite " + suite
     });
   }
@@ -34307,10 +34453,11 @@
         caption: onlyCaption
       });
     }
-    setBelugaBusy(true);
+    setBelugaBusy(true, { label: "the project" });
     var t0 = performance.now();
     if (shouldShowRunProgress()) RunProgress.start({ op: "load" });
     var failures = 0;
+    var cancelled = false;
     var lines = 0;
     for (var j = 0; j < jobs.length; j++) {
       var job = jobs[j];
@@ -34334,6 +34481,7 @@
         }
       } catch (e) {
         if (isCancelled2(e)) {
+          cancelled = true;
           if (typeof ReplOutput !== "undefined" && ReplOutput.dismissRunSkeleton) {
             await ReplOutput.dismissRunSkeleton();
           }
@@ -34352,7 +34500,7 @@
       }
     }
     setBelugaBusy(false);
-    if (failures) RunProgress.fail();
+    if (failures || cancelled) RunProgress.fail();
     else void RunProgress.complete({ lines, ms: performance.now() - t0 });
     if (failures) {
       Toasts.error(
@@ -34399,6 +34547,8 @@
     shouldShowRunProgress,
     setBelugaMode,
     belugaProgressHook,
+    isStoppable,
+    stop,
     runFile,
     runToHere,
     runModule,
@@ -34412,6 +34562,69 @@
     getProjectSpans
   };
   global55.BelJarBelugaRun = global55.BelugaRun;
+
+  // js/account/avatar.mjs
+  var seen = /* @__PURE__ */ new Map();
+  function identiconBackground(data, size) {
+    if (!data || !size || data.length < size * size * 4) return null;
+    const px = (x, y) => (y * size + x) * 4;
+    const b = px(0, 0);
+    const bg = [data[b], data[b + 1], data[b + 2]];
+    if (data[b + 3] < 250 || bg[0] + bg[1] + bg[2] < 600) return null;
+    const near = (i, c) => Math.abs(data[i] - c[0]) + Math.abs(data[i + 1] - c[1]) + Math.abs(data[i + 2] - c[2]) <= 12;
+    const band = Math.max(1, Math.round(size / 12) - 1);
+    let ink = null;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const i = px(x, y);
+        if (near(i, bg)) continue;
+        if (x < band || y < band || x >= size - band || y >= size - band) return null;
+        if (!ink) ink = [data[i], data[i + 1], data[i + 2]];
+        else if (!near(i, ink)) return null;
+      }
+    }
+    return ink ? `rgb(${bg[0]}, ${bg[1]}, ${bg[2]})` : null;
+  }
+  function read(img) {
+    const size = img.naturalWidth;
+    if (!size || size !== img.naturalHeight || size > 1024) return null;
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const cx = c.getContext("2d", { willReadFrequently: true });
+    cx.drawImage(img, 0, 0);
+    return identiconBackground(cx.getImageData(0, 0, size, size).data, size);
+  }
+  function apply2(img, bg) {
+    if (!bg) return;
+    img.classList.add("is-identicon");
+    img.style.setProperty("--avatar-bg", bg);
+  }
+  function decorateAvatar(img) {
+    const src = img.currentSrc || img.src;
+    if (seen.has(src)) {
+      apply2(img, seen.get(src));
+      return;
+    }
+    let bg = null;
+    try {
+      bg = read(img);
+    } catch (_) {
+    }
+    seen.set(src, bg);
+    apply2(img, bg);
+  }
+  function avatarImage(src, cls) {
+    const img = document.createElement("img");
+    img.className = cls;
+    img.alt = "";
+    img.referrerPolicy = "no-referrer";
+    img.crossOrigin = "anonymous";
+    if (seen.has(src)) apply2(img, seen.get(src));
+    else img.addEventListener("load", () => decorateAvatar(img), { once: true });
+    img.src = src;
+    return img;
+  }
 
   // js/persist/sync/http-transport.mjs
   var METHODS = ["heads", "head", "blobs", "missing", "putBlobs", "commit", "remove", "settings", "commitSettings"];
@@ -34530,14 +34743,10 @@
   }
   function avatarNode(cls) {
     if (!(user && user.avatar)) return initialNode(cls);
-    const img = document.createElement("img");
-    img.className = cls;
-    img.alt = "";
-    img.referrerPolicy = "no-referrer";
+    const img = avatarImage(user.avatar, cls);
     img.addEventListener("error", () => {
       if (img.parentNode) img.replaceWith(initialNode(cls));
     }, { once: true });
-    img.src = user.avatar;
     return img;
   }
   function render5() {
@@ -35147,23 +35356,33 @@
   var ReviewOffline = { open: openReviewOffline };
   g15.ReviewOffline = ReviewOffline;
 
-  // js/account/sync-ui.mjs
-  var g16 = typeof window !== "undefined" ? window : globalThis;
-  var summary = null;
-  var wasOffline = false;
-  var marks = null;
-  var CLOUD = "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z";
-  var GLYPHS = {
-    synced: `<path d="${CLOUD}"/><path d="m9.5 14 2 2 4-4"/>`,
-    syncing: `<path d="${CLOUD}"/><path class="sync-cloud__arrow" d="M12.5 17v-5m-2 2 2-2 2 2"/>`,
-    offline: '<path d="m2 2 20 20"/><path d="M5.78 5.78A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.3-.19"/><path d="M21.53 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7 7 0 0 0 10 5.07"/>',
-    alert: `<path d="${CLOUD}"/><path d="M12.5 11.5v3"/><path d="M12.5 17h.01"/>`
+  // js/account/cloud-glyphs.mjs
+  var CLOUD = "M6.75 18.25A4 4 0 0 1 6.52 10.26A5.5 5.5 0 0 1 17.41 9.75A4.25 4.25 0 0 1 17.25 18.25Z";
+  var SLASH = "M5.75 6.5 17.75 18.5";
+  var MARKS = {
+    // pathLength 1: the check can draw itself in when a round lands (css).
+    synced: '<path class="sync-cloud__mark sync-cloud__check" pathLength="1" d="M9.4 13.75l2 2 3.6-3.6"/>',
+    syncing: '<path class="sync-cloud__mark sync-cloud__arrow" d="M12 16.25v-5m-2.25 2.25L12 11.25l2.25 2.25"/>',
+    alert: '<path class="sync-cloud__mark" d="M12 11v3.25"/><path class="sync-cloud__mark" d="M12 16.75h.01"/>'
   };
   function cloudLook(state2) {
     if (state2 === "pending" || state2 === "syncing") return "syncing";
     if (state2 === "differs" || state2 === "error" || state2 === "held") return "alert";
     return state2 === "offline" ? "offline" : "synced";
   }
+  function cloudSvg(look) {
+    const open11 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+    if (look === "offline") {
+      return open11 + '<mask id="sync-cloud-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/><path d="' + SLASH + '" stroke="#000" stroke-width="5"/></mask><path d="' + CLOUD + '" mask="url(#sync-cloud-cut)"/><path class="sync-cloud__mark" d="' + SLASH + '"/></svg>';
+    }
+    return open11 + '<path d="' + CLOUD + '"/>' + (MARKS[look] || MARKS.synced) + "</svg>";
+  }
+
+  // js/account/sync-ui.mjs
+  var g16 = typeof window !== "undefined" ? window : globalThis;
+  var summary = null;
+  var wasOffline = false;
+  var marks = null;
   function plural3(n, one, many) {
     return n + " " + (n === 1 ? one : many);
   }
@@ -35193,14 +35412,22 @@
         return { tip: "All changes synced", title: "All changes synced", detail: s.lastSync ? "Synced " + ago(s.lastSync, now) : null };
     }
   }
+  var shownLook = null;
   function renderCloud(s) {
     const btn = document.getElementById("btn-sync");
     if (!btn) return;
     btn.hidden = !s.signedIn;
-    if (!s.signedIn) return;
+    if (!s.signedIn) {
+      shownLook = null;
+      return;
+    }
     const look = cloudLook(s.state);
-    btn.dataset.state = s.state === "differs" || s.state === "held" ? "differs" : look;
-    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + GLYPHS[look] + "</svg>";
+    btn.dataset.state = s.state === "differs" || s.state === "held" ? "differs" : s.state === "pending" ? "pending" : look;
+    if (look !== shownLook) {
+      btn.classList.toggle("is-arriving", look === "synced" && shownLook !== null);
+      btn.innerHTML = cloudSvg(look);
+      shownLook = look;
+    }
     const tip = cloudWords(s).tip;
     btn.setAttribute("aria-label", tip);
     if (g16.Tooltips && typeof g16.Tooltips.set === "function") g16.Tooltips.set(btn, tip);
@@ -35328,8 +35555,6 @@
       if (mount3) mount3.classList.toggle("is-inactive", idle);
       var runBtn = document.getElementById("btn-load");
       if (runBtn) runBtn.disabled = idle;
-      var statusDot2 = document.getElementById("ide-status-dot");
-      if (statusDot2) statusDot2.hidden = idle;
     }
     return {
       updateInspectorProjectEmpty,
@@ -35665,10 +35890,17 @@
       const id = getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId();
       return id ? Persist.getFileById(id) : null;
     }
+    function publishSuite(file) {
+      const strip2 = typeof StatusStrip !== "undefined" ? StatusStrip : null;
+      if (!strip2 || !strip2.setSuite) return;
+      const m = file && !/\.cfg$/i.test(file.name) ? activeSuiteMembership(file.name) : null;
+      strip2.setSuite(m && m.member ? { name: m.cfg.slice(m.cfg.lastIndexOf("/") + 1).replace(/\.cfg$/i, ""), index: m.index, count: m.count } : null);
+    }
     function updateRunButtonTooltip() {
+      const file = activeFileRecord();
+      publishSuite(file);
       const btn = document.getElementById("btn-load");
       if (!btn) return;
-      const file = activeFileRecord();
       if (file && /\.cfg$/i.test(file.name)) {
         setTip2(btn, "Run suite");
       } else if (file && moduleNameFor(file.id)) {
@@ -36190,14 +36422,14 @@
       if (!PS || typeof PS.parseCfg !== "function") return [];
       const dir = PS.dirOf(cfgPath);
       const out = [];
-      const seen = /* @__PURE__ */ new Set();
+      const seen2 = /* @__PURE__ */ new Set();
       const entries = PS.parseCfg(cfgText);
       for (let i = 0; i < entries.length; i++) {
         const entry = entries[i];
         if (typeof PS.isCfgEntryToken === "function" && !PS.isCfgEntryToken(entry)) continue;
         const full = dir ? dir + "/" + entry : entry;
-        if (seen.has(full)) continue;
-        seen.add(full);
+        if (seen2.has(full)) continue;
+        seen2.add(full);
         out.push({ entry, full });
       }
       return out;
@@ -37330,11 +37562,11 @@
         }
       ];
       if (file.name.toLowerCase().endsWith(".cfg")) {
-        const suiteState = typeof suiteDownloadState === "function" ? suiteDownloadState(fileId) : { ok: false, reason: "Suite download unavailable." };
+        const suiteState2 = typeof suiteDownloadState === "function" ? suiteDownloadState(fileId) : { ok: false, reason: "Suite download unavailable." };
         manage.push({
           label: "Download suite",
-          disabled: !suiteState.ok,
-          tooltip: suiteState.ok ? void 0 : suiteState.reason || "A listed suite file is missing from the project.",
+          disabled: !suiteState2.ok,
+          tooltip: suiteState2.ok ? void 0 : suiteState2.reason || "A listed suite file is missing from the project.",
           onSelect: () => downloadSuite(fileId)
         });
       }
@@ -37962,6 +38194,7 @@ ${doc2.documentElement.outerHTML}`;
   function create14(deps) {
     var getPersist2 = deps.getPersist;
     var toggleSidePanel = deps.toggleSidePanel;
+    var revealActiveFile = deps.revealActiveFile;
     var toggleTheme2 = deps.toggleTheme;
     var newProject = deps.newProject;
     var newFile = deps.newFile;
@@ -38296,6 +38529,7 @@ ${doc2.documentElement.outerHTML}`;
       on("run.project", () => {
         if (BelugaRun.runProject) BelugaRun.runProject();
       }, () => signatureFileCount() > 1);
+      on("run.stop", () => BelugaRun.stop(), () => !!(BelugaRun.isStoppable && BelugaRun.isStoppable()));
       on("run.clear-output", () => {
         ReplOutput.clearOutput();
       });
@@ -38308,6 +38542,7 @@ ${doc2.documentElement.outerHTML}`;
       });
       on("view.theme", toggleTheme2);
       on("view.explorer", () => toggleSidePanel("explorer"));
+      on("view.reveal-file", () => revealActiveFile(), () => !!Persist.getActiveFileId());
       on("view.library", () => toggleSidePanel("library"));
       on("view.harpoon", () => toggleSidePanel("harpoon"));
       on("view.edit-history", () => {
@@ -38548,6 +38783,17 @@ ${doc2.documentElement.outerHTML}`;
           collectWorkspaceFloating(fileId, out);
         }
       });
+    }
+    function revealActiveFile() {
+      if (!workspaceEl || !workspaceEl.classList.contains("is-explorer-open")) {
+        closeOtherSidePanels("explorer");
+        setSidePanelOpen("explorer", true);
+        notifySidePanelLayout();
+      }
+      getExplorerController()?.restoreWorkspaceExplorer?.({
+        explorer: { revealActiveFile: true, scrollActiveIntoView: true }
+      });
+      return true;
     }
     function applyStoredSidePanel(id) {
       if (!id) return;
@@ -39280,6 +39526,7 @@ ${doc2.documentElement.outerHTML}`;
       }));
       create14(Object.assign({}, peelHub, {
         toggleSidePanel,
+        revealActiveFile,
         toggleTheme: toggleTheme2,
         newProject,
         newFile,
@@ -39757,7 +40004,7 @@ ${doc2.documentElement.outerHTML}`;
       });
     }
   }
-  function unmount3() {
+  function unmount2() {
     if (!mounted3) return;
     mounted3 = false;
     while (teardown3.length) {
@@ -39797,7 +40044,7 @@ ${doc2.documentElement.outerHTML}`;
   }
   window.App = {
     mount: mount2,
-    unmount: unmount3,
+    unmount: unmount2,
     isMounted: () => mounted3,
     // The review window's door to the file this page has open (docs/PERSIST.md §4.4).
     openConflictSides: (pid, fid) => openDocument.sides(pid, fid),

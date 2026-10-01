@@ -139,13 +139,9 @@ html.light .output-header-progress {
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
-  padding: 0 var(--pad-inline);
+  /* Tight around the Run button: the checker's dot lives in the status strip. */
+  padding: 0 0.45rem;
   border-left: 1px solid var(--chrome-divider);
-}
-
-.editor-topbar-controls .ide-status-dot {
-  margin-left: 0;
-  align-self: center;
 }
 
 .editor-tabs {

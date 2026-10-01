@@ -1524,10 +1524,12 @@ say, and stays absent otherwise.
 | **Position** `12:4` | always (Standard: always; Vim: always) | opens `command` pre-filled `:` |
 | **Selection** `3 lines · 47 ch` | selection non-empty | — |
 | **Goal** `⟨ ⊢ nat → nat ⟩` | caret is inside a hole | opens the hole in Harpoon |
+| **Progress** `◔ 5/8 proved` | ≥ 2 proofs (`rec`/`proof`) and one is unfinished (a hole or an error) | next unfinished proof |
 | **Problems** `2✕ 1⚠` | count > 0 | jump to next problem |
 | **Holes** `4?` | count > 0 **and** caret not in a hole | next hole |
+| **Run** `Running 12s ■` | an explicit worker Run past 2 s | ■ stops it (`run.stop`) |
 | **Checker** dot | checking, or not clean | run / jump to first problem |
-| **Suite** | file belongs to a non-default suite | reveal in explorer |
+| **Suite** `fvnat 3/7` | file is a member of an active suite; amber when an earlier member has errors | reveal in explorer |
 | **Style** | never (it is in the mode badge) | — |
 
 **A clean, settled, unselected file in Standard style therefore shows exactly one thing:
@@ -2198,6 +2200,12 @@ would restart the spinner mid-spin.
 
 Exactly one dot is on screen: while the bar is up it sets `html.bj-strip-owns-status` and the
 topbar dot is hidden; turn the bar off and the topbar dot comes back unchanged.
+
+**The strip is obligatory (2026-09-30).** With goal, holes, checker, sync and the command line all
+living in it, the `Off` choice and the machinery for it are gone: the setting is only how much the
+strip says (`statusStrip`: compact, standard, detailed; a saved `off` reads as standard), the
+topbar dot and `jar-strip-owns-status` are deleted, and the command line no longer mounts a bar on
+demand. The strip's dot is the page's only `.ide-status-dot` (`scripts/probe.mjs`).
 
 Click semantics match the split the topbar dot and the Run button already make between them:
 **broken → go to the next problem; clean → run**. "Run" means `run.default`, which is the Run

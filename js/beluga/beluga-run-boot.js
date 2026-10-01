@@ -113,15 +113,28 @@
     if (!btnRun) btnRun = document.getElementById("btn-run");
     if (!cmdInputEl) cmdInputEl = document.getElementById("command-input");
   }
-  function setBelugaBusy(busy) {
+  function setBelugaBusy(busy, run) {
     belugaBusy = !!busy;
     ensureRunControls();
     if (btnLoad) btnLoad.disabled = belugaBusy;
     if (btnRun) btnRun.disabled = belugaBusy;
     if (cmdInputEl) cmdInputEl.disabled = belugaBusy;
+    var strip = global2.StatusStrip;
+    if (strip && strip.setRun) strip.setRun(belugaBusy && run && canStop() ? run : null);
   }
   function isBelugaBusy() {
     return belugaBusy;
+  }
+  function canStop() {
+    return belugaMode !== "fast" && typeof BelugaClient !== "undefined" && !!BelugaClient.cancelLoad;
+  }
+  function isStoppable() {
+    return belugaBusy && canStop();
+  }
+  function stop() {
+    if (!isStoppable() || !BelugaClient.cancelLoad()) return false;
+    if (global2.StatusStrip && global2.StatusStrip.setMessage) global2.StatusStrip.setMessage("Run stopped");
+    return true;
   }
   function modeToConfig(mode) {
     return mode === "fast" ? { thread: "main", build: "fast" } : { thread: "worker", build: "stable" };
@@ -356,7 +369,7 @@
     projectSpans = spans || null;
     var lineCount = code.split("\n").length;
     var t0 = performance.now();
-    setBelugaBusy(true);
+    setBelugaBusy(true, { label: opts.label || opts.displayName || "" });
     if (shouldShowRunProgress()) {
       RunProgress.start({ op: "load", lineCount });
     }
@@ -473,6 +486,7 @@
     return runLoad(src.code, src.spans, {
       pinned: true,
       displayName: src.name,
+      label: "suite " + suite,
       caption: "run suite " + suite
     });
   }
@@ -529,10 +543,11 @@
         caption: onlyCaption
       });
     }
-    setBelugaBusy(true);
+    setBelugaBusy(true, { label: "the project" });
     var t0 = performance.now();
     if (shouldShowRunProgress()) RunProgress.start({ op: "load" });
     var failures = 0;
+    var cancelled = false;
     var lines = 0;
     for (var j = 0; j < jobs.length; j++) {
       var job = jobs[j];
@@ -556,6 +571,7 @@
         }
       } catch (e) {
         if (isCancelled(e)) {
+          cancelled = true;
           if (typeof ReplOutput !== "undefined" && ReplOutput.dismissRunSkeleton) {
             await ReplOutput.dismissRunSkeleton();
           }
@@ -574,7 +590,7 @@
       }
     }
     setBelugaBusy(false);
-    if (failures) RunProgress.fail();
+    if (failures || cancelled) RunProgress.fail();
     else void RunProgress.complete({ lines, ms: performance.now() - t0 });
     if (failures) {
       Toasts.error(
@@ -621,6 +637,8 @@
     shouldShowRunProgress,
     setBelugaMode,
     belugaProgressHook,
+    isStoppable,
+    stop,
     runFile,
     runToHere,
     runModule,

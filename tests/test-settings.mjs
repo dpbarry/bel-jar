@@ -7,6 +7,7 @@ import {
   SETTINGS, SECTIONS, SETTINGS_KEY, settingRow, normalizeSetting, sameValue, typeOf, readBootSettings, resolveValues,
 } from '../js/persist/settings-schema.mjs';
 import { applyDocumentSettings, UI_FONT_SCALES } from '../js/persist/settings-apply.mjs';
+import { normalizeValue } from '../js/persist/table.mjs';
 
 let n = 0;
 function expect(cond, msg) {
@@ -46,6 +47,15 @@ function fresh(storage = fakeStorage(), events = fakeEvents()) {
   return { store, settings: createSettings(store), storage, events };
 }
 
+// ── 0. an Off saved before the strip became obligatory reads as on ──────────
+{
+  const { store } = fresh();
+  store.set(SETTINGS_KEY, { values: { statusStrip: 'off', theme: 'light' } });
+  const settings = createSettings(store);
+  expect(settings.get('theme') === 'light', 'the saved record is read');
+  expect(settings.get('statusStrip') === 'standard', `but a saved "off" is no value the table holds: the strip is on (${settings.get('statusStrip')})`);
+}
+
 // ── 1. the table is well-formed ──────────────────────────────────────────────
 {
   const ids = SETTINGS.map((r) => r.id);
@@ -77,8 +87,13 @@ function fresh(storage = fakeStorage(), events = fakeEvents()) {
   expect(settings.set('editorTabSize', '4') && settings.get('editorTabSize') === 4, 'a numeric choice accepts its dropdown string');
   expect(!settings.set('editorTabSize', '3'), 'but only a listed number');
   expect(!settings.set('doubleTapCommand', ''), 'a string setting refuses the empty string');
-  expect(settings.set('statusStrip', 'compact') && settings.set('statusStrip', null) && settings.get('statusStrip') === null,
-    'null is a real choice where the table lists it');
+  // The status strip is always there (2026-09-30): its setting is how much it says.
+  expect(settings.get('statusStrip') === 'standard', 'the status strip says a standard amount by default');
+  expect(!settings.set('statusStrip', 'off') && settings.get('statusStrip') === 'standard', 'and cannot be turned off');
+  expect(!settings.set('statusStrip', null), 'nor left to decide for itself');
+  expect(settings.set('statusStrip', 'compact') && settings.get('statusStrip') === 'compact', 'only how much it says changes');
+  settings.set('statusStrip', 'standard');
+  expect(normalizeValue({ values: [null, 'a'], default: null }, null) === null, 'null is still a real choice where a table lists it');
 
   expect(store.get(SETTINGS_KEY).values.theme === 'light', 'the record holds what was set');
   settings.set('theme', 'dark');

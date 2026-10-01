@@ -16,13 +16,46 @@
 }
 
 .account-avatar {
+  --avatar-size: 1.125rem;
+  --avatar-ring: color-mix(in oklab, var(--muted-high) 55%, transparent);
   position: relative;
   z-index: 1;
-  width: 1.125rem;
-  height: 1.125rem;
+  box-sizing: border-box;
+  width: var(--avatar-size);
+  height: var(--avatar-size);
   border-radius: 50%;
   display: block;
   object-fit: cover;
+  /* A ring a hair off the face: it gives a light picture an edge on the light
+     theme and a dark one on the dark, and it is what hover and the open menu
+     light up. */
+  outline: 1px solid var(--avatar-ring);
+  outline-offset: 1.5px;
+  transition: outline-color var(--transition);
+}
+
+/* GitHub's identicon (js/account/avatar.mjs): inset on its own background, so
+   the circle cuts only margin and every block of the pattern shows. */
+.account-avatar.is-identicon {
+  padding: calc(var(--avatar-size) * 0.085);
+  background: var(--avatar-bg);
+  object-fit: contain;
+}
+
+/* Signed in, the ring is the button's state, not a glow behind it. */
+.account-btn.is-signed-in::before {
+  display: none;
+}
+
+.account-btn.is-signed-in[aria-expanded="true"] .account-avatar,
+.account-btn.is-signed-in:focus-visible .account-avatar {
+  --avatar-ring: var(--accent-high);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .account-btn.is-signed-in:hover .account-avatar {
+    --avatar-ring: var(--accent-high);
+  }
 }
 
 .account-initial {
@@ -46,19 +79,21 @@
 
 /* The same face at the top of its popover, beside the name. */
 .account-avatar--menu {
-  width: 1.75rem;
-  height: 1.75rem;
+  --avatar-size: 1.75rem;
   flex: 0 0 auto;
 }
 
 /* ── the cloud ──────────────────────────────────────────────────────────────
-   Beside the project name, as in Google Docs. Quiet when all is well: it takes
-   the name's own muted grey, and only a state that needs you takes a colour. */
+   Beside the project name, as in Google Docs (js/account/cloud-glyphs.mjs).
+   Quiet when all is well: the name's own muted grey. Colour is spent on the
+   mark inside, and only while it says something: the checker's blue while a
+   round is in flight, its green for the moment one lands, amber or red when
+   something needs the person. */
 
 .sync-cloud {
   width: 1.5rem;
   height: 1.5rem;
-  margin-left: 0.25rem;
+  margin-left: 0.0625rem;
   flex: 0 0 auto;
   color: var(--muted-high);
 }
@@ -68,36 +103,72 @@
   height: 0.95rem;
 }
 
-.sync-cloud[data-state="differs"] {
-  color: var(--ide-status-warning);
-}
-
-.sync-cloud[data-state="alert"] {
-  color: var(--ide-status-error);
+.sync-cloud__mark {
+  transition: stroke 400ms var(--ease-out);
 }
 
 .sync-cloud[aria-expanded="true"]::before {
   opacity: 1;
 }
 
-/* Syncing: the arrow rises, once a second, and only where motion is allowed. */
+/* Waiting for the quiet spell, the arrow rests in the grey. A round in flight:
+   it rises, in the checker's blue for work under way. */
 @keyframes sync-cloud-rise {
-  0% { transform: translateY(1.5px); opacity: 0.35; }
-  50% { transform: translateY(0); opacity: 1; }
-  100% { transform: translateY(-1.5px); opacity: 0.35; }
+  0% { transform: translateY(1.25px); opacity: 0.3; }
+  45% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-1.25px); opacity: 0.3; }
 }
 
 .sync-cloud[data-state="syncing"] .sync-cloud__arrow {
+  stroke: var(--ide-status-checking);
   animation: sync-cloud-rise 1.1s var(--ease-out) infinite;
 }
 
+/* A round lands: the check draws itself in, in the checker's green, and
+   settles into the grey. Once, never on a steady synced state. */
+@keyframes sync-cloud-arrive {
+  0% { stroke-dashoffset: 1; stroke: var(--ide-status-clean); }
+  28% { stroke-dashoffset: 0; stroke: var(--ide-status-clean); }
+  60% { stroke-dashoffset: 0; stroke: var(--ide-status-clean); }
+  100% { stroke-dashoffset: 0; stroke: currentColor; }
+}
+
+.sync-cloud.is-arriving .sync-cloud__check {
+  stroke-dasharray: 1;
+  animation: sync-cloud-arrive 1.6s var(--ease-out) both;
+}
+
+/* Offline: quieter than the name, and no colour: nothing is wrong. */
+.sync-cloud[data-state="offline"] {
+  color: var(--muted-mid);
+}
+
+/* Needs the person: the mark in the state's colour, the outline only tinted. */
+.sync-cloud[data-state="differs"] {
+  color: color-mix(in oklab, var(--ide-status-warning) 55%, var(--muted-high));
+}
+
+.sync-cloud[data-state="differs"] .sync-cloud__mark {
+  stroke: var(--ide-status-warning);
+}
+
+.sync-cloud[data-state="alert"] {
+  color: color-mix(in oklab, var(--ide-status-error) 55%, var(--muted-high));
+}
+
+.sync-cloud[data-state="alert"] .sync-cloud__mark {
+  stroke: var(--ide-status-error);
+}
+
 .bj-motion-reduce .sync-cloud__arrow,
+.bj-motion-reduce .sync-cloud__check,
 .sync-cloud:not([data-state="syncing"]) .sync-cloud__arrow {
   animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sync-cloud__arrow { animation: none; }
+  .sync-cloud__arrow,
+  .sync-cloud__check { animation: none; }
 }
 
 /* ── review differences ────────────────────────────────────────────────────── */

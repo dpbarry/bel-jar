@@ -251,6 +251,20 @@ function registerWorkspaceProviders() {
   });
 }
 
+// Opens the explorer if it is shut — never toggles it closed — with the active
+// file's folders expanded and its row scrolled into view.
+function revealActiveFile() {
+  if (!workspaceEl || !workspaceEl.classList.contains('is-explorer-open')) {
+    closeOtherSidePanels('explorer');
+    setSidePanelOpen('explorer', true);
+    notifySidePanelLayout();
+  }
+  getExplorerController()?.restoreWorkspaceExplorer?.({
+    explorer: { revealActiveFile: true, scrollActiveIntoView: true },
+  });
+  return true;
+}
+
 function applyStoredSidePanel(id) {
   if (!id) return;
   if (!Settings.get('restorePanels')) return;
@@ -880,7 +894,7 @@ function __initAppPeels() {
   }));
 
   createCommandPalette(Object.assign({}, peelHub, {
-    toggleSidePanel, toggleTheme, newProject, newFile,
+    toggleSidePanel, revealActiveFile, toggleTheme, newProject, newFile,
     fileInputEl: uploadImportApi.fileInputEl,
     uploadFolderInputEl: uploadImportApi.uploadFolderInputEl,
     folderInputEl: uploadImportApi.folderInputEl,

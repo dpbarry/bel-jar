@@ -11,6 +11,7 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
   export function create(deps) {
     var getPersist = deps.getPersist;
     var toggleSidePanel = deps.toggleSidePanel;
+    var revealActiveFile = deps.revealActiveFile;
     var toggleTheme = deps.toggleTheme;
     var newProject = deps.newProject;
     var newFile = deps.newFile;
@@ -366,6 +367,7 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
       on('run.here', () => { if (BelugaRun.runToHere) BelugaRun.runToHere(); });
       on('run.module', () => { if (BelugaRun.runModule) BelugaRun.runModule(); }, () => !!moduleNameFor());
       on('run.project', () => { if (BelugaRun.runProject) BelugaRun.runProject(); }, () => signatureFileCount() > 1);
+      on('run.stop', () => BelugaRun.stop(), () => !!(BelugaRun.isStoppable && BelugaRun.isStoppable()));
       on('run.clear-output', () => { ReplOutput.clearOutput(); });
 
       // ⛔ Flush first, then reload. `beforeunload` does fire on a
@@ -379,6 +381,7 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
 
       on('view.theme', toggleTheme);
       on('view.explorer', () => toggleSidePanel('explorer'));
+      on('view.reveal-file', () => revealActiveFile(), () => !!Persist.getActiveFileId());
       on('view.library', () => toggleSidePanel('library'));
       on('view.harpoon', () => toggleSidePanel('harpoon'));
       on('view.edit-history', () => { window.StatusStrip?.openHistory?.(); });

@@ -1829,15 +1829,14 @@ const global = globalThis;
     paintStyleRows(Settings.get('keymapStyle'));
 
     addDropdownRow(panelBodies.keybindings, 'status-strip', 'Status strip',
-      'Goal at the caret, holes left, problems, checker state.',
+      'How much it says: goal at the caret, holes left, problems, checker state.',
       [
         { value: 'standard', label: 'Standard' },
         { value: 'compact', label: 'Compact' },
         { value: 'detailed', label: 'Detailed' },
-        { value: 'off', label: 'Off' },
       ],
       function () {
-        return StatusStrip.storedMode();
+        return Settings.get('statusStrip');
       },
       function (p, v) {
         Settings.set('statusStrip', v);

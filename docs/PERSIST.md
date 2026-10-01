@@ -545,7 +545,12 @@ it looks is [`docs/UI.md`](UI.md)).
   (synced, syncing, offline, couldn't sync, files to review), whose popover says the state and
   offers Sync now and Review differences; a strip segment only when something needs you (files to
   review, offline, a failing round, changes made offline) and "Back online. Everything is synced."
-  in passing; the explorer marks files changed in two places. Nothing toasts.
+  in passing; the explorer marks files changed in two places. Nothing toasts. The cloud
+  (`cloud-glyphs.mjs`, 2026-09-30) is quiet grey; colour goes only on the mark inside and only while
+  it says something: the checker's blue while a round is in flight (waiting for the quiet spell,
+  `pending`, the arrow rests), its green as a round lands (the check draws itself in, then settles),
+  amber or red when something needs the person. `tests/test-account-marks.mjs`,
+  `scratch/shot-header.mjs` (both themes, 4x).
 - **The same lines changed in two places** interrupt nothing: both versions are kept (§4.4), and
   Review differences (`js/ui/review-differences.mjs`, opened from the strip or the cloud) shows each
   file's compact diff with Keep mine or Use cloud. The open file is settled through its document

@@ -17,15 +17,31 @@ var belugaBusy = false;
     if (!cmdInputEl) cmdInputEl = document.getElementById('command-input');
   }
 
-  function setBelugaBusy(busy) {
+  // `run` ({ label }) marks an explicit Run, which the status strip times and can
+  // stop. REPL commands pass none: they are not loads, and a load's stop cannot end them.
+  function setBelugaBusy(busy, run) {
     belugaBusy = !!busy;
     ensureRunControls();
     if (btnLoad) btnLoad.disabled = belugaBusy;
     if (btnRun) btnRun.disabled = belugaBusy;
     if (cmdInputEl) cmdInputEl.disabled = belugaBusy;
+    var strip = global.StatusStrip;
+    if (strip && strip.setRun) strip.setRun(belugaBusy && run && canStop() ? run : null);
   }
 
   function isBelugaBusy() { return belugaBusy; }
+
+  function canStop() {
+    return belugaMode !== 'fast' && typeof BelugaClient !== 'undefined' && !!BelugaClient.cancelLoad;
+  }
+
+  function isStoppable() { return belugaBusy && canStop(); }
+
+  function stop() {
+    if (!isStoppable() || !BelugaClient.cancelLoad()) return false;
+    if (global.StatusStrip && global.StatusStrip.setMessage) global.StatusStrip.setMessage('Run stopped');
+    return true;
+  }
 
   function modeToConfig(mode) {
     return mode === 'fast'
@@ -317,7 +333,7 @@ var belugaBusy = false;
     projectSpans = spans || null;
     var lineCount = code.split('\n').length;
     var t0 = performance.now();
-    setBelugaBusy(true);
+    setBelugaBusy(true, { label: opts.label || opts.displayName || '' });
     if (shouldShowRunProgress()) {
       RunProgress.start({ op: 'load', lineCount: lineCount });
     }
@@ -461,6 +477,7 @@ var belugaBusy = false;
     return runLoad(src.code, src.spans, {
       pinned: true,
       displayName: src.name,
+      label: 'suite ' + suite,
       caption: 'run suite ' + suite,
     });
   }
@@ -528,10 +545,11 @@ var belugaBusy = false;
       });
     }
 
-    setBelugaBusy(true);
+    setBelugaBusy(true, { label: 'the project' });
     var t0 = performance.now();
     if (shouldShowRunProgress()) RunProgress.start({ op: 'load' });
     var failures = 0;
+    var cancelled = false;
     var lines = 0;
     for (var j = 0; j < jobs.length; j++) {
       var job = jobs[j];
@@ -557,6 +575,7 @@ var belugaBusy = false;
         }
       } catch (e) {
         if (isCancelled(e)) {
+          cancelled = true;
           if (typeof ReplOutput !== 'undefined' && ReplOutput.dismissRunSkeleton) {
             await ReplOutput.dismissRunSkeleton();
           }
@@ -575,7 +594,7 @@ var belugaBusy = false;
       }
     }
     setBelugaBusy(false);
-    if (failures) RunProgress.fail();
+    if (failures || cancelled) RunProgress.fail();
     else void RunProgress.complete({ lines: lines, ms: performance.now() - t0 });
     if (failures) {
       Toasts.error(failures + ' of ' + jobs.length + ' developments failed type-checking.',
@@ -625,6 +644,8 @@ var belugaBusy = false;
     shouldShowRunProgress: shouldShowRunProgress,
     setBelugaMode: setBelugaMode,
     belugaProgressHook: belugaProgressHook,
+    isStoppable: isStoppable,
+    stop: stop,
     runFile: runFile,
     runToHere: runToHere,
     runModule: runModule,

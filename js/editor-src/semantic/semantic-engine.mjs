@@ -15,6 +15,7 @@ import { fileBase } from '../project-paths.mjs';
 import { topDeclSpans } from './scoped-check.mjs';
 import { belugaDiagnosticsFromOutput, createSettlement } from './settlement.mjs';
 import { polishBelugaMessage } from '../ide/beluga-diag.mjs';
+import { proofProgress } from './proof-progress.mjs';
 import { settlementTrigger } from './check-gate.mjs';
 import { getCheckTrace, timeSync } from '../perf/check-trace.mjs';
 import {
@@ -792,6 +793,17 @@ export function createSemanticEngine(options = {}) {
   function diagnosticsForSymbol(symbolId) {
     const node = semanticGraph.getSnapshot()?.nodeMap.get(symbolId);
     return node?.diagnostics ? node.diagnostics.slice() : [];
+  }
+
+  function declarationFailed(id) {
+    const node = semanticGraph.getSnapshot()?.nodeMap.get(id);
+    if (!node) return false;
+    return node.status === STATUS.SYNTAX_FAULT || node.status === STATUS.ERRORING
+      || (node.diagnostics || []).some((d) => d.severity === 'error');
+  }
+
+  function fileProofProgress() {
+    return proofProgress(symbolStore.getSnapshot()?.declarations, getHoles(), declarationFailed);
   }
 
   function diagnosticsAt(pos) {
@@ -1859,6 +1871,7 @@ export function createSemanticEngine(options = {}) {
     getSnapshot: () => snapshot,
     getBelugaDiagnostics,
     getHoles,
+    proofProgress: fileProofProgress,
     applyBelugaOutput,
     settleState,
     isSettledFor: (version) => (settlement ? settlement.isSettledFor(version) : true),

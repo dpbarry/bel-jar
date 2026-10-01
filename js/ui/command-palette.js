@@ -75,8 +75,8 @@
     // ── Keybindings and the keyboard ────────────────────────────────────────
     { id: "keybindings", section: "keybindings", default: {}, type: "json", normalize: cleanKeybindings },
     { id: "keymapStyle", section: "keybindings", default: "default", values: ["default", "vim", "emacs"] },
-    // null: the status strip picks its own default for the keymap style.
-    { id: "statusStrip", section: "keybindings", default: null, values: [null, "off", "compact", "standard", "detailed"] },
+    // How much the status strip says. It is always there: no Off (2026-09-30).
+    { id: "statusStrip", section: "keybindings", default: "standard", values: ["compact", "standard", "detailed"] },
     { id: "vimLeader", section: "keybindings", default: "\\", values: ["\\", ",", " "] },
     { id: "vimInsertEscape", section: "keybindings", default: "", values: ["", "jk", "jj", "kj"] },
     { id: "emacsYankSource", section: "keybindings", default: "system", values: ["system", "kill-ring"] },
@@ -831,6 +831,9 @@
     { id: "nav.prev-decl", title: "Go to Previous Declaration", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
     { id: "nav.next-case", title: "Go to Next Case Branch", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
     { id: "nav.prev-case", title: "Go to Previous Case Branch", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
+    // A proof with a hole or an error; the status strip's progress segment.
+    { id: "nav.next-unfinished", title: "Go to Next Unfinished Proof", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
+    { id: "nav.prev-unfinished", title: "Go to Previous Unfinished Proof", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
     // The jump list. Everything above jumps; these are the way back.
     { id: "nav.jump-back", title: "Jump Back", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
     { id: "nav.jump-forward", title: "Jump Forward", section: "Navigate", scope: "editor", keybindable: true, palette: true, styles: { vim: "always" } },
@@ -1010,10 +1013,12 @@
     { id: "run.here", title: "Run Suite to Here", section: "Run", scope: "global", palette: true, keybindable: true },
     { id: "run.module", title: "Run Suite", section: "Run", scope: "global", palette: true, keybindable: true, ex: ["runs"] },
     { id: "run.project", title: "Run Project", section: "Run", scope: "global", palette: true, keybindable: true, ex: ["runp"] },
+    { id: "run.stop", title: "Stop Run", section: "Run", scope: "global", palette: true, keybindable: true },
     { id: "run.clear-output", title: "Clear Output", section: "Run", scope: "global", palette: true, keybindable: true },
     // ── View ───────────────────────────────────────────────────────────────────
     { id: "view.theme", title: "Toggle Theme", section: "View", scope: "global", palette: true, keybindable: true },
     { id: "view.explorer", title: "Toggle Explorer", section: "View", scope: "global", palette: true, keybindable: true },
+    { id: "view.reveal-file", title: "Reveal in Explorer", section: "View", scope: "global", palette: true, keybindable: true },
     { id: "view.library", title: "Toggle Library", section: "View", scope: "global", palette: true, keybindable: true },
     { id: "view.harpoon", title: "Toggle Harpoon", section: "View", scope: "global", palette: true, keybindable: true },
     // The `⟲` widget in the status strip is the same panel; a surface you can only

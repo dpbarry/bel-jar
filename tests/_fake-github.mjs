@@ -6,22 +6,40 @@ import http from 'node:http';
 import zlib from 'node:zlib';
 import { freePort } from './_worker-env.mjs';
 
-// `avatar`: this stand-in serves a real picture for 'ok' and none for 'missing'
-// (a 404, as a blocked or deleted image would be), from its own origin: cross-
-// origin to the site, as GitHub's avatars are. The profile carries its URL.
+// `avatar`: this stand-in serves a real picture for 'ok', a GitHub identicon for
+// 'identicon' and none for 'missing' (a 404, as a blocked or deleted image would
+// be), from its own origin: cross-origin to the site, as GitHub's avatars are,
+// and readable across it as theirs are. The profile carries its URL.
 export const PEOPLE = {
   dean: { id: 101, login: 'Dean-B', name: 'Dean', avatar: 'ok' },
   renamed: { id: 202, login: 'dean-b', name: 'Someone else', avatar: 'missing' },
   // An account with nothing in the cloud yet: signing in starts from scratch.
-  newcomer: { id: 303, login: 'new-person', name: 'New Person', avatar: 'ok' },
+  // No picture of its own, so GitHub draws it an identicon.
+  newcomer: { id: 303, login: 'new-person', name: 'New Person', avatar: 'identicon' },
 };
 
 /** A square PNG of one colour, encoded here so it is certainly valid (zlib's own deflate and CRC). */
 function solidPng(size, [r, g, b]) {
+  return png(size, () => [r, g, b]);
+}
+
+// GitHub's identicon: 420px, a 5x5 mirrored pattern of 70px blocks on #f0f0f0,
+// a 35px margin (a twelfth) all round.
+function identiconPng() {
+  const rows = ['10101', '01110', '11011', '01010', '10001'];
+  return png(420, (x, y) => {
+    const bx = Math.floor((x - 35) / 70);
+    const by = Math.floor((y - 35) / 70);
+    const on = x >= 35 && y >= 35 && bx < 5 && by < 5 && rows[by][bx] === '1';
+    return on ? [204, 84, 150] : [240, 240, 240];
+  });
+}
+
+function png(size, colourAt) {
   const raw = Buffer.alloc((size * 3 + 1) * size);
   for (let y = 0; y < size; y++) {
     const row = y * (size * 3 + 1);
-    for (let x = 0; x < size; x++) raw.set([r, g, b], row + 1 + x * 3);
+    for (let x = 0; x < size; x++) raw.set(colourAt(x, y), row + 1 + x * 3);
   }
   const chunk = (type, data) => {
     const len = Buffer.alloc(4);
@@ -42,6 +60,15 @@ function solidPng(size, [r, g, b]) {
   ]);
 }
 const AVATAR_PNG = solidPng(16, [214, 92, 150]);
+const IDENTICON_PNG = identiconPng();
+// As GitHub's avatar host answers: readable cross-origin (the page reads an
+// identicon's pixels to inset it, js/account/avatar.mjs).
+const AVATAR_HEADERS = {
+  'content-type': 'image/png',
+  'cache-control': 'no-store',
+  'access-control-allow-origin': '*',
+  'cross-origin-resource-policy': 'cross-origin',
+};
 
 export async function startFakeGitHub() {
   let signedIn = 'dean';
@@ -99,8 +126,15 @@ export async function startFakeGitHub() {
       const { avatar, ...person } = PEOPLE[who];
       res.end(JSON.stringify(Object.assign(person, { avatar_url: avatar ? url + '/avatars/' + who + '-' + avatar + '.png' : null })));
     } else if (u.pathname.startsWith('/avatars/') && u.pathname.endsWith('-ok.png')) {
-      res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
+      res.writeHead(200, AVATAR_HEADERS);
       res.end(AVATAR_PNG);
+    } else if (u.pathname.startsWith('/avatars/') && u.pathname.endsWith('-identicon.png')) {
+      res.writeHead(200, AVATAR_HEADERS);
+      res.end(IDENTICON_PNG);
+    } else if (u.pathname.startsWith('/avatars/')) {
+      // A deleted picture: a 404 the page may read, as the avatar host's are.
+      res.writeHead(404, { 'access-control-allow-origin': '*', 'cross-origin-resource-policy': 'cross-origin' });
+      res.end();
     } else {
       res.writeHead(404);
       res.end();

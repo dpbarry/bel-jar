@@ -8,24 +8,40 @@
     "command",
     "selection",
     "goal",
+    "progress",
     "holes",
     "problems",
     "orca",
+    "run",
+    "runstop",
     "symbols",
     "spacer",
     "tab",
     "sync",
+    "suite",
     "undo",
     "redo",
     "history",
     "checker"
   ];
   var PRESETS = {
-    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "spacer", "tab", "sync", "undo", "redo", "history", "checker"],
-    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "holes", "problems", "orca", "spacer", "tab", "sync", "undo", "redo", "history", "checker"],
+    compact: ["keymap", "position", "mode", "macro", "command", "goal", "holes", "problems", "orca", "run", "runstop", "spacer", "tab", "sync", "undo", "redo", "history", "checker"],
+    standard: ["keymap", "position", "mode", "macro", "command", "selection", "goal", "progress", "holes", "problems", "orca", "run", "runstop", "spacer", "tab", "sync", "suite", "undo", "redo", "history", "checker"],
     detailed: SEGMENT_ORDER
   };
   var GOAL_MAX = 52;
+  var RUN_QUIET_MS = 2e3;
+  function runClock(ms) {
+    const s = Math.floor(Math.max(0, ms) / 1e3);
+    return s < 60 ? s + "s" : Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  }
+  function nameList(names, max = 3) {
+    if (names.length <= max) {
+      return names.length < 2 ? names.join("") : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+    }
+    return names.slice(0, max).join(", ") + " and " + (names.length - max) + " more";
+  }
+  var runVisible = (s) => !!(s.run && s.run.elapsedMs >= RUN_QUIET_MS);
   function plural(n, one, many) {
     return n + " " + (n === 1 ? one : many);
   }
@@ -170,6 +186,28 @@
         grow: true
       };
     },
+    /**
+     * How many PROOFS are finished — `rec`s and `proof`s with no hole and no
+     * error. ⛔ Not a hole count: that is the next segment's fact, and one
+     * unfinished proof can hold many holes, or none and a type error.
+     *
+     * Only while there is something left to do, and only with two proofs or more:
+     * `0/1` says no more than the hole or error beside it.
+     */
+    progress(s) {
+      const p = s.proofs;
+      if (!s.hasFile || !p || p.total < 2 || p.done >= p.total) return null;
+      const names = (p.unfinished || []).map((u) => u.name).filter(Boolean);
+      return {
+        key: "progress",
+        text: p.done + "/" + p.total,
+        sub: "proved",
+        meter: p.done / p.total,
+        title: (names.length ? "Unfinished: " + nameList(names) + "\n" : "") + "Go to the next unfinished proof",
+        command: "nav.next-unfinished",
+        action: "next-unfinished"
+      };
+    },
     holes(s) {
       const n = s.holes || 0;
       if (!n) return null;
@@ -208,6 +246,25 @@
         tone: "busy",
         action: "open-harpoon"
       };
+    },
+    /**
+     * An explicit Run, once it has gone on long enough to wonder about. The
+     * output panel has its own progress bar; this is the one that is always on
+     * screen, and the only place with a way to stop.
+     */
+    run(s) {
+      if (!runVisible(s)) return null;
+      return {
+        key: "run",
+        text: "Running",
+        sub: runClock(s.run.elapsedMs),
+        tone: "busy",
+        title: s.run.label ? "Running " + s.run.label : "Running"
+      };
+    },
+    runstop(s) {
+      if (!runVisible(s)) return null;
+      return { key: "runstop", icon: "stop", title: "Stop run", command: "run.stop", action: "run-stop" };
     },
     symbols(s) {
       if (!Number.isFinite(s.symbols) || s.symbols <= 0) return null;
@@ -261,6 +318,32 @@
         return { key: "sync", text: "Couldn\u2019t sync", tone: "error", title: "Sync now", action: "sync-now" };
       }
       return null;
+    },
+    /**
+     * The suite this file is checked in, and where in it. Nothing else on screen
+     * says so: the tabs and the header name files and the project, never the
+     * .cfg whose earlier members this file is checked after. An earlier member
+     * that fails is this file's problem too, so it turns the segment amber.
+     */
+    suite(s) {
+      const x = s.suite;
+      if (!s.hasFile || !x || !x.name) return null;
+      const upstream = x.upstreamErrors || [];
+      const placed = x.count > 1 && x.index >= 0;
+      const lines = [
+        placed ? "File " + (x.index + 1) + " of " + x.count + " in suite " + x.name : "Suite " + x.name,
+        upstream.length ? (upstream.length === 1 ? "An earlier file has errors: " : "Earlier files have errors: ") + nameList(upstream) : "",
+        "Reveal in Explorer"
+      ];
+      return {
+        key: "suite",
+        text: x.name,
+        sub: placed ? x.index + 1 + "/" + x.count : "",
+        tone: upstream.length ? "warning" : "plain",
+        title: lines.filter(Boolean).join("\n"),
+        command: "view.reveal-file",
+        action: "reveal-file"
+      };
     },
     /**
      * Undo and redo, as one tray with the history beside them. The tray appears
@@ -460,8 +543,8 @@
     // ── Keybindings and the keyboard ────────────────────────────────────────
     { id: "keybindings", section: "keybindings", default: {}, type: "json", normalize: cleanKeybindings },
     { id: "keymapStyle", section: "keybindings", default: "default", values: ["default", "vim", "emacs"] },
-    // null: the status strip picks its own default for the keymap style.
-    { id: "statusStrip", section: "keybindings", default: null, values: [null, "off", "compact", "standard", "detailed"] },
+    // How much the status strip says. It is always there: no Off (2026-09-30).
+    { id: "statusStrip", section: "keybindings", default: "standard", values: ["compact", "standard", "detailed"] },
     { id: "vimLeader", section: "keybindings", default: "\\", values: ["\\", ",", " "] },
     { id: "vimInsertEscape", section: "keybindings", default: "", values: ["", "jk", "jj", "kj"] },
     { id: "emacsYankSource", section: "keybindings", default: "system", values: ["system", "kill-ring"] },
@@ -2289,14 +2372,22 @@
     /** A second tab has this project open. Standing, not a toast. */
     tabConflict: false,
     /** What sync is doing (Persist.syncSummary, pushed by js/account/sync-ui.mjs). */
-    sync: null
+    sync: null,
+    /** `{ total, done, unfinished }` — the engine's `proofProgress()`. */
+    proofs: null,
+    /** `{ name, index, count, upstreamErrors }` while the file is a suite member. */
+    suite: null,
+    /** `{ label, elapsedMs }` while an explicit Run can be stopped. */
+    run: null
   };
+  var suiteBase = null;
+  var upstreamErrors = [];
   var detail = "standard";
   var rendered = "";
-  function storedMode() {
+  function detailLevel() {
     try {
       const v = Settings.get("statusStrip");
-      if (v === "off" || v === "compact" || v === "standard" || v === "detailed") return v;
+      if (v === "compact" || v === "standard" || v === "detailed") return v;
     } catch (_) {
     }
     return "standard";
@@ -2323,22 +2414,6 @@
     build(commandHost, root);
     pane.appendChild(root);
     return root;
-  }
-  function ownStatusDot(owned) {
-    const root_ = typeof document !== "undefined" ? document.documentElement : null;
-    if (root_) root_.classList.toggle("jar-strip-owns-status", !!owned);
-  }
-  function unmount() {
-    close({ restore: false });
-    close2();
-    close3();
-    if (root && root.parentNode) root.parentNode.removeChild(root);
-    root = null;
-    segmentHost = null;
-    commandHost = null;
-    messageEl = null;
-    mounted = false;
-    rendered = "";
   }
   var dotEl = null;
   function statusDot() {
@@ -2378,12 +2453,36 @@
     redo: [
       { d: "M10.6 2.9l3 3-3 3", stroke: true },
       { d: "M13.4 5.9H6.5a3.4 3.4 0 0 0 0 6.8h2.3", stroke: true }
+    ],
+    stop: [
+      { d: "M5.5 4.5h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z", fill: true }
     ]
   };
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  function meterEl(ratio) {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "jar-strip__meter");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const filled = Math.max(0, Math.min(1, ratio)) * 100;
+    for (const [cls, dash] of filled > 0 ? [["track", 100], ["fill", filled]] : [["track", 100]]) {
+      const c = document.createElementNS(SVG_NS, "circle");
+      c.setAttribute("class", "jar-strip__meter-" + cls);
+      c.setAttribute("cx", "8");
+      c.setAttribute("cy", "8");
+      c.setAttribute("r", "5.75");
+      c.setAttribute("pathLength", "100");
+      c.setAttribute("stroke-dasharray", dash + " 100");
+      c.setAttribute("transform", "rotate(-90 8 8)");
+      svg.appendChild(c);
+    }
+    return svg;
+  }
   function iconEl(name) {
     const parts = ICONS[name];
     if (!parts) return null;
-    const NS = "http://www.w3.org/2000/svg";
+    const NS = SVG_NS;
     const svg = document.createElementNS(NS, "svg");
     svg.setAttribute("class", "jar-strip__icon");
     svg.setAttribute("viewBox", "0 0 16 16");
@@ -2424,6 +2523,7 @@
     if (seg.pressed != null) el.setAttribute("aria-expanded", seg.pressed ? "true" : "false");
     if (seg.pressed) el.classList.add("is-open");
     if (seg.dot) el.appendChild(statusDot());
+    if (seg.meter != null) el.appendChild(meterEl(seg.meter));
     if (seg.icon) {
       const glyph = iconEl(seg.icon);
       if (glyph) el.appendChild(glyph);
@@ -2440,6 +2540,12 @@
     if (seg.render === "type") renderType(label, seg.text);
     else label.textContent = seg.text || "";
     el.appendChild(label);
+    if (seg.sub) {
+      const sub = document.createElement("span");
+      sub.className = "jar-strip__sub";
+      sub.textContent = seg.sub;
+      el.appendChild(sub);
+    }
     return el;
   }
   function withKeys(seg) {
@@ -2465,6 +2571,9 @@
     "review-differences": () => global5.Commands?.run("sync.review"),
     "review-offline": () => global5.Commands?.run("sync.review-offline"),
     "sync-now": () => global5.Commands?.run("sync.now"),
+    "next-unfinished": () => global5.Commands?.run("nav.next-unfinished"),
+    "reveal-file": () => global5.Commands?.run("view.reveal-file"),
+    "run-stop": () => global5.Commands?.run("run.stop"),
     "undo": () => stepHistory("undo"),
     "redo": () => stepHistory("redo"),
     "keymap-menu": () => {
@@ -2508,7 +2617,7 @@
     const host2 = ensureRoot();
     if (!host2) return;
     const segments = buildSegments(state, detail).map(withKeys);
-    const signature = segments.map((s) => s.key + ":" + s.text + ":" + s.tone + ":" + (s.pressed ? "1" : "") + (s.disabled ? "d" : "") + ":" + (s.title || "")).join("|");
+    const signature = segments.map((s) => s.key + ":" + s.text + ":" + (s.sub || "") + ":" + (s.meter ?? "") + ":" + s.tone + ":" + (s.pressed ? "1" : "") + (s.disabled ? "d" : "") + ":" + (s.title || "")).join("|");
     if (signature === rendered) return;
     rendered = signature;
     const els = segments.map(segmentEl);
@@ -2571,16 +2680,8 @@
     }, MESSAGE_HOLD_MS);
   }
   function openCommandLine(prefix, opts) {
-    if (!mounted) {
-      detail = "standard";
-      mounted = true;
-      if (!ensureRoot()) {
-        mounted = false;
-        return false;
-      }
-      ownStatusDot(true);
-      paint();
-    }
+    if (!mounted) apply();
+    if (!mounted) return false;
     return openLine(prefix || "", () => {
       rendered = "";
       paint();
@@ -2617,7 +2718,10 @@
       "historyOpen",
       "keymapOpen",
       "tabConflict",
-      "sync"
+      "sync",
+      "proofs",
+      "suite",
+      "run"
     ]) {
       if (!(key in next) || state[key] === next[key]) continue;
       state[key] = next[key];
@@ -2676,20 +2780,12 @@
     setEditorState({ orca: !!running, orcaDetail: running ? detailText || "" : "" });
   }
   function apply() {
-    const mode = storedMode();
-    detail = mode === "off" ? "standard" : mode;
-    if (mode === "off") {
-      unmount();
-      ownStatusDot(false);
-      return;
-    }
+    detail = detailLevel();
     mounted = true;
     if (!ensureRoot()) {
       mounted = false;
-      ownStatusDot(false);
       return;
     }
-    ownStatusDot(true);
     rendered = "";
     root.classList.remove("is-vim-line", "is-line-open");
     root.dataset.detail = detail;
@@ -2701,7 +2797,8 @@
   function refreshProofState() {
     const ed = global5.CurrentEditor;
     if (!ed) {
-      setEditorState({ holes: 0, symbols: NaN, goal: "", inHole: false, goalPending: false });
+      upstreamErrors = [];
+      setEditorState({ holes: 0, symbols: NaN, goal: "", inHole: false, goalPending: false, proofs: null, suite: suiteState() });
       return;
     }
     let holes = 0;
@@ -2729,14 +2826,51 @@
       }
     } catch (_) {
     }
+    let proofs = null;
+    try {
+      const eng = ed.getSemanticEngine?.();
+      proofs = eng?.proofProgress?.() || null;
+      upstreamErrors = Object.entries(eng?.memberDiagnostics?.() || {}).filter(([, diags]) => (diags || []).some((d) => d.severity === "error")).map(([name]) => name.slice(name.lastIndexOf("/") + 1));
+    } catch (_) {
+      upstreamErrors = [];
+    }
     setEditorState({
       holes,
       symbols,
       goal: goalState.goal,
       inHole: goalState.inHole,
-      goalPending: !!goalState.goalPending
+      goalPending: !!goalState.goalPending,
+      proofs: sameProofs(state.proofs, proofs) ? state.proofs : proofs,
+      suite: suiteState()
     });
     setDiagnostics({ errors: state.errors, warnings: state.warnings, checking, parsePercent });
+  }
+  var proofKey = (p) => p ? p.done + "/" + p.total + ":" + p.unfinished.map((u) => u.name).join(",") : "";
+  var sameProofs = (a, b) => proofKey(a) === proofKey(b);
+  function suiteState() {
+    if (!suiteBase) return null;
+    const prev = state.suite;
+    const same = prev && prev.name === suiteBase.name && prev.index === suiteBase.index && prev.count === suiteBase.count && prev.upstreamErrors.join("\n") === upstreamErrors.join("\n");
+    return same ? prev : { ...suiteBase, upstreamErrors: upstreamErrors.slice() };
+  }
+  function setSuite(next) {
+    suiteBase = next && next.name ? { name: next.name, index: next.index, count: next.count } : null;
+    if (!suiteBase) upstreamErrors = [];
+    setEditorState({ suite: suiteState() });
+  }
+  var runTimer = 0;
+  function setRun(next) {
+    if (runTimer) clearInterval(runTimer);
+    runTimer = 0;
+    if (!next) {
+      setEditorState({ run: null });
+      return;
+    }
+    const label = String(next.label || "");
+    const startedAt = Date.now();
+    const tick = () => setEditorState({ run: { label, elapsedMs: Date.now() - startedAt } });
+    tick();
+    runTimer = setInterval(tick, 1e3);
   }
   function onLint(e) {
     const d = e && e.detail || {};
@@ -2763,7 +2897,6 @@
     apply,
     setEditorState,
     setDiagnostics,
-    storedMode,
     refreshProofState,
     /**
      * The node Vim's own `:` and `/` inputs are mounted into. We keep the chrome;
@@ -2778,16 +2911,8 @@
     setMessage,
     openCommandLine,
     openSearchLine: (forward) => {
-      if (!mounted) {
-        detail = storedMode() === "off" ? "standard" : storedMode();
-        mounted = true;
-        if (!ensureRoot()) {
-          mounted = false;
-          return false;
-        }
-        ownStatusDot(true);
-        paint();
-      }
+      if (!mounted) apply();
+      if (!mounted) return false;
       return openSearch(forward, () => {
         rendered = "";
         paint();
@@ -2808,6 +2933,10 @@
      * answers, and lowers it when the tab says goodbye.
      */
     setTabConflict: (on) => setEditorState({ tabConflict: !!on }),
+    /** `{ name, index, count }` while the active file is a member of a suite, else null. */
+    setSuite,
+    /** `{ label }` while an explicit Run can be stopped, else null. */
+    setRun,
     /**
      * Pushed by `install-edit-history.mjs` whenever the stack moves. ⛔ The strip
      * never polls the history: a widget that counts something has to be told when
@@ -2821,7 +2950,6 @@
     openHistory,
     closeHistory: close2,
     isHistoryOpen: isOpen2,
-    isMounted: () => mounted,
     element: () => root,
     _pure: { buildSegments, isResting }
   };

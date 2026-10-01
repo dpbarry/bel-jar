@@ -160,25 +160,13 @@ button.jar-strip__seg {
   color: var(--ui-fg-faint);
 }
 
-/* ── Status parity ──────────────────────────────────────────────────────────
-   The checker segment hosts a real `.ide-status-dot`, so it inherits every
-   state, the conic checking shimmer and the rich lint tooltip from ide.css
-   rather than imitating them. Only the topbar's own spacing is undone. */
+/* ── The status dot ─────────────────────────────────────────────────────────
+   The checker segment hosts the page's only `.ide-status-dot`, so every state
+   and the conic checking shimmer come from ide.css. Its inline margin is for
+   text it would sit after; here the segment's gap spaces it. */
 .jar-strip .ide-status-dot {
   margin-left: 0;
   flex: 0 0 auto;
-}
-
-/* Exactly one status dot on screen: while the bar is up, it owns it. */
-html.jar-strip-owns-status .editor-topbar-controls .ide-status-dot {
-  display: none;
-}
-
-/* …and the strip tightens around what is left. Keeping the two-item padding
-   around a lone icon button leaves the reclaimed dot space reading as a void
-   hanging off the divider. */
-html.jar-strip-owns-status .editor-topbar-controls {
-  padding-inline: 0.45rem;
 }
 
 /* The checker reads as one control — dot and words, not two things. */
@@ -966,6 +954,63 @@ html.jar-strip-owns-status .editor-topbar-controls {
   padding: 0.5rem 0.65rem;
   font-size: 0.68rem;
   color: var(--ui-fg-faint);
+}
+
+/* -- Proofs finished, the suite, a long Run -- */
+
+/* The quiet half of a two-part segment: the unit after a count, the place after
+   a name, the clock after a verb. One step down, tabular, so it never jitters. */
+.jar-strip__sub {
+  color: var(--ui-fg-faint);
+  font-variant-numeric: tabular-nums;
+  margin-left: -0.1rem;
+}
+
+.jar-strip__seg--progress .jar-strip__label,
+.jar-strip__seg--run .jar-strip__sub,
+.jar-strip__seg--suite .jar-strip__sub {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.jar-strip__seg--progress { color: var(--ui-fg); }
+
+/* The ring is a fraction you read at a glance; the numbers beside it are exact.
+   Its fill is the clean verdict colour: what is filled is what has checked. */
+.jar-strip__meter {
+  width: 0.78rem;
+  height: 0.78rem;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.jar-strip__meter circle {
+  fill: none;
+  stroke-width: 2.1;
+}
+
+.jar-strip__meter-track { stroke: color-mix(in srgb, var(--ui-fg-faint) 32%, transparent); }
+
+.jar-strip__meter-fill {
+  stroke: var(--ide-status-clean);
+  stroke-linecap: round;
+}
+
+/* Context, so a caption like the keymap — until an earlier member fails. */
+.jar-strip__seg--suite { color: var(--ui-fg-muted); }
+.jar-strip__seg--suite.is-warning { color: var(--ide-status-warning); }
+.jar-strip__seg--suite.is-warning .jar-strip__sub {
+  color: color-mix(in srgb, var(--ide-status-warning) 65%, var(--ui-fg-faint));
+}
+
+/* The same working colour the checker uses while it checks. */
+.jar-strip__seg--run { color: var(--ide-status-checking); font-weight: 500; }
+
+.jar-strip__seg--runstop { color: var(--ui-fg-muted); margin-left: -0.3rem; }
+.jar-strip__seg--runstop.is-icon .jar-strip__icon { width: 0.78rem; height: 0.78rem; opacity: 0.9; }
+
+@media (hover: hover) and (pointer: fine) {
+  button.jar-strip__seg--runstop:hover { color: var(--ide-status-error); }
 }
 
 /* -- Edit history: the undo / redo / history tray and the timeline behind it -- */

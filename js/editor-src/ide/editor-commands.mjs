@@ -67,6 +67,18 @@ function declStarts() {
   return [...new Set(out)].sort((a, b) => a - b);
 }
 
+/** Starts of the proofs that still have a hole or an error, in document order. */
+function unfinishedStarts() {
+  const eng = global.CurrentEditor?.getSemanticEngine?.();
+  const p = eng && typeof eng.proofProgress === 'function' ? eng.proofProgress() : null;
+  return p ? p.unfinished.map((u) => u.from) : [];
+}
+
+function cycleUnfinished(view, forward) {
+  if (cycle(view, unfinishedStarts(), forward) !== false) return true;
+  return say('Every proof in this file is finished.');
+}
+
 /** `case` branch starts, from the syntax tree — a Beluga proof's real structure. */
 function caseBranchStarts(view) {
   const out = [];
@@ -166,6 +178,8 @@ const CUSTOM_COMMANDS = {
   'nav.prev-decl': (view) => cycle(view, declStarts(), false),
   'nav.next-case': (view) => cycle(view, caseBranchStarts(view), true),
   'nav.prev-case': (view) => cycle(view, caseBranchStarts(view), false),
+  'nav.next-unfinished': (view) => cycleUnfinished(view, true),
+  'nav.prev-unfinished': (view) => cycleUnfinished(view, false),
   'nav.jump-back': (view) => travelTo(view, -1),
   'nav.jump-forward': (view) => travelTo(view, 1),
 };

@@ -13,6 +13,7 @@
  * has no server (local development, the probes' static server), the account
  * button stays hidden and BelJar is exactly what it was.
  */
+import { avatarImage } from './avatar.mjs';
 import { createHttpTransport } from '../persist/sync/http-transport.mjs';
 
 export { roundIsSafe } from '../persist/sync/runner.mjs';
@@ -157,14 +158,11 @@ function initialNode(cls) {
  */
 function avatarNode(cls) {
   if (!(user && user.avatar)) return initialNode(cls);
-  const img = document.createElement('img');
-  img.className = cls;
-  img.alt = '';
-  img.referrerPolicy = 'no-referrer';
+  // An identicon is inset on its own background, a photo fills the circle (avatar.mjs).
+  const img = avatarImage(user.avatar, cls);
   img.addEventListener('error', () => {
     if (img.parentNode) img.replaceWith(initialNode(cls));
   }, { once: true });
-  img.src = user.avatar;
   return img;
 }
 

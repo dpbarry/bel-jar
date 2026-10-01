@@ -8,8 +8,9 @@
  * and therefore is:
  *
  *   caret position · selection size · the GOAL at the caret · how many holes are
- *   left · problems in words · what the checker is doing · how big the file's
- *   symbol table is · whether Orca is searching
+ *   left · how many proofs are finished · problems in words · what the checker
+ *   is doing · how big the file's symbol table is · whether Orca is searching ·
+ *   a long Run and its stop · the suite the file is checked in
  *
  * The goal and hole count are the point. A proof assistant's status line should
  * answer "how far am I from done", and BelJar surfaces that nowhere else without
@@ -36,19 +37,38 @@
  * to a keymap called "Emacs C-x"). Layers are not alternatives.
  */
 export const SEGMENT_ORDER = [
-  'keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'holes', 'problems',
-  'orca', 'symbols', 'spacer', 'tab', 'sync', 'undo', 'redo', 'history', 'checker',
+  'keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'progress', 'holes', 'problems',
+  'orca', 'run', 'runstop', 'symbols', 'spacer', 'tab', 'sync', 'suite', 'undo', 'redo', 'history', 'checker',
 ];
 
 export const DETAIL_LEVELS = ['compact', 'standard', 'detailed'];
 
 const PRESETS = {
-  compact: ['keymap', 'position', 'mode', 'macro', 'command', 'goal', 'holes', 'problems', 'orca', 'spacer', 'tab', 'sync', 'undo', 'redo', 'history', 'checker'],
-  standard: ['keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'holes', 'problems', 'orca', 'spacer', 'tab', 'sync', 'undo', 'redo', 'history', 'checker'],
+  compact: ['keymap', 'position', 'mode', 'macro', 'command', 'goal', 'holes', 'problems', 'orca', 'run', 'runstop', 'spacer', 'tab', 'sync', 'undo', 'redo', 'history', 'checker'],
+  standard: ['keymap', 'position', 'mode', 'macro', 'command', 'selection', 'goal', 'progress', 'holes', 'problems', 'orca', 'run', 'runstop', 'spacer', 'tab', 'sync', 'suite', 'undo', 'redo', 'history', 'checker'],
   detailed: SEGMENT_ORDER,
 };
 
 const GOAL_MAX = 52;
+
+/** A Run shorter than this finishes before a clock would be worth reading. */
+export const RUN_QUIET_MS = 2000;
+
+/** `9s`, `1:04`, `12:30`: whole seconds, never a moving decimal. */
+export function runClock(ms) {
+  const s = Math.floor(Math.max(0, ms) / 1000);
+  return s < 60 ? s + 's' : Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+/** `a, b and c` / `a, b, c and 4 more` — a tooltip's worth of names, never a paragraph. */
+function nameList(names, max = 3) {
+  if (names.length <= max) {
+    return names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  }
+  return names.slice(0, max).join(', ') + ' and ' + (names.length - max) + ' more';
+}
+
+const runVisible = (s) => !!(s.run && s.run.elapsedMs >= RUN_QUIET_MS);
 
 function plural(n, one, many) {
   return n + ' ' + (n === 1 ? one : many);
@@ -224,6 +244,29 @@ const BUILDERS = {
     };
   },
 
+  /**
+   * How many PROOFS are finished — `rec`s and `proof`s with no hole and no
+   * error. ⛔ Not a hole count: that is the next segment's fact, and one
+   * unfinished proof can hold many holes, or none and a type error.
+   *
+   * Only while there is something left to do, and only with two proofs or more:
+   * `0/1` says no more than the hole or error beside it.
+   */
+  progress(s) {
+    const p = s.proofs;
+    if (!s.hasFile || !p || p.total < 2 || p.done >= p.total) return null;
+    const names = (p.unfinished || []).map((u) => u.name).filter(Boolean);
+    return {
+      key: 'progress',
+      text: p.done + '/' + p.total,
+      sub: 'proved',
+      meter: p.done / p.total,
+      title: (names.length ? 'Unfinished: ' + nameList(names) + '\n' : '') + 'Go to the next unfinished proof',
+      command: 'nav.next-unfinished',
+      action: 'next-unfinished',
+    };
+  },
+
   holes(s) {
     const n = s.holes || 0;
     if (!n) return null;
@@ -269,6 +312,27 @@ const BUILDERS = {
       tone: 'busy',
       action: 'open-harpoon',
     };
+  },
+
+  /**
+   * An explicit Run, once it has gone on long enough to wonder about. The
+   * output panel has its own progress bar; this is the one that is always on
+   * screen, and the only place with a way to stop.
+   */
+  run(s) {
+    if (!runVisible(s)) return null;
+    return {
+      key: 'run',
+      text: 'Running',
+      sub: runClock(s.run.elapsedMs),
+      tone: 'busy',
+      title: s.run.label ? 'Running ' + s.run.label : 'Running',
+    };
+  },
+
+  runstop(s) {
+    if (!runVisible(s)) return null;
+    return { key: 'runstop', icon: 'stop', title: 'Stop run', command: 'run.stop', action: 'run-stop' };
   },
 
   symbols(s) {
@@ -329,6 +393,33 @@ const BUILDERS = {
       return { key: 'sync', text: 'Couldn’t sync', tone: 'error', title: 'Sync now', action: 'sync-now' };
     }
     return null;
+  },
+
+  /**
+   * The suite this file is checked in, and where in it. Nothing else on screen
+   * says so: the tabs and the header name files and the project, never the
+   * .cfg whose earlier members this file is checked after. An earlier member
+   * that fails is this file's problem too, so it turns the segment amber.
+   */
+  suite(s) {
+    const x = s.suite;
+    if (!s.hasFile || !x || !x.name) return null;
+    const upstream = x.upstreamErrors || [];
+    const placed = x.count > 1 && x.index >= 0;
+    const lines = [
+      placed ? 'File ' + (x.index + 1) + ' of ' + x.count + ' in suite ' + x.name : 'Suite ' + x.name,
+      upstream.length ? (upstream.length === 1 ? 'An earlier file has errors: ' : 'Earlier files have errors: ') + nameList(upstream) : '',
+      'Reveal in Explorer',
+    ];
+    return {
+      key: 'suite',
+      text: x.name,
+      sub: placed ? (x.index + 1) + '/' + x.count : '',
+      tone: upstream.length ? 'warning' : 'plain',
+      title: lines.filter(Boolean).join('\n'),
+      command: 'view.reveal-file',
+      action: 'reveal-file',
+    };
   },
 
   /**

@@ -216,10 +216,21 @@
       return id ? Persist.getFileById(id) : null;
     }
 
+    // The status strip's suite segment. A .cfg is the suite itself, not a member of one.
+    function publishSuite(file) {
+      const strip = typeof StatusStrip !== 'undefined' ? StatusStrip : null;
+      if (!strip || !strip.setSuite) return;
+      const m = file && !/\.cfg$/i.test(file.name) ? activeSuiteMembership(file.name) : null;
+      strip.setSuite(m && m.member
+        ? { name: m.cfg.slice(m.cfg.lastIndexOf('/') + 1).replace(/\.cfg$/i, ''), index: m.index, count: m.count }
+        : null);
+    }
+
     function updateRunButtonTooltip() {
+      const file = activeFileRecord();
+      publishSuite(file);
       const btn = document.getElementById('btn-load');
       if (!btn) return;
-      const file = activeFileRecord();
       if (file && /\.cfg$/i.test(file.name)) {
         setTip(btn, 'Run suite');
       } else if (file && moduleNameFor(file.id)) {

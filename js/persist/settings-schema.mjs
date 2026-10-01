@@ -96,8 +96,8 @@ export const SETTINGS = [
   // ── Keybindings and the keyboard ────────────────────────────────────────
   { id: 'keybindings', section: 'keybindings', default: {}, type: 'json', normalize: cleanKeybindings },
   { id: 'keymapStyle', section: 'keybindings', default: 'default', values: ['default', 'vim', 'emacs'] },
-  // null: the status strip picks its own default for the keymap style.
-  { id: 'statusStrip', section: 'keybindings', default: null, values: [null, 'off', 'compact', 'standard', 'detailed'] },
+  // How much the status strip says. It is always there: no Off (2026-09-30).
+  { id: 'statusStrip', section: 'keybindings', default: 'standard', values: ['compact', 'standard', 'detailed'] },
   { id: 'vimLeader', section: 'keybindings', default: '\\', values: ['\\', ',', ' '] },
   { id: 'vimInsertEscape', section: 'keybindings', default: '', values: ['', 'jk', 'jj', 'kj'] },
   { id: 'emacsYankSource', section: 'keybindings', default: 'system', values: ['system', 'kill-ring'] },

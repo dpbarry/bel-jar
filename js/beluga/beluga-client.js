@@ -638,6 +638,22 @@
     if (activeLoad === loadInfo) activeLoad = null;
   }
 
+  // Stop the explicit Run. Only a worker load can be stopped: on the main thread
+  // the page is blocked for the whole run and nothing could ask. A primary slot
+  // still fetching its script is left to finish warming — the load itself sees
+  // it is no longer active and rejects as cancelled.
+  function cancelLoad() {
+    if (cfg.thread !== 'worker' || !activeLoad) return false;
+    clearActiveLoad(activeLoad);
+    invalidatePrimaryFingerprint();
+    disposePrimaryStandby(makeCancelledError(LOAD_CANCELLED_MSG));
+    if (primarySlot && primarySlot.worker) {
+      terminateSlot(primarySlot, makeCancelledError(LOAD_CANCELLED_MSG));
+      primarySlot = null;
+    }
+    return true;
+  }
+
   function handleStaleCompletedLoad(loadInfo) {
     clearActiveLoad(loadInfo);
     invalidatePrimaryFingerprint();
@@ -1132,6 +1148,8 @@
     load: function (code, hooks) {
       return dispatchLoad(code, hooks);
     },
+
+    cancelLoad: cancelLoad,
 
     check: function (code, hooks) {
       return dispatchCheck(code, hooks);

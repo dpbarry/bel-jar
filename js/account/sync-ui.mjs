@@ -15,28 +15,15 @@
  */
 import { openReviewDifferences, refreshReviewDifferences, resolveDifference } from '../ui/review-differences.mjs';
 import { openReviewOffline } from '../ui/review-offline.mjs';
+import { cloudLook, cloudSvg } from './cloud-glyphs.mjs';
+
+export { cloudLook };
 
 const g = typeof window !== 'undefined' ? window : globalThis;
 
 let summary = null;
 let wasOffline = false;
 let marks = null;
-
-// Drawn like the header's other icons: 24-unit box, 1.5 stroke, round caps.
-const CLOUD = 'M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z';
-const GLYPHS = {
-  synced: `<path d="${CLOUD}"/><path d="m9.5 14 2 2 4-4"/>`,
-  syncing: `<path d="${CLOUD}"/><path class="sync-cloud__arrow" d="M12.5 17v-5m-2 2 2-2 2 2"/>`,
-  offline: '<path d="m2 2 20 20"/><path d="M5.78 5.78A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.3-.19"/><path d="M21.53 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7 7 0 0 0 10 5.07"/>',
-  alert: `<path d="${CLOUD}"/><path d="M12.5 11.5v3"/><path d="M12.5 17h.01"/>`,
-};
-
-/** How the cloud looks for a state: waiting for a round and in one read the same. */
-export function cloudLook(state) {
-  if (state === 'pending' || state === 'syncing') return 'syncing';
-  if (state === 'differs' || state === 'error' || state === 'held') return 'alert';
-  return state === 'offline' ? 'offline' : 'synced';
-}
 
 function plural(n, one, many) {
   return n + ' ' + (n === 1 ? one : many);
@@ -72,15 +59,27 @@ export function cloudWords(s, now = Date.now()) {
   }
 }
 
+// The look on screen: the glyph is redrawn only when it changes, so the rising
+// arrow is never restarted by a summary that says the same thing.
+let shownLook = null;
+
 function renderCloud(s) {
   const btn = document.getElementById('btn-sync');
   if (!btn) return;
   btn.hidden = !s.signedIn;
-  if (!s.signedIn) return;
+  if (!s.signedIn) {
+    shownLook = null;
+    return;
+  }
   const look = cloudLook(s.state);
-  btn.dataset.state = s.state === 'differs' || s.state === 'held' ? 'differs' : look;
-  btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-    + GLYPHS[look] + '</svg>';
+  // Waiting for the quiet spell reads apart from a round in flight: its arrow rests.
+  btn.dataset.state = s.state === 'differs' || s.state === 'held' ? 'differs' : s.state === 'pending' ? 'pending' : look;
+  if (look !== shownLook) {
+    // Coming to synced from anything but the first paint: the check draws itself in.
+    btn.classList.toggle('is-arriving', look === 'synced' && shownLook !== null);
+    btn.innerHTML = cloudSvg(look);
+    shownLook = look;
+  }
   const tip = cloudWords(s).tip;
   btn.setAttribute('aria-label', tip);
   if (g.Tooltips && typeof g.Tooltips.set === 'function') g.Tooltips.set(btn, tip);

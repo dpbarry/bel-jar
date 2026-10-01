@@ -226,6 +226,54 @@ expect(held && held.text === 'Changes made offline' && held.action === 'review-o
   'edits held for the person: the strip says so, and opens the review, whatever the notices setting');
 expect(find(syncOf({ state: 'error' }), 'sync').action === 'sync-now', 'could not sync: the strip offers Sync now');
 
+// ── proofs finished: a per-proof measure, never a hole count ─────────────────
+const proofsOf = (done, total, names = []) => ({
+  ...base, holes: 3, proofs: { done, total, unfinished: names.map((name) => ({ name })) },
+});
+const prog = find(proofsOf(5, 8, ['a', 'b', 'c']), 'progress');
+expect(prog.text === '5/8' && prog.sub === 'proved', 'the count and its unit are separate parts');
+expect(prog.meter === 5 / 8, 'the ring carries the same fraction');
+expect(prog.action === 'next-unfinished' && prog.command === 'nav.next-unfinished', 'clicking goes to the next unfinished proof');
+expect(prog.title.startsWith('Unfinished: a, b and c\n'), 'the tooltip names what is left');
+expect(prog.title.indexOf('hole') < 0, 'and says nothing about holes — that is the next segment');
+expect(find(proofsOf(1, 6, ['a', 'b', 'c', 'd', 'e']), 'progress').title.startsWith('Unfinished: a, b, c and 2 more'),
+  'a long list is cut, not wrapped');
+expect(find(proofsOf(8, 8), 'progress') === undefined, 'all proved: silent, the checker already says Checked');
+expect(find(proofsOf(0, 1, ['a']), 'progress') === undefined, 'one proof: 0/1 adds nothing to its hole or error');
+expect(find(proofsOf(1, 3, ['a']), 'holes').text === '3 holes', 'the hole count stands beside it, unchanged');
+const progKeys = keys(proofsOf(1, 3, ['a']));
+expect(progKeys.indexOf('progress') === progKeys.indexOf('holes') - 1, 'progress reads first, then the holes inside it');
+expect(find(proofsOf(1, 3, ['a']), 'progress', 'compact') === undefined, 'Compact keeps to the hole count');
+
+// ── the suite: context nothing else on screen shows ──────────────────────────
+const suiteOf = (x) => ({ ...base, suite: { name: 'fvnat', index: 2, count: 7, upstreamErrors: [], ...x } });
+const su = find(suiteOf({}), 'suite');
+expect(su.text === 'fvnat' && su.sub === '3/7', 'the suite and the place in it');
+expect(su.tone === 'plain' && su.action === 'reveal-file' && su.command === 'view.reveal-file', 'a caption that reveals the file');
+expect(su.title === 'File 3 of 7 in suite fvnat\nReveal in Explorer', 'the tooltip spells the place out');
+const suBad = find(suiteOf({ upstreamErrors: ['a.bel'] }), 'suite');
+expect(suBad.tone === 'warning' && suBad.title.indexOf('An earlier file has errors: a.bel') >= 0,
+  'a failing earlier member is this file\'s problem too');
+expect(find(suiteOf({ count: 1, index: 0 }), 'suite').sub === '', 'a one-file suite has no place to state');
+expect(find(base, 'suite') === undefined, 'no suite, no segment');
+expect(find({ ...suiteOf({}), hasFile: false }, 'suite') === undefined, 'no file, no suite');
+const suKeys = keys({ ...suiteOf({}), undoDepth: 1 });
+expect(suKeys.indexOf('spacer') < suKeys.indexOf('suite') && suKeys.indexOf('suite') < suKeys.indexOf('undo'),
+  'right-hand group, before the edit tray');
+
+// ── a long Run: timed, and stoppable ─────────────────────────────────────────
+const runOf = (ms) => ({ ...base, run: { label: 'suite fvnat', elapsedMs: ms } });
+expect(find(runOf(1500), 'run') === undefined && find(runOf(1500), 'runstop') === undefined,
+  'a quick Run finishes before a clock would be worth reading');
+const rn = find(runOf(12400), 'run');
+expect(rn.text === 'Running' && rn.sub === '12s' && rn.title === 'Running suite fvnat', 'a verb, a clock, what is running');
+expect(find(runOf(64000), 'run').sub === '1:04', 'minutes past a minute');
+const stop = find(runOf(3000), 'runstop');
+expect(stop.icon === 'stop' && stop.action === 'run-stop' && stop.command === 'run.stop', 'a stop button beside it');
+for (const level of DETAIL_LEVELS) {
+  expect(keys(runOf(3000), level).indexOf('runstop') >= 0, `${level} always offers the stop`);
+}
+
 // ── ⛔ no tone may be styled NOWHERE ───────────────────────────────
 // A tone is a CLAIM ON A STYLESHEET. REC declared `error` for weeks while
 // `is-error` had rules under `--problems` and `--checker` only, so the one chip
@@ -239,6 +287,8 @@ const RIDES_BASE_RULE = {
   goal: ['goal'],
   holes: ['holes'],
   orca: ['busy'],
+  run: ['busy'],
+  suite: ['plain'],
   history: ['plain'],
 };
 const STATES = [
@@ -258,6 +308,10 @@ const STATES = [
   { ...base, undoDepth: 3, redoDepth: 1 },
   { ...base, tabConflict: true },
   { ...base, style: 'emacs', mark: true },
+  proofsOf(1, 3, ['a']),
+  suiteOf({}),
+  suiteOf({ upstreamErrors: ['a.bel'] }),
+  runOf(5000),
   ...['differs', 'offline', 'held', 'error'].map((state) => syncOf({ state, differs: state === 'differs' ? file1 : [] })),
   ...['NORMAL', 'INSERT', 'VISUAL', 'V-LINE', 'V-BLOCK', 'REPLACE']
     .map((m) => ({ ...base, style: 'vim', mode: m })),

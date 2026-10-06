@@ -1,3 +1,5 @@
+import { runVerdict, leftDuringRun, runNotice } from './run-notice.mjs';
+
 const global = globalThis;
 var belugaBusy = false;
   var belugaMode = Settings.get('belugaMode');
@@ -317,6 +319,32 @@ var belugaBusy = false;
     }
   }
 
+  // ── It finished while you were elsewhere (plan v6 phase 04, n1) ────────────
+  // A run that ends after you left the file it started from, or the tab, leaves
+  // one notice with its verdict, opening the first error (run-notice.mjs).
+  // Nothing for a run you watched finish: the REPL said it.
+
+  /** Where the person is: the open file, and whether the tab can be seen. */
+  function whereNow() {
+    var P = typeof Persist !== 'undefined' ? Persist : null;
+    return {
+      fileId: P && P.getActiveFileId ? P.getActiveFileId() : null,
+      hidden: typeof document !== 'undefined' && document.visibilityState === 'hidden',
+    };
+  }
+
+  function noteIfLeft(start, raw, label) {
+    var N = typeof Notifications !== 'undefined' ? Notifications : null;
+    if (!N || typeof N.emit !== 'function' || !leftDuringRun(start, whereNow())) return;
+    var files = (typeof Persist !== 'undefined' && Persist.listFiles && Persist.listFiles()) || [];
+    function fileOf(path) {
+      for (var i = 0; i < files.length; i++) if (files[i].name === path) return files[i].id;
+      for (var j = 0; j < files.length; j++) if (baseName(files[j].name) === baseName(path)) return files[j].id;
+      return null;
+    }
+    N.emit(runNotice(runVerdict(raw), label, fileOf));
+  }
+
   // Shared load pipeline. `code` is what Beluga gets; `spans` is the line map
   // for whole-project remapping (null for single-file / prelude runs).
   async function runLoad(code, spans, opts) {
@@ -326,6 +354,8 @@ var belugaBusy = false;
       return;
     }
     var caption = opts.caption || ('run ' + (opts.displayName || 'input.bel'));
+    var startedAt = whereNow();
+    var noticeLabel = opts.label || opts.displayName || 'the run';
     beginRunTurn(caption);
     if (typeof ReplOutput !== 'undefined' && ReplOutput.beginRunSkeleton) {
       ReplOutput.beginRunSkeleton();
@@ -363,6 +393,7 @@ var belugaBusy = false;
       }
       setBelugaBusy(false);
       void RunProgress.complete({ lines: lineCount, ms: performance.now() - t0 });
+      noteIfLeft(startedAt, raw, noticeLabel);
     } catch (e) {
       setBelugaBusy(false);
       RunProgress.fail();
@@ -370,7 +401,9 @@ var belugaBusy = false;
         await ReplOutput.dismissRunSkeleton();
       }
       if (!isCancelled(e)) {
-        Toasts.error(formatLoadError(e, spans, opts.prelude, opts.displayName), { duration: 0, closable: true });
+        var loadError = formatLoadError(e, spans, opts.prelude, opts.displayName);
+        Toasts.error(loadError, { duration: 0, closable: true });
+        noteIfLeft(startedAt, String(loadError), noticeLabel);
       }
     } finally {
       endRunTurn();
@@ -546,6 +579,8 @@ var belugaBusy = false;
     }
 
     setBelugaBusy(true, { label: 'the project' });
+    var projectStart = whereNow();
+    var projectOutput = '';
     var t0 = performance.now();
     if (shouldShowRunProgress()) RunProgress.start({ op: 'load' });
     var failures = 0;
@@ -568,6 +603,7 @@ var belugaBusy = false;
         if (!String(raw).trim()) {
           raw = '## Type Reconstruction begin: ' + job.dev.name + ' ##\n## Type Reconstruction done:  ' + job.dev.name + ' ##';
         }
+        projectOutput += raw + '\n';
         if (typeof ReplOutput !== 'undefined' && ReplOutput.resolveRunOutput) {
           await ReplOutput.resolveRunOutput(raw);
         } else {
@@ -584,6 +620,7 @@ var belugaBusy = false;
         }
         failures++;
         var msg = applyOutputNaming(e && e.message ? String(e.message) : String(e), job.spans, null, job.dev.name);
+        projectOutput += msg + '\n';
         if (typeof ReplOutput !== 'undefined' && ReplOutput.resolveRunOutput) {
           await ReplOutput.resolveRunOutput(msg);
         } else {
@@ -600,6 +637,7 @@ var belugaBusy = false;
       Toasts.error(failures + ' of ' + jobs.length + ' developments failed type-checking.',
         { duration: 0, closable: true });
     }
+    if (!cancelled) noteIfLeft(projectStart, projectOutput, 'the project');
   }
 
   // Back-compat aliases.

@@ -90,6 +90,54 @@ expect(sAll.completable === 0 && sAll.rate === null, 'a fully authored proof has
 // ── strength is read from the declaration and never assumed ───────────────────
 expect(strengthOf('rec f : T =\n/ total 1 /\nfn n => ?;') === STRENGTH.total, 'a pragma means total');
 expect(strengthOf('rec f : T =\nfn n => ?;') === STRENGTH.typedOnly, 'no pragma means well-typed only');
+// Regression, found by the harness: ~93 corpus declarations carry a COMMENTED-OUT
+// pragma. Beluga enforces nothing on them, and calling them total claimed coverage
+// and termination for 100 proofs from which any case could be deleted unnoticed.
+expect(
+  strengthOf('rec ca : T =\n% / total e (ca _ _ _ _ e) /\nmlam g => ?;') === STRENGTH.typedOnly,
+  'a commented-out pragma is not a totality declaration',
+);
+expect(
+  strengthOf('rec f : T = %{ / total 1 / }%\nfn n => ?;') === STRENGTH.typedOnly,
+  'nor is one inside a block comment',
+);
+expect(
+  strengthOf('rec trans : T =\n/ trust / % / total d1 (trans g q s t d1 d2 )/\nmlam Q => ?;') === STRENGTH.typedOnly,
+  'a trusted declaration with its old measure in a comment is not checked either',
+);
+expect(
+  strengthOf('rec f : T =\n/ total d (f d) / % decreasing on the derivation\nfn d => ?;') === STRENGTH.total,
+  'a real pragma beside a comment still counts',
+);
+
+// ── a file-level coverage pragma is a third strength, and the hazardous one ───
+// Measured: under `--coverage` alone Beluga rejects a missing case and ACCEPTS a
+// proof that calls itself on its unchanged argument.
+const untotalied = 'rec f : T =\nfn n => ?;';
+expect(
+  strengthOf(untotalied, '--coverage\nLF nat : type = | z : nat;\n' + untotalied) === STRENGTH.covering,
+  'a coverage pragma without a totality declaration is covering, not total',
+);
+expect(
+  !STRENGTH.covering.guarantees.includes('terminating'),
+  'covering does not promise termination, which is exactly what it does not check',
+);
+expect(
+  strengthOf(untotalied, '% --coverage\n' + untotalied) === STRENGTH.typedOnly,
+  'a commented-out coverage pragma turns nothing on',
+);
+// A line comment hides the pragma from a line-anchored match on its own; a block
+// comment does not, so this is the case that needs the comment stripper.
+expect(
+  strengthOf(untotalied, '%{ switched off for now:\n--coverage\n}%\n' + untotalied) === STRENGTH.typedOnly,
+  'nor does one inside a block comment',
+);
+expect(
+  strengthOf('rec f : T =\n/ total 1 /\nfn n => ?;', '--coverage\n') === STRENGTH.total,
+  'a totality declaration outranks the file pragma',
+);
+expect(strengthOf(untotalied) === STRENGTH.typedOnly, 'with no program to read, an untotalied proof is typed only');
+expect(Object.keys(STRENGTH).length === 3, 'three strengths: a fourth belongs in STRENGTH');
 expect(
   STRENGTH.typedOnly.guarantees.length === 1 && STRENGTH.typedOnly.guarantees[0] === 'well-typed',
   'without a totality declaration Beluga checks neither coverage nor termination, and the table says so',

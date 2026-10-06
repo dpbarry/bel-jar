@@ -15,6 +15,7 @@ import { startRename, renameReachAt, renameReachTooltip } from './rename.mjs';
 import { findReferences, canFindReferences } from './refs-panel.mjs';
 import { holeAt, splitTargetsOf, canIntro, runIntro, runFill, runSplit } from '../prover/hole-actions.mjs';
 import { pasteSystemClipboard } from './clipboard-bridge.mjs';
+import { caseCommandState, acceptFilledCase, fillCaseNow, dismissFilledCase } from './case-ghosts.mjs';
 
 function canGoToDefinition(view, pos, nav) {
   if (nav?.symbolId && !nav.onDefinition) return true;
@@ -247,6 +248,23 @@ function buildProveMenuItems(view, hit) {
   return items;
 }
 
+// The case-completion group for the proof under the click: accept or dismiss the
+// filled cases there, or search now. Rows come and go with what there is to act on;
+// the commands' own `when` says the same thing about the caret, which the click moved.
+function buildCaseMenuItems(view, pos) {
+  const st = caseCommandState(view.state, pos);
+  if (!st.inProof) return [];
+  const items = [{ type: 'separator' }];
+  if (st.hasFilled) {
+    items.push(cmdRow('prover.case-accept', 'Accept Filled Case', '', { onSelect: () => acceptFilledCase(view, pos) }));
+  }
+  items.push(cmdRow('prover.case-fill', 'Fill This Case', '', { onSelect: () => fillCaseNow(view, pos) }));
+  if (st.hasFilled) {
+    items.push(cmdRow('prover.case-dismiss', 'Dismiss Filled Case', '', { onSelect: () => dismissFilledCase(view, pos) }));
+  }
+  return items;
+}
+
 // Assemble the menu items for the position clicked. `pos` is the document
 // offset under the pointer (already resolved to the click point).
 function buildMenuItems(view, pos) {
@@ -258,6 +276,7 @@ function buildMenuItems(view, pos) {
   if (hit) {
     for (const it of buildProveMenuItems(view, hit)) items.push(it);
   }
+  for (const it of buildCaseMenuItems(view, pos)) items.push(it);
 
   // --- Identifier-scoped actions ---
   if (hasSymbolMenuContext(view, pos, nav)) {

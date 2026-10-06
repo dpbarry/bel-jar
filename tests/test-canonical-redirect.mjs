@@ -1,7 +1,8 @@
-// BelJar has one address: beljar.deanbarry.com. index.html carries a small
-// inline script that sends the old GitHub Pages address there, same page and
-// all. This runs THAT script, extracted from index.html as shipped, against a
-// fake location for every host it will ever meet.
+// BelJar has one address: beljar.deanbarry.com. Both documents (home,
+// index.html; the editor, edit.html) carry a small inline script that sends the
+// old GitHub Pages address there, same page and all. This runs THAT script,
+// extracted from each document as shipped, against a fake location for every
+// host it will ever meet.
 //
 // The dangerous direction is the one that matters most: if it ever fired on the
 // canonical host it would redirect to itself forever and the site would be
@@ -12,7 +13,6 @@ import { dirname, join } from 'node:path';
 import vm from 'node:vm';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const html = readFileSync(join(root, 'index.html'), 'utf8');
 
 let n = 0;
 function expect(cond, msg) {
@@ -22,16 +22,20 @@ function expect(cond, msg) {
   process.exit(1);
 }
 
-// The one inline script that names the old host.
-const at = html.indexOf("'dpbarry.github.io'");
-expect(at > 0, 'index.html carries the GitHub Pages redirect');
-const open = html.lastIndexOf('<script>', at);
-const close = html.indexOf('</script>', at);
-expect(open > 0 && close > at, 'the redirect is a plain inline <script>');
-const code = html.slice(open + '<script>'.length, close);
-
-// It must run before anything boots: ahead of every other script on the page.
-expect(open < html.indexOf('<script src='), 'the redirect runs before any other script');
+// The one inline script that names the old host, in each document.
+function redirectOf(file) {
+  const html = readFileSync(join(root, file), 'utf8');
+  const at = html.indexOf("'dpbarry.github.io'");
+  expect(at > 0, `${file} carries the GitHub Pages redirect`);
+  const open = html.lastIndexOf('<script>', at);
+  const close = html.indexOf('</script>', at);
+  expect(open > 0 && close > at, `in ${file} the redirect is a plain inline <script>`);
+  // It must run before anything boots: ahead of every other script on the page.
+  expect(open < html.indexOf('<script src='), `in ${file} the redirect runs before any other script`);
+  return html.slice(open + '<script>'.length, close);
+}
+const code = redirectOf('index.html');
+expect(redirectOf('edit.html') === code, 'the editor carries the very same script as home');
 
 function visit(href) {
   const u = new URL(href);
@@ -54,6 +58,8 @@ expect(visit('https://dpbarry.github.io/bel-jar/') === CANON + '/', 'the old roo
 expect(visit('https://dpbarry.github.io/bel-jar') === CANON + '/', 'without the trailing slash too');
 expect(visit('https://dpbarry.github.io/bel-jar/index.html?p=abc#goal-3') === CANON + '/index.html?p=abc#goal-3',
   'a deep link keeps its page, query and hash');
+expect(visit('https://dpbarry.github.io/bel-jar/edit.html?p=p_01m3xq1ph808nx8xjd4jj1rhcx') === CANON + '/edit.html?p=p_01m3xq1ph808nx8xjd4jj1rhcx',
+  'an old link to the editor lands on the editor, on the same project id');
 expect(visit('https://dpbarry.github.io/bel-jar/library/manifest.json') === CANON + '/library/manifest.json',
   'the /bel-jar project prefix is dropped, and only that');
 
@@ -61,6 +67,8 @@ expect(visit('https://dpbarry.github.io/bel-jar/library/manifest.json') === CANO
 for (const href of [
   CANON + '/',
   CANON + '/index.html?p=abc#x',
+  CANON + '/edit?p=p_01m3xq1ph808nx8xjd4jj1rhcx',
+  'http://localhost:8871/edit.html',
   'http://localhost:8871/index.html',
   'http://127.0.0.1:8871/index.html',
   'https://bel-jar.deanbarry100.workers.dev/',

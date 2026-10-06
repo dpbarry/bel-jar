@@ -12,8 +12,12 @@
  * ⛔ Every text is checked against its hash before it is stored, and a text
  * is indexed in D1 only after R2 holds it: the index never names a text R2
  * does not have, so a manifest that passed the `missing` check can be read.
+ *
+ * A commit may carry the texts it names (`texts`): a push is one request.
+ * They are taken under the same rules as `putBlobs`, and only those the
+ * manifest names; what is still missing after them is answered as `missing`.
  */
-import { sha256, normalizeManifest, isHash } from '../js/persist/sync/protocol.mjs';
+import { sha256, normalizeManifest, isHash, versionsLimit, QUOTA } from '../js/persist/sync/protocol.mjs';
 
 // What one request may carry. Generous for proofs; small enough that no
 // single request can make the Worker run long.
@@ -29,7 +33,9 @@ export const LIMITS = {
 // D1 binds at most 100 parameters to a statement.
 const IN_CHUNK = 90;
 
-const textKey = (account, hash) => `t/${account}/${hash}`;
+/** Where an account's texts are in R2: every key under it is one of its texts (deletion.mjs lists them). */
+export const textPrefix = (account) => `t/${account}/`;
+const textKey = (account, hash) => textPrefix(account) + hash;
 const bytes = (s) => new TextEncoder().encode(s).length;
 
 function validCommit(req) {
@@ -37,14 +43,31 @@ function validCommit(req) {
     && Number.isInteger(req.base) && req.base >= 0;
 }
 
+/** A batch of texts as one request may carry them: null when any is malformed or over a limit. */
+async function checkedTexts(raw, hash) {
+  const entries = Object.entries(raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {});
+  if (entries.length > LIMITS.putTexts) return null;
+  for (const [h, text] of entries) {
+    if (!isHash(h) || typeof text !== 'string' || bytes(text) > LIMITS.textBytes || (await hash(text)) !== h) return null;
+  }
+  return entries;
+}
+
 /**
- * @param {{ db: D1Database, texts: R2Bucket, hash?: (text: string) => Promise<string>, now?: () => number }} o
+ * @param {{ db: D1Database, texts: R2Bucket, hash?: (text: string) => Promise<string>, now?: () => number, quota?: object }} o
  */
 export function createSyncStore(o) {
   const db = o.db;
   const r2 = o.texts;
   const hash = o.hash || sha256;
   const now = o.now || (() => Date.now());
+  const quota = Object.assign({}, QUOTA, o.quota || {});
+
+  /** The account's counts (migration 0005): { projects, text_bytes }. */
+  async function usageOf(account) {
+    const u = await db.prepare('SELECT projects, text_bytes FROM usage WHERE account = ?').bind(account).first();
+    return u || { projects: 0, text_bytes: 0 };
+  }
 
   async function project(pid) {
     return db.prepare('SELECT owner, head FROM projects WHERE id = ?').bind(pid).first();
@@ -70,18 +93,44 @@ export function createSyncStore(o) {
 
   /**
    * Move a head from `base` to `base + 1` in one transaction, writing the
-   * version row with it. `create` first makes the project row (a first commit).
+   * version row with it. `create` first makes the project row (a first commit);
+   * `counted`, after it, moves the account's count in the same transaction (its
+   * `changes()` is the version row's: it counts only a head that moved).
    * True when it moved.
    */
-  async function advance(table, keyCol, key, owner, base, versionRow, create) {
+  async function advance(table, keyCol, key, owner, base, versionRow, create, counted) {
     const stmts = [];
     if (create) stmts.push(create);
     stmts.push(owner == null
       ? db.prepare(`UPDATE ${table} SET head = ? WHERE ${keyCol} = ? AND head = ?`).bind(base + 1, key, base)
       : db.prepare(`UPDATE ${table} SET head = ? WHERE ${keyCol} = ? AND head = ? AND owner = ?`).bind(base + 1, key, base, owner));
     stmts.push(versionRow);
+    const at = stmts.length - 1;
+    if (counted) stmts.push(counted);
     const results = await db.batch(stmts);
-    return results[results.length - 1].meta.changes === 1;
+    return results[at].meta.changes === 1;
+  }
+
+  /**
+   * Store checked texts: R2 first, then the index (the index never names what
+   * R2 lacks). Only the ones the account does not hold are stored and counted;
+   * refused 'quota-texts', storing nothing, when they would pass its limit.
+   */
+  async function keep(account, entries) {
+    if (!entries.length) return { ok: true };
+    const have = await held(account, entries.map(([h]) => h));
+    const fresh = entries.filter(([h]) => !have.has(h));
+    if (!fresh.length) return { ok: true };
+    const adding = fresh.reduce((sum, [, text]) => sum + bytes(text), 0);
+    if ((await usageOf(account)).text_bytes + adding > quota.textBytes) return { ok: false, error: 'quota-texts' };
+    for (const [h, text] of fresh) {
+      await r2.put(textKey(account, h), text, { httpMetadata: { contentType: 'text/plain; charset=utf-8' } });
+      await db.prepare('INSERT OR IGNORE INTO texts (account, hash, size, created_at) VALUES (?, ?, ?, ?)')
+        .bind(account, h, bytes(text), now()).run();
+    }
+    await db.prepare('INSERT INTO usage (account, projects, text_bytes) VALUES (?, 0, ?) '
+      + 'ON CONFLICT (account) DO UPDATE SET text_bytes = usage.text_bytes + excluded.text_bytes').bind(account, adding).run();
+    return { ok: true };
   }
 
   function transport(account) {
@@ -107,12 +156,15 @@ export function createSyncStore(o) {
     }
 
     return {
-      async heads() {
+      async heads(o) {
         const rows = await db.prepare(
           'SELECT p.id AS id, p.head AS version, v.deleted AS deleted FROM projects p '
           + 'JOIN versions v ON v.project = p.id AND v.version = p.head WHERE p.owner = ?',
         ).bind(account).all();
-        return rows.results.map((r) => ({ id: r.id, version: r.version, deleted: !!r.deleted }));
+        const list = rows.results.map((r) => ({ id: r.id, version: r.version, deleted: !!r.deleted }));
+        if (!(o && o.settings === true)) return list;
+        const s = await db.prepare('SELECT head FROM settings_heads WHERE account = ?').bind(account).first();
+        return { projects: list, settings: s && s.head ? s.head : 0 };
       },
 
       async head(pid) {
@@ -139,19 +191,10 @@ export function createSyncStore(o) {
 
       async putBlobs(pid, texts) {
         if (!(await mayWrite(pid))) return { ok: false, error: 'forbidden' };
-        const entries = Object.entries(texts && typeof texts === 'object' ? texts : {});
-        if (entries.length > LIMITS.putTexts) return { ok: false, error: 'too-many' };
-        for (const [h, text] of entries) {
-          if (!isHash(h) || typeof text !== 'string' || bytes(text) > LIMITS.textBytes || (await hash(text)) !== h) {
-            return { ok: false, error: 'bad-text' };
-          }
-        }
-        for (const [h, text] of entries) {
-          await r2.put(textKey(account, h), text, { httpMetadata: { contentType: 'text/plain; charset=utf-8' } });
-          await db.prepare('INSERT OR IGNORE INTO texts (account, hash, size, created_at) VALUES (?, ?, ?, ?)')
-            .bind(account, h, bytes(text), now()).run();
-        }
-        return { ok: true };
+        if (Object.keys(texts && typeof texts === 'object' ? texts : {}).length > LIMITS.putTexts) return { ok: false, error: 'too-many' };
+        const entries = await checkedTexts(texts, hash);
+        if (!entries) return { ok: false, error: 'bad-text' };
+        return keep(account, entries);
       },
 
       async commit(pid, req) {
@@ -168,6 +211,16 @@ export function createSyncStore(o) {
         const json = JSON.stringify(manifest);
         if (bytes(json) > LIMITS.manifestBytes) return { ok: false, error: 'bad-manifest' };
         const named = [...new Set(manifest.files.map((f) => f.hash))];
+        // One project more than the account may have: a new one is refused.
+        if (!p && (await usageOf(account)).projects >= quota.projects) return { ok: false, error: 'quota-projects' };
+        if (req.texts != null) {
+          if (Object.keys(typeof req.texts === 'object' ? req.texts : {}).length > LIMITS.putTexts) return { ok: false, error: 'too-many' };
+          const entries = await checkedTexts(req.texts, hash);
+          if (!entries) return { ok: false, error: 'bad-text' };
+          const wanted = new Set(named);
+          const kept = await keep(account, entries.filter(([h]) => wanted.has(h)));
+          if (!kept.ok) return kept;
+        }
         const have = await held(account, named);
         const missing = named.filter((h) => !have.has(h));
         if (missing.length) return { ok: false, missing };
@@ -177,7 +230,11 @@ export function createSyncStore(o) {
             db.prepare('INSERT INTO versions (project, version, base, commit_id, deleted, manifest, created_at) '
               + 'SELECT ?, ?, ?, ?, 0, ?, ? WHERE changes() = 1')
               .bind(pid, req.base + 1, req.base, req.id, json, now()),
-            req.base === 0 ? db.prepare('INSERT INTO projects (id, owner, head) VALUES (?, ?, 0) ON CONFLICT (id) DO NOTHING').bind(pid, account) : null);
+            req.base === 0 ? db.prepare('INSERT INTO projects (id, owner, head) VALUES (?, ?, 0) ON CONFLICT (id) DO NOTHING').bind(pid, account) : null,
+            // A project counts from its first version, and again once a deleted one comes back.
+            db.prepare('INSERT INTO usage (account, projects, text_bytes) SELECT ?, 1, 0 WHERE changes() = 1 AND '
+              + '(? = 0 OR EXISTS (SELECT 1 FROM versions WHERE project = ? AND version = ? AND deleted = 1)) '
+              + 'ON CONFLICT (account) DO UPDATE SET projects = usage.projects + 1').bind(account, req.base, pid, req.base));
         } catch (_) {
           // The same commit id landed at this moment from a retry: fall through to the replay check.
           moved = false;
@@ -203,7 +260,11 @@ export function createSyncStore(o) {
           moved = await advance('projects', 'id', pid, account, req.base,
             db.prepare('INSERT INTO versions (project, version, base, commit_id, deleted, manifest, created_at) '
               + 'SELECT ?, ?, ?, ?, 1, NULL, ? WHERE changes() = 1')
-              .bind(pid, req.base + 1, req.base, req.id, now()));
+              .bind(pid, req.base + 1, req.base, req.id, now()),
+            null,
+            // A deleted project no longer counts (unless it already did not).
+            db.prepare('UPDATE usage SET projects = MAX(0, projects - 1) WHERE account = ? AND changes() = 1 '
+              + 'AND NOT EXISTS (SELECT 1 FROM versions WHERE project = ? AND version = ? AND deleted = 1)').bind(account, pid, req.base));
         } catch (_) {
           moved = false;
         }
@@ -212,6 +273,34 @@ export function createSyncStore(o) {
         if (replay) return { ok: true, version: replay, replay: true };
         const again = await project(pid);
         return { ok: false, head: await headOf(pid, again.head) };
+      },
+
+      async versions(pid, o) {
+        const p = await project(pid);
+        if (!p || p.owner !== account) return [];
+        const before = o && Number.isInteger(o.before) && o.before > 0 ? o.before : p.head + 1;
+        // The summary is read inside D1 (its JSON functions): a page of history
+        // costs one query and carries no manifest.
+        const rows = await db.prepare(
+          "SELECT version, deleted, created_at, json_extract(manifest, '$.name') AS name, "
+          + "json_array_length(manifest, '$.files') AS files FROM versions "
+          + 'WHERE project = ? AND version < ? ORDER BY version DESC LIMIT ?',
+        ).bind(pid, before, versionsLimit(o && o.limit)).all();
+        return rows.results.map((r) => ({
+          version: r.version,
+          createdAt: r.created_at,
+          deleted: !!r.deleted,
+          name: r.deleted ? null : r.name,
+          files: r.deleted ? 0 : r.files || 0,
+        }));
+      },
+
+      async version(pid, n) {
+        const p = await project(pid);
+        if (!p || p.owner !== account || !Number.isInteger(n)) return null;
+        const v = await db.prepare('SELECT version, deleted, manifest, created_at FROM versions WHERE project = ? AND version = ?')
+          .bind(pid, n).first();
+        return v ? { version: v.version, createdAt: v.created_at, deleted: !!v.deleted, manifest: v.deleted ? null : JSON.parse(v.manifest) } : null;
       },
 
       settings: settingsHead,

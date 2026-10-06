@@ -155,6 +155,12 @@ button.jar-strip__seg {
 .jar-strip__seg--checker.is-error { color: var(--ide-status-error); }
 .jar-strip__seg--checker.is-warning { color: var(--ide-status-warning); }
 
+/* The dot is centred on the label's capitals, measured in painted pixels
+   (scratch/probes/probe-icon-text.mjs): `middle` alone drew it a pixel low. */
+.jar-strip__seg .jar-strip__statusdot {
+  top: -1px;
+}
+
 /* Nothing but chrome showing — recede a little; never hide. */
 .jar-strip.is-resting .jar-strip__seg--position {
   color: var(--ui-fg-faint);
@@ -1079,26 +1085,11 @@ button.jar-strip__seg {
   opacity: 0.8;
 }
 
-/* A redo branch is waiting. Not a warning and not an error — it is a fact about
-   where you are standing, so it takes the app's blue accent and nothing louder.
-   ⛔ It must not read as a second error badge sitting beside the checker. */
-.jar-strip__seg--history.is-branched {
-  color: var(--accent-mid);
-}
-
-.jar-strip__seg--history.is-branched .jar-strip__icon { opacity: 1; }
-
 /* Held open: the segment is the panel's handle, so while the panel is up the
-   handle stays lit rather than reverting the moment the pointer leaves.
-   ⛔ Background only where a branch is waiting — lighting the handle must not
-   erase the one thing the colour was carrying. */
+   handle stays lit rather than reverting the moment the pointer leaves. */
 .jar-strip__seg--history.is-open {
   background: var(--header-menu-bg-hover);
   color: var(--ui-fg-strong);
-}
-
-.jar-strip__seg--history.is-open.is-branched {
-  color: var(--accent-mid);
 }
 
 /* Anchored in JS against the bar's rect, exactly like the command line's

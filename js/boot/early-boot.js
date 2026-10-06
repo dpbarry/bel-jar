@@ -1,6 +1,30 @@
 (() => {
   // js/persist/store.mjs
   var SCHEMA = 4;
+  var SCHEMA_KEY = "beljar/schema";
+  function migrateStorage(storage, schema, migrations) {
+    const raw = storage.getItem(SCHEMA_KEY);
+    if (raw === String(schema)) return { result: "current", from: schema };
+    if (raw == null) return { result: "fresh", from: null };
+    const n = Number(raw);
+    const from = raw !== "" && Number.isInteger(n) ? n : null;
+    if (from == null) return { result: "unreadable", from: null };
+    if (from > schema) return { result: "newer", from };
+    const steps = migrations || {};
+    for (let v = from; v < schema; v++) if (typeof steps[v] !== "function") return { result: "missing", from, at: v };
+    for (let v = from; v < schema; v++) {
+      try {
+        steps[v](storage);
+      } catch (err) {
+        return { result: "threw", from, at: v, error: String(err && err.message || err) };
+      }
+    }
+    storage.setItem(SCHEMA_KEY, String(schema));
+    return { result: "migrated", from };
+  }
+
+  // js/persist/migrations.mjs
+  var MIGRATIONS = {};
 
   // js/persist/table.mjs
   function typeOf(row) {
@@ -56,6 +80,15 @@
       return resolveRows(rows, env && env.data && env.data.values);
     } catch (_) {
       return resolveRows(rows, {});
+    }
+  }
+  function readBootRecord(storage, schema, key) {
+    try {
+      if (storage.getItem("beljar/schema") !== String(schema)) return null;
+      const env = JSON.parse(storage.getItem(key) || "null");
+      return env && env.data && typeof env.data === "object" ? env.data : null;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -147,6 +180,8 @@
     { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
     { id: "autosolveFocusNext", section: "harpoon", default: ON },
     { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // Case completion: fill a proof's missing cases when typing pauses, or only on a command.
+    { id: "caseFill", section: "harpoon", default: "auto", values: ["auto", "ask"] },
     // ── REPL ────────────────────────────────────────────────────────────────
     { id: "replAutoscroll", section: "repl", default: ON },
     { id: "replWelcome", section: "repl", default: ON },
@@ -159,9 +194,17 @@
     // Where this browser keeps history: a shared computer is not your laptop.
     { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
     // ── Workspace ───────────────────────────────────────────────────────────
-    { id: "inspectorFollow", section: "workspace", default: ON },
+    // What a plain arrival at BelJar opens: home, or the project last opened, the
+    // way an IDE reopens its last window. Early boot decides, before first paint
+    // (js/boot/early-boot-core.mjs `startTarget`).
+    { id: "startPage", section: "workspace", default: "home", values: ["home", "last"] },
+    { id: "inspectorFollow", section: "workspace", default: OFF },
     { id: "restorePanels", section: "workspace", default: ON },
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Tips seen once on any computer stay seen on all of them (js/ui/hint-seen.mjs):
+    // one row per tip, so two computers that each saw a different one never disagree.
+    { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },
@@ -199,6 +242,15 @@
     jetbrains: "'JetBrains Mono', monospace",
     system: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
   };
+  function prefersReducedMotion(motionPref) {
+    if (motionPref === "reduce") return true;
+    if (motionPref === "full") return false;
+    try {
+      return typeof globalThis.matchMedia === "function" && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (_) {
+      return false;
+    }
+  }
   function applyDocumentSettings(docEl, values) {
     if (!docEl || !values) return;
     docEl.classList.toggle("light", values.theme === "light");
@@ -238,6 +290,7 @@
     if (!Array.isArray(raw)) return void 0;
     return [...new Set(raw.filter((id) => typeof id === "string" && id !== ""))];
   }
+  var idList = accountIds;
   var PANEL_W = { group: "layout", default: 250, min: 160, max: 512, integer: true, boot: true };
   var PANEL_H = { group: "layout", default: 190, min: 96, max: 384, integer: true, boot: true };
   var DEVICE = [
@@ -250,6 +303,16 @@
     // here, usable signed out and never adopted by another account (work.mjs
     // `isVisible`). Each leaves the list when it signs in again.
     { id: "keptAccounts", type: "json", default: [], normalize: accountIds },
+    // Signed out with "Remove": the account whose projects are still to leave
+    // this browser ('' none). They go when the next page loads (work.mjs
+    // `finishSignOut`), never under the page that signed out, which is still live.
+    { id: "leftAccount", type: "string", default: "" },
+    // And the projects of it that stay, kept for it: a session that ended
+    // elsewhere leaves behind nothing the cloud lacks (account.mjs `sessionEnded`).
+    { id: "leftKeep", type: "json", default: [], normalize: idList },
+    // Why this browser was signed out without asking ('' none): 'elsewhere' or
+    // 'ended'. Said once, by the page that loads next (account.mjs).
+    { id: "signedOutNote", type: "string", default: "" },
     // Signing in again: the account whose work this browser should come back
     // to, and the project it had open when it signed out here ('' the newest).
     // Used once, by the first load that finds a blank placeholder open
@@ -291,6 +354,329 @@
     return readBootRows(storage, schema, DEVICE_KEY, DEVICE);
   }
 
+  // js/frame/routes.mjs
+  var g = typeof window !== "undefined" ? window : globalThis;
+  var PROJECT_ID = /^p_[0-9a-hjkmnp-tv-z]{26}$/;
+  var EDIT_SHORT = /(?:^|\/)edit\/?$/;
+  var EDIT_ANY = /(?:^|\/)edit(?:\.html)?\/?$/;
+  var PRIVACY_ANY = /(?:^|\/)privacy(?:\.html)?\/?$/;
+  function short() {
+    if (g.BELJAR_DEPLOYED) return true;
+    const path = g.location && typeof g.location.pathname === "string" ? g.location.pathname : "";
+    return EDIT_SHORT.test(path);
+  }
+  function query(pairs) {
+    const parts = [];
+    for (const [k, v] of pairs) if (v) parts.push(k + "=" + encodeURIComponent(v));
+    return parts.length ? "?" + parts.join("&") : "";
+  }
+  function startsOnLast() {
+    const S = g.Settings;
+    try {
+      return !!S && typeof S.get === "function" && S.get("startPage") === "last";
+    } catch (_) {
+      return false;
+    }
+  }
+  function homeUrl(opts) {
+    const base = short() ? "/" : "index.html";
+    if (opts && opts.open) return base + query([["open", opts.open]]);
+    return base + (startsOnLast() ? "?home" : "");
+  }
+  function editUrl(pid) {
+    return (short() ? "/edit" : "edit.html") + query([["p", pid]]);
+  }
+  function privacyUrl() {
+    return short() ? "/privacy" : "privacy.html";
+  }
+  function signInUrl(loc) {
+    const l = loc || g.location;
+    const back = l ? String(l.pathname || "/") + String(l.search || "") : "/";
+    return "/api/auth/github/start" + query([["return", back]]);
+  }
+  function pageOf(loc) {
+    const p = String(loc && loc.pathname || "");
+    if (EDIT_ANY.test(p)) return "edit";
+    return PRIVACY_ANY.test(p) ? "privacy" : "home";
+  }
+  function projectParam(loc, name) {
+    const pairs = String(loc && loc.search || "").replace(/^\?/, "").split("&");
+    for (const pair of pairs) {
+      const eq = pair.indexOf("=");
+      if (eq === -1 || pair.slice(0, eq) !== name) continue;
+      let v = pair.slice(eq + 1);
+      try {
+        v = decodeURIComponent(v);
+      } catch (_) {
+        return null;
+      }
+      return PROJECT_ID.test(v) ? v : null;
+    }
+    return null;
+  }
+  function projectOf(loc) {
+    return pageOf(loc) === "edit" ? projectParam(loc, "p") : null;
+  }
+  function pendingOf(loc) {
+    return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
+  }
+  var ISSUES_URL = "https://github.com/dpbarry/bel-jar/issues";
+  function reportIssue() {
+    if (typeof g.open === "function") g.open(ISSUES_URL, "_blank", "noopener");
+  }
+  function go(url, opts) {
+    if (!g.location) return;
+    if (opts && opts.replace) g.location.replace(url);
+    else g.location.assign(url);
+  }
+  function settle(url) {
+    const h = g.history;
+    const l = g.location;
+    if (!h || !l || typeof h.replaceState !== "function") return false;
+    h.replaceState(h.state, "", url + String(l.hash || ""));
+    return true;
+  }
+  function nameProject(pid) {
+    const l = g.location;
+    if (!l || pageOf(l) !== "edit" || projectOf(l) === pid) return false;
+    return settle(editUrl(pid));
+  }
+  var Routes = {
+    PROJECT_ID,
+    ISSUES_URL,
+    homeUrl,
+    editUrl,
+    privacyUrl,
+    signInUrl,
+    pageOf,
+    projectOf,
+    pendingOf,
+    go,
+    settle,
+    nameProject,
+    reportIssue
+  };
+  g.Routes = Routes;
+
+  // js/persist/keys.mjs
+  function projectPrefix(pid) {
+    return "beljar/p/" + pid + "/";
+  }
+  function metaKey(pid) {
+    return projectPrefix(pid) + "meta";
+  }
+
+  // js/boot/boot-project.mjs
+  function showableProject(storage, device, pid) {
+    if (!pid) return null;
+    const meta = readBootRecord(storage, SCHEMA, metaKey(pid));
+    if (!meta) return null;
+    const owner = meta.owner == null ? null : meta.owner;
+    const account = device && device.account || null;
+    const kept = device && Array.isArray(device.keptAccounts) ? device.keptAccounts : [];
+    if (owner !== null && owner !== account && !(!account && kept.includes(owner))) return null;
+    return meta;
+  }
+
+  // js/boot/page-transition-core.mjs
+  function projectOfUrl(url) {
+    try {
+      const u = new URL(String(url));
+      return projectOf({ pathname: u.pathname, search: u.search });
+    } catch (_) {
+      return null;
+    }
+  }
+  function pageOfUrl(url) {
+    try {
+      const u = new URL(String(url));
+      return pageOf({ pathname: u.pathname });
+    } catch (_) {
+      return null;
+    }
+  }
+  function transitionStep(o) {
+    if (o.reduced || o.unseen) return "skip";
+    if (o.here === "privacy" || pageOfUrl(o.other) === "privacy") return "skip";
+    return { row: o.here === "home" ? projectOfUrl(o.other) : null };
+  }
+  var NAMED = {
+    "proj-title": "#header-context-name, .home-row[data-opening] .home-row__name, .home-row[data-landing] .home-row__name",
+    "proj-row": ".home-row[data-opening], .home-row[data-landing]",
+    "proj-surface": "body:not(.home-page) > .workspace"
+  };
+  var MORPHS = {
+    "proj-title": NAMED["proj-title"]
+  };
+  function transformOnly(from, rect) {
+    if (!from || !rect || !(rect.width > 0) || !(rect.height > 0)) return null;
+    const w = parseFloat(from.width);
+    const h = parseFloat(from.height);
+    if (!from.transform || from.transform === "none" || !(w > 0) || !(h > 0)) return null;
+    const sx = Math.round(w / rect.width * 1e5) / 1e5;
+    const sy = Math.round(h / rect.height * 1e5) / 1e5;
+    const easing = from.easing || "ease";
+    return [
+      { transform: from.transform + " scale(" + sx + ", " + sy + ")", easing },
+      { transform: "translate(" + rect.left + "px, " + rect.top + "px)", easing }
+    ];
+  }
+  function compositeGroups(document2) {
+    let done = 0;
+    try {
+      const root = document2.documentElement;
+      for (const anim of document2.getAnimations()) {
+        const effect = anim.effect;
+        const m = /^::view-transition-group\((.+)\)$/.exec(effect && effect.pseudoElement || "");
+        if (!m || !MORPHS[m[1]] || effect.target !== root) continue;
+        const el = document2.querySelector(MORPHS[m[1]]);
+        if (!el) continue;
+        const frames = transformOnly(effect.getKeyframes()[0], el.getBoundingClientRect());
+        if (!frames) continue;
+        effect.setKeyframes(frames);
+        done += 1;
+      }
+    } catch (_) {
+    }
+    return done;
+  }
+  function zoomFrames(row, area, dir) {
+    if (!row || !area || !(row.width > 0) || !(area.width > 0)) return null;
+    const s = Math.round(row.width / area.width * 1e5) / 1e5;
+    const full = "translate(" + area.left + "px, " + area.top + "px)";
+    const small = "translate(" + row.left + "px, " + row.top + "px) scale(" + s + ")";
+    if (dir === "in") {
+      return { transform: [{ transform: small }, { transform: full }], opacity: [{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 1 }] };
+    }
+    return {
+      transform: [{ transform: full }, { transform: small }],
+      opacity: [{ opacity: 1 }, { opacity: 1, offset: 0.2 }, { opacity: 0, offset: 0.55 }, { opacity: 0 }]
+    };
+  }
+  function groupBox(view, root, name) {
+    const cs = view.getComputedStyle(root, "::view-transition-group(" + name + ")");
+    const m = /matrix\(([^)]+)\)/.exec(cs.transform || "");
+    const width = parseFloat(cs.width);
+    if (!m || !(width > 0)) return null;
+    const v = m[1].split(",").map(Number);
+    return { left: v[4], top: v[5], width };
+  }
+  function zoomSurface(document2) {
+    try {
+      const root = document2.documentElement;
+      const view = document2.defaultView;
+      const row = groupBox(view, root, "proj-row");
+      const area = groupBox(view, root, "proj-surface");
+      const dir = document2.querySelector(NAMED["proj-surface"]) ? "in" : "out";
+      const frames = zoomFrames(row, area, dir);
+      if (!frames) return 0;
+      const css = view.getComputedStyle(root);
+      const duration = parseFloat(css.getPropertyValue("--page-morph")) || 300;
+      const easing = css.getPropertyValue("--ease-in-out").trim() || "ease-in-out";
+      for (const a of document2.getAnimations()) {
+        const pe = a.effect && a.effect.pseudoElement;
+        if (pe === "::view-transition-old(proj-surface)" || pe === "::view-transition-new(proj-surface)") a.cancel();
+      }
+      const group = "::view-transition-group(proj-surface)";
+      root.animate(frames.transform, { pseudoElement: group, duration, easing, fill: "both" });
+      root.animate(frames.opacity, { pseudoElement: group, duration, easing: "linear", fill: "both" });
+      return 1;
+    } catch (_) {
+      return 0;
+    }
+  }
+  var HOLD_MS = 1200;
+  function holdUntil(window2, document2, isReady, maxMs) {
+    try {
+      if (isReady()) return false;
+      const anims = document2.getAnimations().filter((a) => a.effect && /^::view-transition/.test(a.effect.pseudoElement || ""));
+      if (!anims.length) return false;
+      for (const a of anims) a.pause();
+      const t0 = window2.performance.now();
+      const run = () => {
+        for (const a of anims) {
+          try {
+            a.play();
+          } catch (_) {
+          }
+        }
+      };
+      const look = () => {
+        let done = true;
+        try {
+          done = isReady() || window2.performance.now() - t0 >= maxMs;
+        } catch (_) {
+        }
+        if (done) run();
+        else window2.requestAnimationFrame(look);
+      };
+      window2.requestAnimationFrame(look);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+  function quiet(vt) {
+    for (const p of [vt.ready, vt.finished, vt.updateCallbackDone]) {
+      if (p && typeof p.catch === "function") p.catch(() => {
+      });
+    }
+  }
+  function installPageTransitions(env) {
+    const { window: window2, document: document2 } = env;
+    if (!window2 || typeof window2.addEventListener !== "function") return;
+    const reduced = () => {
+      let pref = "system";
+      try {
+        pref = window2.Settings && typeof window2.Settings.get === "function" ? window2.Settings.get("motionPref") : typeof env.bootMotion === "function" ? env.bootMotion() : "system";
+      } catch (_) {
+      }
+      return prefersReducedMotion(pref);
+    };
+    const unseen = () => window2.BELJAR_LEAVING === true || !!(window2.Persist && typeof window2.Persist.leaving === "function" && window2.Persist.leaving());
+    const mark = (pid, as) => {
+      const row = pid ? document2.querySelector('.home-row[data-pid="' + pid + '"]') : null;
+      if (row) row.setAttribute(as, "");
+      return row;
+    };
+    const editorBuilt = () => !!(window2.Frame && typeof window2.Frame.isMounted === "function" && window2.Frame.isMounted() && window2.CurrentEditor);
+    const whenReady = (vt) => {
+      if (!vt.ready || typeof vt.ready.then !== "function") return;
+      vt.ready.then(() => {
+        compositeGroups(document2);
+        zoomSurface(document2);
+        if (pageOf(window2.location) === "edit") holdUntil(window2, document2, editorBuilt, HOLD_MS);
+      }, () => {
+      });
+    };
+    window2.addEventListener("pageswap", (e) => {
+      const vt = e && e.viewTransition;
+      if (!vt) return;
+      quiet(vt);
+      const to = e.activation && e.activation.entry ? e.activation.entry.url : "";
+      const step = transitionStep({ reduced: reduced(), unseen: unseen(), here: pageOf(window2.location), other: to });
+      if (step === "skip") vt.skipTransition();
+      else mark(step.row, "data-opening");
+    });
+    window2.addEventListener("pagereveal", (e) => {
+      const vt = e && e.viewTransition;
+      if (!vt) return;
+      quiet(vt);
+      const nav = window2.navigation;
+      const from = nav && nav.activation && nav.activation.from ? nav.activation.from.url : "";
+      const step = transitionStep({ reduced: reduced(), unseen: false, here: pageOf(window2.location), other: from });
+      if (step === "skip") {
+        vt.skipTransition();
+        return;
+      }
+      const row = mark(step.row, "data-landing");
+      whenReady(vt);
+      if (!row || !vt.finished || typeof vt.finished.then !== "function") return;
+      const clear = () => row.removeAttribute("data-landing");
+      vt.finished.then(clear, clear);
+    });
+  }
+
   // js/boot/early-boot-core.mjs
   var SPLIT_STACK_MQ = "(max-width: 48rem)";
   function applySplitVars(rootStyle, ratio, stackMq, matchMedia) {
@@ -312,9 +698,35 @@
       if (row.cssVar && device[row.id] !== row.default) rootStyle.setProperty(row.cssVar, `${device[row.id]}px`);
     }
   }
+  function startTarget({ settings, device, storage, loc, navType }) {
+    if (!settings || settings.startPage !== "last") return null;
+    if (!loc || pageOf(loc) !== "home" || loc.search || loc.hash) return null;
+    if (navType === "reload" || navType === "back_forward") return null;
+    const pid = device && device.activeProject;
+    return pid && showableProject(storage, device, pid) ? pid : null;
+  }
   function installEarlyBoot(env) {
     const { document: document2, window: window2, localStorage: localStorage2 } = env;
+    try {
+      migrateStorage(localStorage2, SCHEMA, MIGRATIONS);
+    } catch (_) {
+    }
     const device = readBootDevice(localStorage2, SCHEMA);
+    installPageTransitions({ window: window2, document: document2, bootMotion: () => readBootSettings(localStorage2, SCHEMA).motionPref });
+    const nav = window2.performance && typeof window2.performance.getEntriesByType === "function" ? window2.performance.getEntriesByType("navigation")[0] : null;
+    const pid = startTarget({
+      settings: readBootSettings(localStorage2, SCHEMA),
+      device,
+      storage: localStorage2,
+      loc: window2.location,
+      navType: nav ? nav.type : "navigate"
+    });
+    if (pid) {
+      window2.BELJAR_LEAVING = true;
+      document2.documentElement.style.display = "none";
+      go(editUrl(pid), { replace: true });
+      return;
+    }
     applyStoredSettings(document2.documentElement, localStorage2);
     applyPanelDimensionPrefs(document2.documentElement.style, device);
     applySplitVars(document2.documentElement.style, device.editorSplit, SPLIT_STACK_MQ, window2.matchMedia.bind(window2));

@@ -771,8 +771,11 @@ export function declBodyEqIndex(s, from) {
     if (c === '(' || c === '[' || c === '{') depth += 1;
     else if (c === ')' || c === ']' || c === '}') depth = Math.max(0, depth - 1);
     else if (depth === 0 && c === ';') return -1;
+    // The body `=` stands apart from names, which may contain `=` (`pred=`). Whitespace
+    // marks that on the left, and so does a closing bracket: no name contains one, and
+    // corpus headers write `… [ |- not_possible]=`.
     else if (depth === 0 && c === '='
-      && (i === from || /\s/.test(s[i - 1]))
+      && (i === from || /[\s)\]}]/.test(s[i - 1]))
       && (i + 1 >= s.length || /\s/.test(s[i + 1]))) return i;
   }
   return -1;

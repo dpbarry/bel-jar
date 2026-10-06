@@ -80,6 +80,7 @@ This matters more than the percentage, and it is the property to state first to 
 - **A `COMPLETE` is a proof Beluga accepts**, produced by splicing the generated body into the declaration and reloading the whole program.
 - ⚠️ **Beluga runs no termination check without a `/ total /` pragma.** A declaration lacking one is checked for *well-typedness*, not *termination*. Orca therefore treats termination as **its own** invariant: the `recurse` move only applies the induction hypothesis to a structurally-smaller sub-derivation, tracked by `decSubderivNames` in `prover-hyp.mjs`.
 - ⛔ **Never emit a `/ total /` pragma that the author did not write.** An invented measure can land on an implicit argument, silently disable the termination check, and let a circular self-proof through. This has happened and is the single most important standing rule in the codebase.
+  - The search itself may still TRY one: on an untotalied theorem, `proveProgram` forks with candidate measures, and a winning fork returns code that carries the measure (`synthesizedMeasure`). Until 2026-10-05 the Harpoon Lab took that code as it came, and committing it wrote the measure into the person's file (`solvedBodyOf` takes everything from the header's `=` to `;`). Now the Lab passes every result through `withoutSynthesizedMeasure` the moment it arrives: the exact inverse of the splice, which fails the result rather than hand on a measure it cannot remove (`tests/test-synthesized-measure.mjs`). Case completion runs with `noMeasureSynthesis` and never forks.
 
 ---
 

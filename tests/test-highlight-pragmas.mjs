@@ -12,7 +12,6 @@ const hi = tagHighlighter([
   { tag: t.typeName, class: 'type' },
   { tag: t.variableName, class: 'var' },
   { tag: t.typeOperator, class: 'arrow' },
-  { tag: t.definitionOperator, class: 'colon' },
 ]);
 
 function expect(cond, msg) {

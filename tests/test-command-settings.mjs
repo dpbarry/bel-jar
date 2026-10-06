@@ -18,6 +18,9 @@ function expect(cond, msg) {
   process.exit(1);
 }
 
+// A server answers (the last section takes it away): the whole table is offered.
+globalThis.Account = { available: () => true };
+
 // ── the table is well formed ─────────────────────────────────────────────────
 for (const s of SETTINGS) {
   expect(/^[a-z][a-z0-9-]*$/.test(s.slug), `slug shape: ${s.slug}`);
@@ -228,5 +231,38 @@ const res = complete('set n', 5, sources);
 expect(res.kind === 'option', 'the caret in slot 1 asks for options');
 expect(res.items.some((i) => i.value === 'nu'), ':set n offers nu');
 expect(complete('set ', 4, sources).items.length > 10, 'a bare :set  lists the preferences');
+
+// ── ⛔ the account's preferences exist only where a server answers ──────────
+// They live in Settings > Account, a panel that is not there without a server.
+// By name they must not be there either: not found, not completed, not set.
+{
+  const server = SETTINGS.filter((s) => s.needs === 'server');
+  expect(server.length === 6 && server.every((s) => s.pages === 'both'),
+    'the six sync preferences are commands, on both pages: ' + server.map((s) => s.slug).join(', '));
+  expect(findSetting('start-page') && findSetting('start-page').pages === 'both' && !findSetting('start-page').needs,
+    'the start page is a preference of both pages, and needs no server');
+  expect(SETTINGS.filter((s) => !s.pages).every((s) => /^editor|^formatOnSave$|^trimTrailingWs$|^stickyDeclHeader$|^quietWhileTyping$|^hoverSticky$/.test(s.setting)),
+    'every other preference is about the open file, and stays the editor’s: '
+      + SETTINGS.filter((s) => !s.pages).map((s) => s.setting).filter((id) => !/^editor/.test(id)).join(', '));
+  expect(settingEntries().every((e) => e.pages === 'editor' || e.pages === 'both'), 'every generated command says where it runs');
+
+  const S = fakePersist({});
+  expect(runSetOn(S, 'sync-reconnect=ask').ok && S.get('syncReconnect') === 'ask', 'with a server, :set reaches a sync preference');
+  expect(describeChange(findSetting('sync-reconnect'), 'ask') === 'Back online: Ask me first', 'and says it in the panel’s own words');
+
+  globalThis.Account = { available: () => false };
+  for (const s of server) {
+    expect(findSetting(s.slug) === null, `without a server, ${s.slug} is not found`);
+    expect(optionNames().indexOf(s.slug) < 0 && !optionCandidates().some((c) => c.value === s.slug || c.value === 'no' + s.slug),
+      `nor completed (${s.slug})`);
+  }
+  const refused = runSetOn(S, 'sync-reconnect=upload');
+  expect(!refused.ok && /Unknown option/.test(refused.message) && S.get('syncReconnect') === 'ask',
+    'and :set says it does not know it, and writes nothing');
+  expect(findSetting('start-page') && findSetting('wrap'), 'the rest of the table is untouched');
+  delete globalThis.Account;
+  expect(findSetting('sync-reconnect') === null, 'no account object at all reads as no server');
+  globalThis.Account = { available: () => true };
+}
 
 console.log(`OK command settings (${SETTINGS.length} preferences, ${optionNames().length} :set names, every one a real setting)`);

@@ -18,6 +18,7 @@ import '../ui/toasts.mjs';
 import '../ui/notifications.mjs';
 import { settingRow } from '../persist/settings-schema.mjs';
 import { applyDocumentSettings } from '../persist/settings-apply.mjs';
+import { Routes } from './routes.mjs';
 
 const global = globalThis;
 
@@ -53,10 +54,13 @@ function repaint() {
 
 function onSettingsChanged(e) {
   if (e.ids.some((id) => settingRow(id).boot)) repaint();
+  if (e.ids.includes('startPage')) nameHome();
 }
 
-function onReload() {
-  global.location.reload();
+/** The editor's brand goes home, by the address this server answers (routes.mjs), which follows the start page. */
+function nameHome() {
+  const home = document.getElementById('btn-home');
+  if (home) home.setAttribute('href', Routes.homeUrl());
 }
 
 function onSettings() {
@@ -78,8 +82,8 @@ function mount() {
   }
 
   track(document.getElementById('btn-theme'), 'click', toggleTheme);
-  track(document.getElementById('btn-reload'), 'click', onReload);
   track(document.getElementById('btn-settings'), 'click', onSettings);
+  nameHome();
 }
 
 function unmount() {

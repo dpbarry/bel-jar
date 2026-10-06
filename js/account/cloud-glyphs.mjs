@@ -4,10 +4,11 @@
  *
  * The outline is three circles on a flat base (a small left bump, a large
  * middle one, a right one between them), so the body is even and a mark can sit
- * in its optical middle. Stroke 1.75: beside the project name's text the
- * header's usual 1.5 read thinner than the words. The marks carry
- * `sync-cloud__mark`, which is what takes a colour (css/account.css): the
- * outline stays the name's quiet grey unless something needs the person.
+ * in its optical middle, with room around it: the marks are drawn small inside a
+ * cloud drawn large (css/account.css sizes it). Stroke 1.5 at that size is the
+ * name's own stem weight. The marks carry `sync-cloud__mark`, which is what
+ * takes a colour: the outline stays the name's quiet grey unless something
+ * needs the person.
  */
 
 // Circles (6.75, 14.25) r4, (12, 10.75) r5.5, (17.25, 14) r4.25; base y = 18.25.
@@ -16,9 +17,9 @@ const SLASH = 'M5.75 6.5 17.75 18.5';
 
 const MARKS = {
   // pathLength 1: the check can draw itself in when a round lands (css).
-  synced: '<path class="sync-cloud__mark sync-cloud__check" pathLength="1" d="M9.4 13.75l2 2 3.6-3.6"/>',
-  syncing: '<path class="sync-cloud__mark sync-cloud__arrow" d="M12 16.25v-5m-2.25 2.25L12 11.25l2.25 2.25"/>',
-  alert: '<path class="sync-cloud__mark" d="M12 11v3.25"/><path class="sync-cloud__mark" d="M12 16.75h.01"/>',
+  synced: '<path class="sync-cloud__mark sync-cloud__check" pathLength="1" d="M9.9 14.05l1.5 1.5 3-3"/>',
+  syncing: '<path class="sync-cloud__mark sync-cloud__arrow" d="M12 15.75v-4m-1.75 1.75L12 11.75l1.75 1.75"/>',
+  alert: '<path class="sync-cloud__mark" d="M12 11.5v2.75"/><path class="sync-cloud__mark" d="M12 16.5h.01"/>',
 };
 
 /** How the cloud looks for a state: waiting for a round and in one read the same. */
@@ -30,7 +31,7 @@ export function cloudLook(state) {
 
 /** The cloud's SVG for a look ('synced', 'syncing', 'offline', 'alert'). */
 export function cloudSvg(look) {
-  const open = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+  const open = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
   if (look === 'offline') {
     // The slash cuts the outline rather than crossing it: a gap either side.
     return open

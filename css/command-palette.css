@@ -108,11 +108,11 @@
   max-height: min(21rem, 55vh);
   overflow-y: auto;
   overscroll-behavior: contain;
-  margin-top: 0.25rem;
+  margin: 0.25rem calc(-1 * var(--menu-pad)) 0;
 }
 
 .jar-palette-section {
-  padding: 0.5rem 0.6rem 0.25rem;
+  padding: 0.5rem calc(0.6rem + var(--menu-pad)) 0.25rem;
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -128,8 +128,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 1.25rem;
-  padding: 0.34rem var(--search-row-pad-x);
-  border-radius: var(--search-row-radius);
+  padding: 0.34rem calc(var(--search-row-pad-x) + var(--menu-pad));
+  border-radius: 0;
   color: var(--menu-item-fg);
   font-size: 0.78rem;
   font-weight: 500;
@@ -206,11 +206,11 @@
 }
 
 .jar-palette-hint {
-  padding: 0.35rem 0.65rem 0.15rem;
+  padding: 0.35rem calc(0.65rem + var(--menu-pad)) 0.15rem;
   font-size: 0.68rem;
   color: var(--muted-mid);
   text-align: center;
   user-select: none;
   border-top: 1px solid var(--chrome-divider);
-  margin-top: 0.15rem;
+  margin: 0 calc(-1 * var(--menu-pad));
 }

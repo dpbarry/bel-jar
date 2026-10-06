@@ -49,6 +49,11 @@ export function open(opts) {
     const input = el('input', 'jar-name-prompt__input');
     input.type = 'text';
     input.value = initialValue;
+    // ⛔ What the dialog focuses as it opens, with its text selected in the same
+    // moment. Focused a frame later (it was), the keys typed in that frame went
+    // to the close button and were lost: F2 and a new name typed at once came
+    // out without its first letters.
+    input.autofocus = true;
     input.spellcheck = false;
     input.autocomplete = 'off';
     if (opts.mono) input.classList.add('is-mono');
@@ -147,12 +152,9 @@ export function open(opts) {
     });
 
     openDialog(dialogEl);
-
-    requestAnimationFrame(() => {
-      input.focus();
-      input.setSelectionRange(sel.start, sel.end);
-      showError(validate(currentNormalized()));
-    });
+    if (document.activeElement !== input) input.focus();
+    input.setSelectionRange(sel.start, sel.end);
+    showError(validate(currentNormalized()));
   });
 }
 

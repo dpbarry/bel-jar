@@ -88,28 +88,65 @@ var CHEVRON_SVG =
     return '';
   }
 
-  function suiteByFileForFolderChildren(children, cfgTextByLabel) {
+  // Same stacking as the explorer on a project it just opened: one inferred
+  // suite (cfg, then its members), then the other files in bucket order.
+  // Marking every .cfg active paints a separator on each of them.
+  export function layoutPreviewFolder(children, cfgTextByLabel) {
+    var folders = [];
+    var files = [];
+    var list = children || [];
+    for (var i = 0; i < list.length; i++) {
+      var child = list[i];
+      if (!child) continue;
+      if (child.type === 'folder') folders.push(child);
+      else if (child.type === 'file') files.push(child);
+    }
     var SL = global.ExplorerSuiteLayout;
-    if (!SL || typeof SL.computeDirLayout !== 'function') return {};
-    var fileChildren = [];
-    var activeCfgs = [];
-    for (var i = 0; i < children.length; i++) {
-      var c = children[i];
-      if (c.type !== 'file') continue;
-      fileChildren.push({ id: c.id, name: c.label, baseName: c.label });
-      if (String(c.ext || '').toLowerCase() === 'cfg') activeCfgs.push(c.label);
+    if (!SL || typeof SL.computeDirLayout !== 'function' || !files.length) {
+      return { folders: folders, files: files, suiteByFile: {} };
     }
-    if (!activeCfgs.length) return {};
-    activeCfgs.sort(function (a, b) { return a.localeCompare(b); });
-    var textById = Object.create(null);
-    for (var j = 0; j < fileChildren.length; j++) {
-      var fc = fileChildren[j];
-      if (String(fc.name).toLowerCase().endsWith('.cfg')) {
-        textById[fc.id] = cfgTextByLabel[fc.name] || '';
+    var records = [];
+    for (var r = 0; r < files.length; r++) {
+      var file = files[r];
+      records.push({ id: file.id, name: file.label, baseName: file.label, item: file });
+    }
+    var getText = function (id) {
+      for (var t = 0; t < records.length; t++) {
+        if (records[t].id !== id) continue;
+        var name = records[t].name;
+        if (!String(name).toLowerCase().endsWith('.cfg')) return '';
+        return (cfgTextByLabel && cfgTextByLabel[name]) || '';
       }
+      return '';
+    };
+    var active = [];
+    var PS = global.ProjectSource;
+    if (PS && typeof PS.inferActiveCfgForDir === 'function') {
+      var synth = [];
+      for (var s = 0; s < records.length; s++) {
+        synth.push({ id: records[s].id, name: records[s].name });
+      }
+      var best = PS.inferActiveCfgForDir(synth, getText, '');
+      if (best) active.push(best);
     }
-    var getText = function (id) { return textById[id] || ''; };
-    return SL.computeDirLayout(fileChildren, activeCfgs, null, fileChildren, getText).suiteByFile;
+    var layout = SL.computeDirLayout(records, active, null, records, getText);
+    var ordered = [];
+    var seen = Object.create(null);
+    var orderedFiles = layout && layout.orderedFiles ? layout.orderedFiles : [];
+    for (var n = 0; n < orderedFiles.length; n++) {
+      var item = orderedFiles[n] && orderedFiles[n].item;
+      if (!item || seen[item.id]) continue;
+      seen[item.id] = true;
+      ordered.push(item);
+    }
+    for (var m = 0; m < files.length; m++) {
+      if (!seen[files[m].id]) ordered.push(files[m]);
+    }
+    return {
+      folders: folders,
+      files: ordered,
+      suiteByFile: layout && layout.suiteByFile ? layout.suiteByFile : {},
+    };
   }
 
   function open(opts) {
@@ -139,11 +176,10 @@ var CHEVRON_SVG =
     var loadToken = 0;
     var cfgTextCache = Object.create(null);
 
+    if (scopeFolder.id) expanded.add(scopeFolder.id);
     if (opts.focusFolder && folderContainsFolder(scopeFolder, opts.focusFolder)) {
       ancestorFolderIds(scopeFolder, opts.focusFolder).forEach(function (id) { expanded.add(id); });
       if (opts.focusFolder.id) expanded.add(opts.focusFolder.id);
-    } else {
-      expanded.add(scopeFolder.id);
     }
 
     function indexFolder(folder, pathLabel) {
@@ -448,13 +484,31 @@ var CHEVRON_SVG =
       });
     }
 
+    function focusFolderToggle(id) {
+      var rows = treePane.querySelectorAll('.library-preview-tree-folder');
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].dataset.folderId !== id) continue;
+        var btn = rows[i].querySelector('.library-preview-tree-toggle');
+        if (btn) btn.focus();
+        return;
+      }
+    }
+
+    function setFolderOpen(id, open) {
+      if (!id) return;
+      if (open) expanded.add(id);
+      else expanded.delete(id);
+      renderTree();
+      focusFolderToggle(id);
+    }
+
     function renderTreeFolder(folder, depth, pathLabel) {
       if (!folder || folder.type !== 'folder') return;
       var hasNamedRoot = !!scopeFolder.name;
       var displayRoot = folder === scopeFolder && hasNamedRoot;
 
       if (displayRoot || (folder.name && folder !== scopeFolder)) {
-        var isCollapsed = folder !== scopeFolder && !expanded.has(folder.id);
+        var isCollapsed = !expanded.has(folder.id);
         var foldRow = document.createElement('div');
         foldRow.className = 'library-preview-tree-folder' + (isCollapsed ? ' is-collapsed' : '');
         foldRow.setAttribute('role', 'treeitem');
@@ -482,9 +536,7 @@ var CHEVRON_SVG =
         if (folder.description) applyTip(toggleBtn, folder.description);
 
         toggleBtn.addEventListener('click', function () {
-          if (expanded.has(folder.id)) expanded.delete(folder.id);
-          else expanded.add(folder.id);
-          renderTree();
+          setFolderOpen(folder.id, !expanded.has(folder.id));
         });
 
         foldRow.appendChild(toggleBtn);
@@ -507,14 +559,15 @@ var CHEVRON_SVG =
       }
 
       if (!folder.children) return;
-      var suiteByFile = suiteByFileForFolderChildren(folder.children, cfgTextCache);
-      for (var i = 0; i < folder.children.length; i++) {
-        var child = folder.children[i];
-        if (child.type === 'folder') {
-          renderTreeFolder(child, depth, pathLabel ? pathLabel + '/' + child.name : child.name);
-        } else {
-          var childExt = String(child.ext || 'bel').toLowerCase();
-          var suiteMeta = suiteByFile[child.label];
+      var laid = layoutPreviewFolder(folder.children, cfgTextCache);
+      for (var f = 0; f < laid.folders.length; f++) {
+        var sub = laid.folders[f];
+        renderTreeFolder(sub, depth, pathLabel ? pathLabel + '/' + sub.name : sub.name);
+      }
+      for (var i = 0; i < laid.files.length; i++) {
+        var child = laid.files[i];
+        var childExt = String(child.ext || 'bel').toLowerCase();
+          var suiteMeta = laid.suiteByFile[child.label];
           var fileRow = document.createElement('div');
           fileRow.className = 'library-preview-tree-file'
             + (childExt === 'cfg' ? ' library-preview-tree-file--cfg' : '')
@@ -561,7 +614,6 @@ var CHEVRON_SVG =
 
           treePane.appendChild(fileRow);
           treeRows.push(fileRow);
-        }
       }
     }
 
@@ -616,14 +668,14 @@ var CHEVRON_SVG =
         if (folderEl && folderEl.classList.contains('is-collapsed')) {
           e.preventDefault();
           var fid2 = folderEl.dataset.folderId;
-          if (fid2) { expanded.add(fid2); renderTree(); }
+          if (fid2) setFolderOpen(fid2, true);
         }
       } else if (e.key === 'ArrowLeft') {
         var folderEl2 = row.closest('.library-preview-tree-folder');
         if (folderEl2 && !folderEl2.classList.contains('is-collapsed')) {
           e.preventDefault();
           var fid3 = folderEl2.dataset.folderId;
-          if (fid3) { expanded.delete(fid3); renderTree(); }
+          if (fid3) setFolderOpen(fid3, false);
         }
       }
     }

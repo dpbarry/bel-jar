@@ -96,6 +96,61 @@
     prettifyQueryBindings
   };
 
+  // js/beluga/run-notice.mjs
+  var ANSI = /\x1b\[[0-9;]*m/g;
+  var STATUS = /^##\s*Type Reconstruction (begin|done):/i;
+  var FILE_LOC = /^File\s+"([^"]*)"\s*,\s*line\s+(\d+)/i;
+  var COMPACT = /([^\s:"]+\.(?:bel|elf|cfg)):(\d+)\.(\d+)/;
+  function runVerdict(raw) {
+    const lines = String(raw || "").replace(ANSI, "").split("\n");
+    let holes = 0;
+    let error = false;
+    let first = null;
+    let inHoles = false;
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t || /^Done\.?$/.test(t) || t === ";") continue;
+      if (/^##\s/.test(t)) {
+        inHoles = /##\s*Holes:/i.test(t);
+        if (inHoles) holes += 1;
+        if (!inHoles && !STATUS.test(t)) error = true;
+        continue;
+      }
+      if (inHoles) continue;
+      error = true;
+      if (!first) {
+        const f = FILE_LOC.exec(t);
+        const c = f ? null : COMPACT.exec(t);
+        if (f) first = { path: f[1], line: Number(f[2]) };
+        else if (c) first = { path: c[1], line: Number(c[2]) };
+      }
+    }
+    return { kind: error ? "error" : holes ? "holes" : "ok", holes, first };
+  }
+  function leftDuringRun(start, end) {
+    return !!end.hidden || start.fileId != null && end.fileId !== start.fileId;
+  }
+  function runNotice(verdict, label, fileOf) {
+    if (verdict.kind === "ok") {
+      return { kind: "success", category: "ops", source: "run.finished", title: "Checked " + label, body: "No errors." };
+    }
+    if (verdict.kind === "holes") {
+      return { kind: "info", category: "ops", source: "run.finished", title: "Checked " + label, body: "No errors, with holes left to fill." };
+    }
+    const notice = { kind: "error", category: "ops", source: "run.finished", title: "Errors in " + label, body: "The first is shown when you open this." };
+    const at = verdict.first;
+    const fileId = at && typeof fileOf === "function" ? fileOf(at.path) : null;
+    if (at && fileId) {
+      notice.body = "The first is in " + at.path.slice(at.path.lastIndexOf("/") + 1) + ", line " + at.line + ".";
+      notice.links = { fileId, path: at.path, line: at.line };
+    } else if (at) {
+      notice.body = "The first is in " + at.path + ", line " + at.line + ".";
+    } else {
+      notice.body = "The REPL has the details.";
+    }
+    return notice;
+  }
+
   // js/beluga/beluga-run.mjs
   var global2 = globalThis;
   var belugaBusy = false;
@@ -355,6 +410,24 @@
       ReplStream.endTurn();
     }
   }
+  function whereNow() {
+    var P = typeof Persist !== "undefined" ? Persist : null;
+    return {
+      fileId: P && P.getActiveFileId ? P.getActiveFileId() : null,
+      hidden: typeof document !== "undefined" && document.visibilityState === "hidden"
+    };
+  }
+  function noteIfLeft(start, raw, label) {
+    var N = typeof Notifications !== "undefined" ? Notifications : null;
+    if (!N || typeof N.emit !== "function" || !leftDuringRun(start, whereNow())) return;
+    var files = typeof Persist !== "undefined" && Persist.listFiles && Persist.listFiles() || [];
+    function fileOf(path) {
+      for (var i = 0; i < files.length; i++) if (files[i].name === path) return files[i].id;
+      for (var j = 0; j < files.length; j++) if (baseName(files[j].name) === baseName(path)) return files[j].id;
+      return null;
+    }
+    N.emit(runNotice(runVerdict(raw), label, fileOf));
+  }
   async function runLoad(code, spans, opts) {
     opts = opts || {};
     if (typeof BelugaClient === "undefined") {
@@ -362,6 +435,8 @@
       return;
     }
     var caption = opts.caption || "run " + (opts.displayName || "input.bel");
+    var startedAt = whereNow();
+    var noticeLabel = opts.label || opts.displayName || "the run";
     beginRunTurn(caption);
     if (typeof ReplOutput !== "undefined" && ReplOutput.beginRunSkeleton) {
       ReplOutput.beginRunSkeleton();
@@ -396,6 +471,7 @@
       }
       setBelugaBusy(false);
       void RunProgress.complete({ lines: lineCount, ms: performance.now() - t0 });
+      noteIfLeft(startedAt, raw, noticeLabel);
     } catch (e) {
       setBelugaBusy(false);
       RunProgress.fail();
@@ -403,7 +479,9 @@
         await ReplOutput.dismissRunSkeleton();
       }
       if (!isCancelled(e)) {
-        Toasts.error(formatLoadError(e, spans, opts.prelude, opts.displayName), { duration: 0, closable: true });
+        var loadError = formatLoadError(e, spans, opts.prelude, opts.displayName);
+        Toasts.error(loadError, { duration: 0, closable: true });
+        noteIfLeft(startedAt, String(loadError), noticeLabel);
       }
     } finally {
       endRunTurn();
@@ -544,6 +622,8 @@
       });
     }
     setBelugaBusy(true, { label: "the project" });
+    var projectStart = whereNow();
+    var projectOutput = "";
     var t0 = performance.now();
     if (shouldShowRunProgress()) RunProgress.start({ op: "load" });
     var failures = 0;
@@ -564,6 +644,7 @@
         if (!String(raw).trim()) {
           raw = "## Type Reconstruction begin: " + job.dev.name + " ##\n## Type Reconstruction done:  " + job.dev.name + " ##";
         }
+        projectOutput += raw + "\n";
         if (typeof ReplOutput !== "undefined" && ReplOutput.resolveRunOutput) {
           await ReplOutput.resolveRunOutput(raw);
         } else {
@@ -580,6 +661,7 @@
         }
         failures++;
         var msg = applyOutputNaming(e && e.message ? String(e.message) : String(e), job.spans, null, job.dev.name);
+        projectOutput += msg + "\n";
         if (typeof ReplOutput !== "undefined" && ReplOutput.resolveRunOutput) {
           await ReplOutput.resolveRunOutput(msg);
         } else {
@@ -598,6 +680,7 @@
         { duration: 0, closable: true }
       );
     }
+    if (!cancelled) noteIfLeft(projectStart, projectOutput, "the project");
   }
   var loadCode = runToHere;
   var loadProject = runModule;

@@ -46,7 +46,8 @@ const is = (a, b) => a === b;
  * @param {object} a.mine          manifest of this device now
  * @param {Record<string, string>} a.mineTexts   file id → this device's text
  * @param {object} a.theirs        manifest of the server's head
- * @param {(hash: string) => string | undefined} a.text   a text by hash, if known
+ * @param {(hash: string) => string | null | undefined} a.text   a text by hash: undefined when
+ *   not fetched yet, null when the server no longer has it (a base pruned away)
  * @param {Set<string>} [a.conflicted]  files with a conflict here still waiting for a person
  * @param {() => string} a.newFileId
  * @returns {{ needs: string[] } | { project: object, conflicts: object[], notices: object[] }}
@@ -103,7 +104,10 @@ export function mergeProject(a) {
         const baseText = b ? need(b.hash) : '';
         const theirs = need(t.hash);
         if (baseText === undefined || theirs === undefined) continue;
-        const r = merge3(baseText, mine, theirs);
+        // ⛔ The text both sides started from is gone from the server (pruned):
+        // nothing can merge without it, so both are kept and a person chooses.
+        // Never an error that leaves the project unable to sync.
+        const r = baseText === null ? { ok: false } : merge3(baseText, mine, theirs);
         // `askAll` ("Changed in two places: Ask me", Settings > Account):
         // nothing merges by itself, so a clean merge waits for a person as an
         // overlap does. The very same change on both sides never gets here:
@@ -117,7 +121,7 @@ export function mergeProject(a) {
             // side already. Keep this one as a file rather than lose either.
             copies.push({ of: id, text: mine });
           } else {
-            conflicts.push({ id, base: baseText, mine, theirs });
+            conflicts.push({ id, base: baseText === null ? '' : baseText, mine, theirs });
             notices.push({ kind: 'conflict', path });
           }
         }

@@ -42,6 +42,15 @@
     return names.slice(0, max).join(", ") + " and " + (names.length - max) + " more";
   }
   var runVisible = (s) => !!(s.run && s.run.elapsedMs >= RUN_QUIET_MS);
+  function suiteHoles(here, elsewhere) {
+    if (!elsewhere) return "";
+    const total = here + elsewhere.reduce((n, x) => n + x.holes, 0);
+    if (!total) return "No holes in the suite";
+    const head = plural(total, "hole", "holes") + " in the suite";
+    if (!elsewhere.length) return head + ", all here";
+    const parts = (here ? [here + " here"] : []).concat(elsewhere.map((x) => x.holes + " in " + x.name));
+    return head + ": " + nameList(parts);
+  }
   function plural(n, one, many) {
     return n + " " + (n === 1 ? one : many);
   }
@@ -212,9 +221,10 @@
       const n = s.holes || 0;
       if (!n) return null;
       const rest = s.inHole ? n - 1 : n;
+      if (!rest) return null;
       return {
         key: "holes",
-        text: s.inHole ? rest > 0 ? "+" + rest + " more" : "last hole" : plural(n, "hole", "holes"),
+        text: s.inHole ? "+" + rest + " more" : plural(n, "hole", "holes"),
         title: "Go to the next hole",
         tone: "holes",
         action: "next-hole"
@@ -333,6 +343,7 @@
       const lines = [
         placed ? "File " + (x.index + 1) + " of " + x.count + " in suite " + x.name : "Suite " + x.name,
         upstream.length ? (upstream.length === 1 ? "An earlier file has errors: " : "Earlier files have errors: ") + nameList(upstream) : "",
+        suiteHoles(s.holes || 0, x.elsewhere),
         "Reveal in Explorer"
       ];
       return {
@@ -360,8 +371,8 @@
       return { key: "redo", icon: "redo", title: "Redo", command: "edit.redo", action: "redo", disabled: !s.redoDepth };
     },
     /**
-     * The way into the edit-history panel. A waiting redo branch is a tone
-     * change, spelled out in the panel — not a number beside the icon.
+     * The way into the edit-history panel. A waiting redo branch is spelled out
+     * in the panel — not a tone change or a number beside the icon.
      */
     history(s) {
       const undo = s.undoDepth || 0;
@@ -374,7 +385,7 @@
         // bright pink, which read as an error badge sitting next to the checker.
         icon: "history",
         title: "Edit history",
-        tone: redo ? "branched" : "plain",
+        tone: "plain",
         action: "edit-history",
         pressed: !!s.historyOpen
       };
@@ -563,6 +574,8 @@
     { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
     { id: "autosolveFocusNext", section: "harpoon", default: ON },
     { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // Case completion: fill a proof's missing cases when typing pauses, or only on a command.
+    { id: "caseFill", section: "harpoon", default: "auto", values: ["auto", "ask"] },
     // ── REPL ────────────────────────────────────────────────────────────────
     { id: "replAutoscroll", section: "repl", default: ON },
     { id: "replWelcome", section: "repl", default: ON },
@@ -575,9 +588,17 @@
     // Where this browser keeps history: a shared computer is not your laptop.
     { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
     // ── Workspace ───────────────────────────────────────────────────────────
-    { id: "inspectorFollow", section: "workspace", default: ON },
+    // What a plain arrival at BelJar opens: home, or the project last opened, the
+    // way an IDE reopens its last window. Early boot decides, before first paint
+    // (js/boot/early-boot-core.mjs `startTarget`).
+    { id: "startPage", section: "workspace", default: "home", values: ["home", "last"] },
+    { id: "inspectorFollow", section: "workspace", default: OFF },
     { id: "restorePanels", section: "workspace", default: ON },
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Tips seen once on any computer stay seen on all of them (js/ui/hint-seen.mjs):
+    // one row per tip, so two computers that each saw a different one never disagree.
+    { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },
@@ -787,8 +808,75 @@
       slug: "hover-sticky",
       title: "Sticky hover",
       setting: "hoverSticky"
+    },
+    // ── the two pages ─────────────────────────────────────────────────────────
+    {
+      slug: "start-page",
+      title: "Start page",
+      pages: "both",
+      labels: { home: "Home", last: "Last project" },
+      setting: "startPage"
+    },
+    // ── the account (Settings > Account; the labels are that panel's) ─────────
+    {
+      slug: "sync-settings",
+      title: "Sync settings",
+      verb: "settings sync",
+      pages: "both",
+      needs: "server",
+      setting: "syncSettings"
+    },
+    {
+      slug: "sync-both-changed",
+      title: "Changed in two places",
+      verb: "files changed in two places",
+      pages: "both",
+      needs: "server",
+      labels: { merge: "Merge them", ask: "Ask me" },
+      setting: "syncBothChanged"
+    },
+    {
+      slug: "sync-overlap",
+      title: "Where edits overlap",
+      pages: "both",
+      needs: "server",
+      labels: { ask: "Ask me", mine: "Keep mine", cloud: "Keep the cloud\u2019s" },
+      setting: "syncOverlap"
+    },
+    {
+      slug: "sync-reconnect",
+      title: "Back online",
+      verb: "edits made offline",
+      pages: "both",
+      needs: "server",
+      labels: { upload: "Upload them", ask: "Ask me first" },
+      setting: "syncReconnect"
+    },
+    {
+      slug: "sync-notices",
+      title: "Say when you go offline",
+      verb: "offline notices",
+      pages: "both",
+      needs: "server",
+      setting: "syncNotices"
+    },
+    {
+      slug: "sign-out-keep",
+      title: "Projects in this browser",
+      verb: "projects kept on sign-out",
+      pages: "both",
+      needs: "server",
+      labels: { remove: "Remove them", keep: "Keep them" },
+      setting: "signOutKeep"
     }
   ];
+  function serverAnswers() {
+    const A = globalThis.Account;
+    return !!(A && typeof A.available === "function" && A.available());
+  }
+  function offered(s) {
+    return s.needs !== "server" || serverAnswers();
+  }
   var SETTINGS2 = ROWS.map((r) => {
     const row = settingRow(r.setting);
     if (!row) throw new Error(`command-settings: "${r.slug}" names no setting "${r.setting}"`);
@@ -796,11 +884,11 @@
   });
   function optionCandidates() {
     const out = [];
-    for (const s of SETTINGS2) {
+    for (const s of SETTINGS2.filter(offered)) {
       out.push({ value: s.slug, label: s.title });
       for (const a of s.aliases || []) out.push({ value: a, label: s.title });
     }
-    for (const s of SETTINGS2) {
+    for (const s of SETTINGS2.filter(offered)) {
       if (s.kind !== "bool" && s.off === void 0) continue;
       out.push({ value: "no" + s.slug, label: s.title + " (off)" });
       for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " (off)" });
@@ -819,7 +907,8 @@
     const key = String(name == null ? "" : name).toLowerCase();
     if (!key) return null;
     const bare = key.startsWith("set.") ? key.slice(4) : key;
-    return SETTINGS2.find((s) => s.slug === bare) || SETTINGS2.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
+    const here = SETTINGS2.filter(offered);
+    return here.find((s) => s.slug === bare) || here.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
   }
 
   // js/status-strip/status-strip-complete.mjs
@@ -941,10 +1030,7 @@
     return { text: next, caret: span.from + String(value).length };
   }
 
-  // js/status-strip/status-strip-line-ui.mjs
-  var global = globalThis;
-  var HISTORY_CAP = 50;
-  var LIST_CAP = 30;
+  // js/ui/list-step.mjs
   var LIST_STEP = { n: 1, m: 1, p: -1 };
   var LIST_PAGE = 8;
   function stepLetter(e) {
@@ -972,6 +1058,11 @@
     }
     return 0;
   }
+
+  // js/status-strip/status-strip-line-ui.mjs
+  var global = globalThis;
+  var HISTORY_CAP = 50;
+  var LIST_CAP = 30;
   var host = null;
   var input = null;
   var ghostEl = null;
@@ -1757,6 +1848,7 @@
     rename: "Rename",
     hole: "Fill hole",
     "proof-commit": "Commit proof",
+    "case-arm": "Accept filled case",
     "library-insert": "Insert from library",
     "file-batch": "Add files",
     "file-delete": "Delete files"
@@ -2375,7 +2467,7 @@
     sync: null,
     /** `{ total, done, unfinished }` — the engine's `proofProgress()`. */
     proofs: null,
-    /** `{ name, index, count, upstreamErrors }` while the file is a suite member. */
+    /** `{ name, index, count, elsewhere, upstreamErrors }` while the file is a suite member. */
     suite: null,
     /** `{ label, elapsedMs }` while an explicit Run can be stopped. */
     run: null
@@ -2850,11 +2942,11 @@
   function suiteState() {
     if (!suiteBase) return null;
     const prev = state.suite;
-    const same = prev && prev.name === suiteBase.name && prev.index === suiteBase.index && prev.count === suiteBase.count && prev.upstreamErrors.join("\n") === upstreamErrors.join("\n");
-    return same ? prev : { ...suiteBase, upstreamErrors: upstreamErrors.slice() };
+    const next = { ...suiteBase, upstreamErrors: upstreamErrors.slice() };
+    return prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
   }
   function setSuite(next) {
-    suiteBase = next && next.name ? { name: next.name, index: next.index, count: next.count } : null;
+    suiteBase = next && next.name ? { name: next.name, index: next.index, count: next.count, elsewhere: next.elsewhere || null } : null;
     if (!suiteBase) upstreamErrors = [];
     setEditorState({ suite: suiteState() });
   }
@@ -2929,11 +3021,19 @@
     closeCommandLine: close,
     setOrca,
     /**
+     * Whether Orca is searching, as the lab last said. Read by the case-completion
+     * scheduler, which waits rather than search beside it; the lab stays the authority.
+     */
+    isOrcaRunning: () => !!state.orca,
+    /**
      * A second tab has this project open. The tab guard raises it when that tab
      * answers, and lowers it when the tab says goodbye.
      */
     setTabConflict: (on) => setEditorState({ tabConflict: !!on }),
-    /** `{ name, index, count }` while the active file is a member of a suite, else null. */
+    /**
+     * `{ name, index, count, elsewhere }` while the active file is a member of a
+     * suite, else null. `elsewhere` is `[{ name, holes }]` for the OTHER members.
+     */
     setSuite,
     /** `{ label }` while an explicit Run can be stopped, else null. */
     setRun,

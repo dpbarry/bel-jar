@@ -8,6 +8,8 @@ import { create as createExplorerBootstrap } from './app-explorer-bootstrap.mjs'
 import { create as createMenus } from './app-menus.mjs';
 import { create as createManuscriptExport } from './app-manuscript-export.mjs';
 import { create as createCommandPalette } from './app-command-palette.mjs';
+import { Routes } from '../frame/routes.mjs';
+import { createSuiteWatch } from './suite-notice.mjs';
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 // The shell used to boot purely by being loaded, which left nowhere to hand
@@ -54,6 +56,14 @@ const btnRun = (typeof ReplStream !== 'undefined' && ReplStream.getRunButton)
   : document.getElementById('btn-run');
 
 // ── Project init ──────────────────────────────────────────────────────────────
+
+// The address names this page's project (js/frame/routes.mjs). Opened on a bare
+// /edit, the page has settled on the last project: say so in the address, so a
+// reload, or another tab switching project, cannot land this one elsewhere.
+if (!Persist.leaving()) Routes.nameProject(Persist.getActiveProjectId());
+// "The last project opened" (what home lists first) is the one last looked at:
+// this tab coming to the front counts, though nothing loaded.
+onDoc('visibilitychange', () => { if (document.visibilityState === 'visible' && !Persist.leaving()) Persist.projectInUse(); });
 
 ensureProjectActiveCfgs();
 
@@ -516,12 +526,6 @@ function setTip(el, text, opts) {
   Tooltips.set(el, text, opts);
 }
 
-// One implementation, in the frame. The header button, the `view.theme`
-// command and the settings panel must all flip the same switch — and the frame
-// announces it on beljar:settings-changed, which re-themes CodeMirror below.
-function toggleTheme() {
-  return Frame.toggleTheme();
-}
 
 window.Repl = {
   appendBuffered: function (text, kind) {
@@ -542,6 +546,78 @@ const inspectorPanelEl = document.getElementById('inspector-panel');
 const libraryPanelEl = document.getElementById('library-panel');
 const harpoonPanelEl = document.getElementById('harpoon-panel');
 
+// First visit to the inspector: the same coachmark as the library tip, on the
+// cursor button, until it times out or that button is clicked.
+const INSPECTOR_FOLLOW_HINT = 'inspector-cursor';
+let inspectorFollowHintGen = 0;
+let inspectorFollowHintWait = 0;
+
+function cancelInspectorFollowHintWait() {
+  inspectorFollowHintGen += 1;
+  if (inspectorFollowHintWait) {
+    clearTimeout(inspectorFollowHintWait);
+    inspectorFollowHintWait = 0;
+  }
+}
+
+function hideInspectorFollowHint() {
+  cancelInspectorFollowHintWait();
+  if (typeof Hint === 'undefined' || !Hint.isVisible || !Hint.dismiss) return;
+  if (Hint.isVisible(INSPECTOR_FOLLOW_HINT)) Hint.dismiss(INSPECTOR_FOLLOW_HINT);
+}
+
+function acknowledgeInspectorFollowHint() {
+  cancelInspectorFollowHintWait();
+  if (typeof Hint !== 'undefined' && Hint.dismiss) Hint.dismiss(INSPECTOR_FOLLOW_HINT);
+}
+
+function pumpInspectorFollowHint(gen, tries) {
+  if (gen !== inspectorFollowHintGen) return;
+  inspectorFollowHintWait = 0;
+  if (!workspaceEl || !workspaceEl.classList.contains('is-inspector-open')) return;
+  if (typeof Hint === 'undefined' || !Hint.show) return;
+  if (Hint.wasDismissed && Hint.wasDismissed(INSPECTOR_FOLLOW_HINT)) return;
+  if (Hint.isVisible && Hint.isVisible(INSPECTOR_FOLLOW_HINT)) return;
+  if (Hint.isVisible && Hint.isVisible()) {
+    inspectorFollowHintWait = setTimeout(() => pumpInspectorFollowHint(gen, tries || 0), 200);
+    return;
+  }
+  const anchor = document.getElementById('inspector-sync-toggle');
+  const box = anchor && anchor.getBoundingClientRect();
+  if (!anchor || !box || box.width < 1 || box.height < 1) {
+    if ((tries || 0) > 20) return;
+    inspectorFollowHintWait = setTimeout(() => pumpInspectorFollowHint(gen, (tries || 0) + 1), 50);
+    return;
+  }
+  Hint.show({
+    id: INSPECTOR_FOLLOW_HINT,
+    anchor,
+    text: 'Click to make the inspector follow your cursor and vice versa',
+  });
+}
+
+function scheduleInspectorFollowHint() {
+  if (typeof Hint === 'undefined' || !Hint.show) return;
+  if (Hint.wasDismissed && Hint.wasDismissed(INSPECTOR_FOLLOW_HINT)) return;
+  if (Hint.isVisible && Hint.isVisible(INSPECTOR_FOLLOW_HINT)) return;
+  cancelInspectorFollowHintWait();
+  const gen = inspectorFollowHintGen;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (gen !== inspectorFollowHintGen) return;
+      // The library tip arms on these same two frames. Give it the balloon
+      // first; this one shows once that one is gone.
+      if (Hint.wasDismissed && !Hint.wasDismissed('library') && !(Hint.isVisible && Hint.isVisible())) {
+        inspectorFollowHintWait = setTimeout(() => pumpInspectorFollowHint(gen, 0), 50);
+        return;
+      }
+      pumpInspectorFollowHint(gen, 0);
+    });
+  });
+}
+
+teardown.push(cancelInspectorFollowHintWait);
+
 const SIDE_PANELS = {
   explorer: {
     btn: filesBtn,
@@ -552,6 +628,10 @@ const SIDE_PANELS = {
     btn: inspectorBtn,
     panel: inspectorPanelEl,
     openClass: 'is-inspector-open',
+    onOpenChange: (open) => {
+      if (open) scheduleInspectorFollowHint();
+      else hideInspectorFollowHint();
+    },
   },
   library: {
     btn: libraryBtn,
@@ -894,7 +974,7 @@ function __initAppPeels() {
   }));
 
   createCommandPalette(Object.assign({}, peelHub, {
-    toggleSidePanel, revealActiveFile, toggleTheme, newProject, newFile,
+    toggleSidePanel, revealActiveFile, newProject, newFile,
     fileInputEl: uploadImportApi.fileInputEl,
     uploadFolderInputEl: uploadImportApi.uploadFolderInputEl,
     folderInputEl: uploadImportApi.folderInputEl,
@@ -917,13 +997,16 @@ if (filesBtn && workspaceEl) {
 }
 
 // Switching projects swaps the entire hot-memory container (editor, engine,
-// Beluga session). A full reload is the clean boundary — the new active project
-// boots fresh while the previous one rests in storage. Order matters: flush the
-// current editor while the OLD project is still active (so the work lands in the
-// right silo), THEN run `mutate` (which switches the active project), then stop
-// beforeunload from re-flushing the stale buffer into the NEW project.
+// Beluga session). A new document is the clean boundary: the page leaves for
+// the other project's address (js/frame/routes.mjs), which boots fresh while
+// this one rests in storage. Order matters: flush the current editor while the
+// OLD project is still active (so the work lands in the right silo), THEN run
+// `mutate` (which switches the active project), then stop beforeunload from
+// re-flushing the stale buffer into the NEW project. `replace`: this address
+// names a project that is gone (deleted, or a blank placeholder dropped), so
+// Back must not return to it.
 let suppressUnloadFlush = false;
-function switchProjectAndReload(mutate) {
+function switchProjectAndReload(mutate, opts) {
   if (persist) persist.flushCheckpoint();
   WorkspaceState.flushWorkspace();
   suppressUnloadFlush = true;
@@ -933,7 +1016,7 @@ function switchProjectAndReload(mutate) {
     suppressUnloadFlush = false;
     throw e;
   }
-  window.location.reload();
+  Routes.go(Routes.editUrl(Persist.getActiveProjectId()), { replace: !!(opts && opts.replace) });
 }
 
 async function newProject(name) {
@@ -964,7 +1047,7 @@ function resumeProject(target, blank) {
   switchProjectAndReload(() => {
     Persist.setActiveProjectId(target);
     Persist.deleteProject(blank);
-  });
+  }, { replace: true });
   return true;
 }
 resumeDoor = resumeProject;
@@ -991,7 +1074,7 @@ async function deleteProjectInteractive(id) {
   }))) return;
   const wasActive = id === Persist.getActiveProjectId();
   if (wasActive) {
-    switchProjectAndReload(() => Persist.deleteProject(id));
+    switchProjectAndReload(() => Persist.deleteProject(id), { replace: true });
     return;
   }
   Persist.deleteProject(id);
@@ -1211,6 +1294,32 @@ onWin('beljar:file-lint', (ev) => {
 onWin('beljar:explorer-health-changed', () => scheduleTabLintStyles());
 onWin('beljar:development-checked', () => scheduleTabLintStyles());
 
+// ── A suite changes colour (plan v6 phase 04, n2; suite-notice.mjs) ──────────
+// Each suite's files, as the checks left them, once they settle: green to red
+// or back is one notice, naming the file that turned it, unless that file is
+// the one open (you saw it). Health is read from the observation store, cheap.
+const suiteWatch = createSuiteWatch();
+let suiteWatchTimer = 0;
+function watchSuites() {
+  suiteWatchTimer = 0;
+  const N = window.Notifications;
+  if (!N || typeof N.emit !== 'function') return;
+  const files = Persist.listFiles() || [];
+  const open = Persist.getFileById(Persist.getActiveFileId());
+  for (const cfg of files.filter((f) => /\.cfg$/i.test(f.name))) {
+    const members = ProjectSource.developmentFilesForCfg(files, cfg.name, projectFileText).map((f) => {
+      const health = belFileHealth(f.id);
+      const first = (health.items || []).find((it) => it.kind === 'error');
+      return { path: f.name, fileId: f.id, errors: health.errors || 0, line: first ? first.line : undefined };
+    });
+    const notice = suiteWatch.observe(cfg.name, members, open ? open.name : null);
+    if (notice) N.emit(notice);
+  }
+}
+onWin('beljar:explorer-health-changed', () => {
+  if (!suiteWatchTimer) suiteWatchTimer = setTimeout(watchSuites, 600);
+});
+
 // Initial render.
 if (activeFileId) Persist.openFile(activeFileId);
 registerWorkspaceProviders();
@@ -1245,6 +1354,10 @@ if (inspectorBtn && workspaceEl) {
     if (open) refreshInspector({ live: true });
   });
   onWin('beljar:open-inspector', openInspector);
+}
+const inspectorFollowBtn = document.getElementById('inspector-sync-toggle');
+if (inspectorFollowBtn) {
+  inspectorFollowBtn.addEventListener('click', acknowledgeInspectorFollowHint);
 }
 
 function openLibrary() {
@@ -1289,6 +1402,17 @@ if (libraryBtn && workspaceEl) {
   }
 }
 ensureLibrary();
+
+if (workspaceEl && workspaceEl.classList.contains('is-inspector-open')) {
+  scheduleInspectorFollowHint();
+}
+
+// Home's "Browse examples" arrives as /edit#library: open the library, once,
+// and take the mark off the address so a reload does not open it again.
+if (libraryBtn && workspaceEl && window.location.hash === '#library') {
+  window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
+  if (!workspaceEl.classList.contains('is-library-open')) libraryBtn.click();
+}
 
 // ── Harpoon sidebar panel ────────────────────────────────────────────────
 let harpoonPanelInited = false;

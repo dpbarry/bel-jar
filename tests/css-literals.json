@@ -1,0 +1,278 @@
+{
+ "css/account.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 22,
+  "uppercase": 0
+ },
+ "css/base.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 0,
+  "uppercase": 0
+ },
+ "css/command-palette.css": {
+  "colour": 6,
+  "radius": 1,
+  "spacing": 10,
+  "uppercase": 2
+ },
+ "css/components/autocomplete.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 2,
+  "uppercase": 0
+ },
+ "css/components/hint.css": {
+  "colour": 0,
+  "radius": 2,
+  "spacing": 5,
+  "uppercase": 0
+ },
+ "css/components/menu.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 13,
+  "uppercase": 2
+ },
+ "css/components/tooltip.css": {
+  "colour": 9,
+  "radius": 2,
+  "spacing": 14,
+  "uppercase": 2
+ },
+ "css/dialogs-aliases.css": {
+  "colour": 81,
+  "radius": 6,
+  "spacing": 43,
+  "uppercase": 1
+ },
+ "css/dialogs-base.css": {
+  "colour": 4,
+  "radius": 1,
+  "spacing": 6,
+  "uppercase": 0
+ },
+ "css/dialogs-keybindings.css": {
+  "colour": 20,
+  "radius": 0,
+  "spacing": 11,
+  "uppercase": 0
+ },
+ "css/dialogs-library-preview.css": {
+  "colour": 12,
+  "radius": 0,
+  "spacing": 16,
+  "uppercase": 0
+ },
+ "css/dialogs-settings.css": {
+  "colour": 31,
+  "radius": 1,
+  "spacing": 15,
+  "uppercase": 1
+ },
+ "css/dialogs.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 0,
+  "uppercase": 0
+ },
+ "css/editor.css": {
+  "colour": 21,
+  "radius": 4,
+  "spacing": 17,
+  "uppercase": 1
+ },
+ "css/explorer.css": {
+  "colour": 49,
+  "radius": 0,
+  "spacing": 13,
+  "uppercase": 0
+ },
+ "css/floating-window.css": {
+  "colour": 0,
+  "radius": 3,
+  "spacing": 6,
+  "uppercase": 1
+ },
+ "css/graph-3d.css": {
+  "colour": 46,
+  "radius": 4,
+  "spacing": 18,
+  "uppercase": 2
+ },
+ "css/graph.css": {
+  "colour": 5,
+  "radius": 2,
+  "spacing": 3,
+  "uppercase": 1
+ },
+ "css/harpoon-lab.css": {
+  "colour": 22,
+  "radius": 6,
+  "spacing": 87,
+  "uppercase": 7
+ },
+ "css/harpoon-orca.css": {
+  "colour": 0,
+  "radius": 11,
+  "spacing": 69,
+  "uppercase": 5
+ },
+ "css/harpoon-panel.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 1,
+  "uppercase": 0
+ },
+ "css/harpoon-tree.css": {
+  "colour": 11,
+  "radius": 2,
+  "spacing": 17,
+  "uppercase": 2
+ },
+ "css/harpoon.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 0,
+  "uppercase": 0
+ },
+ "css/header.css": {
+  "colour": 3,
+  "radius": 0,
+  "spacing": 6,
+  "uppercase": 0
+ },
+ "css/home.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 26,
+  "uppercase": 0
+ },
+ "css/ide.css": {
+  "colour": 18,
+  "radius": 2,
+  "spacing": 15,
+  "uppercase": 1
+ },
+ "css/inspector-detail.css": {
+  "colour": 14,
+  "radius": 4,
+  "spacing": 24,
+  "uppercase": 1
+ },
+ "css/inspector-header.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 3,
+  "uppercase": 1
+ },
+ "css/inspector-overview.css": {
+  "colour": 12,
+  "radius": 1,
+  "spacing": 5,
+  "uppercase": 1
+ },
+ "css/inspector-panel.css": {
+  "colour": 8,
+  "radius": 1,
+  "spacing": 6,
+  "uppercase": 1
+ },
+ "css/inspector.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 0,
+  "uppercase": 0
+ },
+ "css/library-find.css": {
+  "colour": 16,
+  "radius": 3,
+  "spacing": 37,
+  "uppercase": 2
+ },
+ "css/library-panel.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 8,
+  "uppercase": 0
+ },
+ "css/library-preview.css": {
+  "colour": 7,
+  "radius": 5,
+  "spacing": 22,
+  "uppercase": 3
+ },
+ "css/library.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 0,
+  "uppercase": 0
+ },
+ "css/notifications.css": {
+  "colour": 6,
+  "radius": 1,
+  "spacing": 24,
+  "uppercase": 2
+ },
+ "css/page-transition.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 0,
+  "uppercase": 0
+ },
+ "css/privacy.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 10,
+  "uppercase": 0
+ },
+ "css/repl-panel.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 8,
+  "uppercase": 1
+ },
+ "css/repl-results.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 45,
+  "uppercase": 5
+ },
+ "css/repl-stream.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 2,
+  "uppercase": 0
+ },
+ "css/repl.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 0,
+  "uppercase": 0
+ },
+ "css/responsive.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 0,
+  "uppercase": 0
+ },
+ "css/status-strip.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 39,
+  "uppercase": 2
+ },
+ "css/style.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 0,
+  "uppercase": 0
+ },
+ "css/workspace.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 3,
+  "uppercase": 0
+ }
+}

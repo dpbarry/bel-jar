@@ -7,6 +7,7 @@ import { create as createReel } from './harpoon-lab-reel.mjs';
 import { create as createAuto } from './harpoon-lab-auto.mjs';
 import { create as createTreeUi } from './harpoon-lab-tree-ui.mjs';
 import { create as createManual } from './harpoon-lab-manual.mjs';
+import { orcaNotice, harpoonInView, LONG_MS } from './orca-notice.mjs';
 
 const global = globalThis;
 function E() { return global.BelEditor || null; }
@@ -376,6 +377,38 @@ function E() { return global.BelEditor || null; }
     var col = before.length - (lastNl < 0 ? 0 : lastNl + 1) + 1;
     var off = bodyStart + qIdx;
     return { hole: { line: line, col: col, name: null }, from: off, to: off + 1 };
+  }
+
+  /**
+   * Orca finished, or gave up, while you were elsewhere (plan v6 phase 04, n3;
+   * orca-notice.mjs): named, opening the hole. `BELJAR_ORCA_NOTICE_MS` lowers
+   * the "long enough to have looked away" for the probe that checks it.
+   */
+  function noteOrcaFinished(session, complete, stuck, startedAt) {
+    var N = global.Notifications;
+    if (!N || typeof N.emit !== 'function') return;
+    var now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    var fileId = session.fileId || (session.anchor && session.anchor.fileId) || null;
+    var link = null;
+    if (fileId) {
+      var text = liveFileText(fileId);
+      var hit = text ? findHoleHitInText(text, session.anchor, E()) : null;
+      var P = global.Persist;
+      var file = P && P.getFileById ? P.getFileById(fileId) : null;
+      if (hit) link = { fileId: fileId, path: file ? file.name : '', from: hit.from, to: hit.to };
+    }
+    var notice = orcaNotice({
+      complete: !!complete,
+      stuck: stuck,
+      name: (session.nativeAuto && session.nativeAuto.declName) || (session.anchor && session.anchor.declName) || '',
+      elapsedMs: now - startedAt,
+      panelOpen: harpoonInView(session,
+        !!(typeof document !== 'undefined' && document.querySelector('.workspace.is-harpoon-open'))),
+      hidden: typeof document !== 'undefined' && document.visibilityState === 'hidden',
+      link: link,
+      longMs: typeof global.BELJAR_ORCA_NOTICE_MS === 'number' ? global.BELJAR_ORCA_NOTICE_MS : LONG_MS,
+    });
+    if (notice) N.emit(notice);
   }
 
   // Display/commit peels — filled by __initHarpoonLabPeels.
@@ -1037,6 +1070,7 @@ function E() { return global.BelEditor || null; }
       startedAt: (typeof performance !== 'undefined' ? performance.now() : Date.now()),
     };
     var orcaToken = claimOrcaRun(this);
+    var orcaStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     this.render();
     if (!this._goalTierListener) {
       this._goalTierListener = function () {
@@ -1157,6 +1191,11 @@ function E() { return global.BelEditor || null; }
       });
     }).then(function (r) {
       if (self.disposed) return false;
+      // ⛔ Never write a `/ total /` the author did not. On an untotalied theorem the
+      // search may try a measure of its own and return code that carries it; the proof
+      // it found stands without it (the engine has verified it is not circular), so the
+      // measure comes off here, before the result reaches the working program or a commit.
+      if (r && ed.withoutSynthesizedMeasure) r = ed.withoutSynthesizedMeasure(r, thm);
       self.probeAnchor();
       // RETIRED: the user took a step by hand while paused. The manual state is
       // already correct (synced at pause), so just let the surface settle — do
@@ -1194,6 +1233,7 @@ function E() { return global.BelEditor || null; }
       // ONE SURFACE: hand the result to the working program so the panel shows
       // what actually happened rather than the state it started from.
       if (self.manual) self.absorbOrcaResult(r);
+      noteOrcaFinished(self, !!(r && r.complete), stuck, orcaStartedAt);
       return !!(r && r.complete);
     }).catch(function (err) {
       if (self.disposed) return false;
@@ -1214,6 +1254,7 @@ function E() { return global.BelEditor || null; }
       };
       self.render();
       self.refreshTreeExplorer();
+      noteOrcaFinished(self, false, self.nativeAuto.stuck, orcaStartedAt);
       return false;
     }).finally(function () {
       // The search is over, whatever the outcome — the bar must stop claiming

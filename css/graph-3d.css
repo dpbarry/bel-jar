@@ -451,7 +451,7 @@
 
 .jar-graph3d-autocomplete::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--base-mid) 50%, transparent);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .jar-graph3d-ac-item {

@@ -26,8 +26,8 @@
   }
   function separatedFromAnchor(x, y, w, h, anchor, gap) {
     const tr = anchor;
-    const g2 = gap;
-    return x + w <= tr.left - g2 || x >= tr.right + g2 || y + h <= tr.top - g2 || y >= tr.bottom + g2;
+    const g3 = gap;
+    return x + w <= tr.left - g3 || x >= tr.right + g3 || y + h <= tr.top - g3 || y >= tr.bottom + g3;
   }
   function overlapAreaWithAnchor(x, y, w, h, anchor) {
     const tr = anchor;
@@ -43,15 +43,15 @@
     const y2 = Math.min(vh - m, y + h) - Math.max(m, y);
     return Math.max(0, x2) * Math.max(0, y2);
   }
-  function computePointMenuPlacement(tw, th, vw, vh, m, g2, tr) {
-    let x = tr.left + g2;
-    let y = tr.top + g2;
-    if (x + tw > vw - m) x = tr.left - g2 - tw;
-    if (y + th > vh - m) y = tr.top - g2 - th;
+  function computePointMenuPlacement(tw, th, vw, vh, m, g3, tr) {
+    let x = tr.left + g3;
+    let y = tr.top + g3;
+    if (x + tw > vw - m) x = tr.left - g3 - tw;
+    if (y + th > vh - m) y = tr.top - g3 - th;
     const c = clampToViewport(x, y, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "menu" };
   }
-  function computeSideMenuPlacement(tw, th, vw, vh, m, g2, tr, side, align) {
+  function computeSideMenuPlacement(tw, th, vw, vh, m, g3, tr, side, align) {
     const ah = tr.bottom - tr.top;
     const aw = tr.right - tr.left;
     const alignY = () => {
@@ -67,34 +67,34 @@
     let x;
     let y;
     if (side === "right") {
-      x = tr.right + g2;
-      if (x + tw > vw - m) x = tr.left - g2 - tw;
+      x = tr.right + g3;
+      if (x + tw > vw - m) x = tr.left - g3 - tw;
       y = alignY();
       y = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
     } else if (side === "left") {
-      x = tr.left - g2 - tw;
-      if (x < m) x = tr.right + g2;
+      x = tr.left - g3 - tw;
+      if (x < m) x = tr.right + g3;
       y = alignY();
       y = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
     } else if (side === "bottom") {
-      y = tr.bottom + g2;
-      if (y + th > vh - m) y = tr.top - g2 - th;
+      y = tr.bottom + g3;
+      if (y + th > vh - m) y = tr.top - g3 - th;
       x = alignX();
       x = Math.min(Math.max(m, x), Math.max(m, vw - m - tw));
     } else {
-      y = tr.top - g2 - th;
-      if (y < m) y = tr.bottom + g2;
+      y = tr.top - g3 - th;
+      if (y < m) y = tr.bottom + g3;
       x = alignX();
       x = Math.min(Math.max(m, x), Math.max(m, vw - m - tw));
     }
     const c = clampToViewport(x, y, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "menu" };
   }
-  function computeMenuPlacementFull(opts, tw, th, vw, vh, m, g2, tr) {
+  function computeMenuPlacementFull(opts, tw, th, vw, vh, m, g3, tr) {
     const side = opts.side;
     const align = opts.align ?? "start";
-    if (!side) return computePointMenuPlacement(tw, th, vw, vh, m, g2, tr);
-    return computeSideMenuPlacement(tw, th, vw, vh, m, g2, tr, side, align);
+    if (!side) return computePointMenuPlacement(tw, th, vw, vh, m, g3, tr);
+    return computeSideMenuPlacement(tw, th, vw, vh, m, g3, tr, side, align);
   }
   function computePosition(opts) {
     const tw = opts.width;
@@ -105,14 +105,14 @@
     const gap = opts.gap ?? DEFAULT_GAP;
     const tr = normalizeAnchor(opts.anchor);
     const m = margin;
-    const g2 = gap;
+    const g3 = gap;
     if (opts.mode === "menu") {
-      return computeMenuPlacementFull(opts, tw, th, vw, vh, m, g2, tr);
+      return computeMenuPlacementFull(opts, tw, th, vw, vh, m, g3, tr);
     }
     const preferPlacement = opts.preferPlacement ?? PREFERENCE_TOOLTIP;
     const requireSeparation = opts.requireSeparation !== false;
     const fits = (x, y) => fitsViewport(x, y, tw, th, vw, vh, m);
-    const sep = (x, y) => !requireSeparation || separatedFromAnchor(x, y, tw, th, tr, g2);
+    const sep = (x, y) => !requireSeparation || separatedFromAnchor(x, y, tw, th, tr, g3);
     const clampY = (x, y) => {
       const iy = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
       return { x, y: iy };
@@ -124,28 +124,28 @@
     function tryPlacement(side) {
       switch (side) {
         case "right": {
-          const x = tr.right + g2;
+          const x = tr.right + g3;
           if (x + tw > vw - m) return null;
           const { y } = clampY(x, tr.top + (tr.bottom - tr.top) / 2 - th / 2);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "left": {
-          const x = tr.left - g2 - tw;
+          const x = tr.left - g3 - tw;
           if (x < m) return null;
           const { y } = clampY(x, tr.top + (tr.bottom - tr.top) / 2 - th / 2);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "bottom": {
-          const y = tr.bottom + g2;
+          const y = tr.bottom + g3;
           if (y + th > vh - m) return null;
           const { x } = clampX(tr.left + (tr.right - tr.left) / 2 - tw / 2, y);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "top": {
-          const y = tr.top - g2 - th;
+          const y = tr.top - g3 - th;
           if (y < m) return null;
           const { x } = clampX(tr.left + (tr.right - tr.left) / 2 - tw / 2, y);
           if (!fits(x, y) || !sep(x, y)) return null;
@@ -160,10 +160,10 @@
       if (pos) return pos;
     }
     const emergency = [
-      () => ({ x: m, y: tr.bottom + g2 }),
-      () => ({ x: vw - m - tw, y: tr.bottom + g2 }),
-      () => ({ x: tr.left - g2 - tw, y: vh - m - th }),
-      () => ({ x: tr.right + g2, y: vh - m - th }),
+      () => ({ x: m, y: tr.bottom + g3 }),
+      () => ({ x: vw - m - tw, y: tr.bottom + g3 }),
+      () => ({ x: tr.left - g3 - tw, y: vh - m - th }),
+      () => ({ x: tr.right + g3, y: vh - m - th }),
       () => ({ x: m, y: m })
     ];
     let best = null;
@@ -184,7 +184,7 @@
       }
     }
     if (best) return best;
-    const c = clampToViewport(tr.right + g2, tr.bottom + g2, tw, th, vw, vh, m);
+    const c = clampToViewport(tr.right + g3, tr.bottom + g3, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "fallback" };
   }
   var FloatingRectPlacement = {
@@ -920,6 +920,8 @@
     { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
     { id: "autosolveFocusNext", section: "harpoon", default: ON },
     { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // Case completion: fill a proof's missing cases when typing pauses, or only on a command.
+    { id: "caseFill", section: "harpoon", default: "auto", values: ["auto", "ask"] },
     // ── REPL ────────────────────────────────────────────────────────────────
     { id: "replAutoscroll", section: "repl", default: ON },
     { id: "replWelcome", section: "repl", default: ON },
@@ -932,9 +934,17 @@
     // Where this browser keeps history: a shared computer is not your laptop.
     { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
     // ── Workspace ───────────────────────────────────────────────────────────
-    { id: "inspectorFollow", section: "workspace", default: ON },
+    // What a plain arrival at BelJar opens: home, or the project last opened, the
+    // way an IDE reopens its last window. Early boot decides, before first paint
+    // (js/boot/early-boot-core.mjs `startTarget`).
+    { id: "startPage", section: "workspace", default: "home", values: ["home", "last"] },
+    { id: "inspectorFollow", section: "workspace", default: OFF },
     { id: "restorePanels", section: "workspace", default: ON },
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Tips seen once on any computer stay seen on all of them (js/ui/hint-seen.mjs):
+    // one row per tip, so two computers that each saw a different one never disagree.
+    { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },
@@ -1990,6 +2000,110 @@
   };
   global2.BelJarNotifications = global2.Notifications;
 
+  // js/frame/routes.mjs
+  var g2 = typeof window !== "undefined" ? window : globalThis;
+  var PROJECT_ID = /^p_[0-9a-hjkmnp-tv-z]{26}$/;
+  var EDIT_SHORT = /(?:^|\/)edit\/?$/;
+  var EDIT_ANY = /(?:^|\/)edit(?:\.html)?\/?$/;
+  var PRIVACY_ANY = /(?:^|\/)privacy(?:\.html)?\/?$/;
+  function short() {
+    if (g2.BELJAR_DEPLOYED) return true;
+    const path = g2.location && typeof g2.location.pathname === "string" ? g2.location.pathname : "";
+    return EDIT_SHORT.test(path);
+  }
+  function query(pairs) {
+    const parts = [];
+    for (const [k, v] of pairs) if (v) parts.push(k + "=" + encodeURIComponent(v));
+    return parts.length ? "?" + parts.join("&") : "";
+  }
+  function startsOnLast() {
+    const S = g2.Settings;
+    try {
+      return !!S && typeof S.get === "function" && S.get("startPage") === "last";
+    } catch (_) {
+      return false;
+    }
+  }
+  function homeUrl(opts) {
+    const base = short() ? "/" : "index.html";
+    if (opts && opts.open) return base + query([["open", opts.open]]);
+    return base + (startsOnLast() ? "?home" : "");
+  }
+  function editUrl(pid) {
+    return (short() ? "/edit" : "edit.html") + query([["p", pid]]);
+  }
+  function privacyUrl() {
+    return short() ? "/privacy" : "privacy.html";
+  }
+  function signInUrl(loc) {
+    const l = loc || g2.location;
+    const back = l ? String(l.pathname || "/") + String(l.search || "") : "/";
+    return "/api/auth/github/start" + query([["return", back]]);
+  }
+  function pageOf(loc) {
+    const p = String(loc && loc.pathname || "");
+    if (EDIT_ANY.test(p)) return "edit";
+    return PRIVACY_ANY.test(p) ? "privacy" : "home";
+  }
+  function projectParam(loc, name) {
+    const pairs = String(loc && loc.search || "").replace(/^\?/, "").split("&");
+    for (const pair of pairs) {
+      const eq = pair.indexOf("=");
+      if (eq === -1 || pair.slice(0, eq) !== name) continue;
+      let v = pair.slice(eq + 1);
+      try {
+        v = decodeURIComponent(v);
+      } catch (_) {
+        return null;
+      }
+      return PROJECT_ID.test(v) ? v : null;
+    }
+    return null;
+  }
+  function projectOf(loc) {
+    return pageOf(loc) === "edit" ? projectParam(loc, "p") : null;
+  }
+  function pendingOf(loc) {
+    return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
+  }
+  var ISSUES_URL = "https://github.com/dpbarry/bel-jar/issues";
+  function reportIssue() {
+    if (typeof g2.open === "function") g2.open(ISSUES_URL, "_blank", "noopener");
+  }
+  function go(url, opts) {
+    if (!g2.location) return;
+    if (opts && opts.replace) g2.location.replace(url);
+    else g2.location.assign(url);
+  }
+  function settle(url) {
+    const h = g2.history;
+    const l = g2.location;
+    if (!h || !l || typeof h.replaceState !== "function") return false;
+    h.replaceState(h.state, "", url + String(l.hash || ""));
+    return true;
+  }
+  function nameProject(pid) {
+    const l = g2.location;
+    if (!l || pageOf(l) !== "edit" || projectOf(l) === pid) return false;
+    return settle(editUrl(pid));
+  }
+  var Routes = {
+    PROJECT_ID,
+    ISSUES_URL,
+    homeUrl,
+    editUrl,
+    privacyUrl,
+    signInUrl,
+    pageOf,
+    projectOf,
+    pendingOf,
+    go,
+    settle,
+    nameProject,
+    reportIssue
+  };
+  g2.Routes = Routes;
+
   // js/frame/frame.mjs
   var global3 = globalThis;
   var teardown2 = [];
@@ -2012,9 +2126,11 @@
   }
   function onSettingsChanged(e) {
     if (e.ids.some((id) => settingRow(id).boot)) repaint();
+    if (e.ids.includes("startPage")) nameHome();
   }
-  function onReload() {
-    global3.location.reload();
+  function nameHome() {
+    const home = document.getElementById("btn-home");
+    if (home) home.setAttribute("href", Routes.homeUrl());
   }
   function onSettings() {
     if (global3.SettingsUI && typeof global3.SettingsUI.open === "function") {
@@ -2031,8 +2147,8 @@
       global3.Notifications.init();
     }
     track2(document.getElementById("btn-theme"), "click", toggleTheme);
-    track2(document.getElementById("btn-reload"), "click", onReload);
     track2(document.getElementById("btn-settings"), "click", onSettings);
+    nameHome();
   }
   function unmount() {
     if (!mounted) return;

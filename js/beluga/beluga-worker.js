@@ -135,36 +135,12 @@ self.onmessage = function (e) {
   enqueueJob(msg);
 };
 
-function importBelugaFromBlob(buffer) {
-  var blob = new Blob([buffer], { type: 'text/javascript' });
-  var url = URL.createObjectURL(blob);
-  try {
-    importScripts(url);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
+// The runtime loader is shared with the case-completion worker (beluga-runtime-load.js),
+// so the one way the runtime is loaded cannot drift between them.
+importScripts(new URL('beluga-runtime-load.js', self.location.href).href);
 
 function loadBelugaScript() {
-  return fetch(BELUGA_JS, { credentials: 'same-origin' }).then(function (res) {
-    if (!res.ok) {
-      throw new Error('Beluga fetch HTTP ' + res.status + ' for ' + BELUGA_JS);
-    }
-    return res.arrayBuffer();
-  }).then(function (buf) {
-    if (!buf || !buf.byteLength) throw new Error('Beluga script was empty: ' + BELUGA_JS);
-    importBelugaFromBlob(buf);
-    if (typeof Beluga === 'undefined') throw new Error('Beluga global missing after load');
-  }).catch(function (fetchErr) {
-    try {
-      importScripts(BELUGA_JS);
-      if (typeof Beluga === 'undefined') throw new Error('Beluga global missing after load');
-    } catch (syncErr) {
-      var detail = fetchErr && fetchErr.message ? fetchErr.message : String(fetchErr);
-      var syncDetail = syncErr && syncErr.message ? syncErr.message : String(syncErr);
-      throw new Error('Could not load Beluga (' + detail + '; importScripts: ' + syncDetail + ')');
-    }
-  });
+  return self.loadBelugaRuntime(BELUGA_JS);
 }
 
 loadBelugaScript().then(function () {

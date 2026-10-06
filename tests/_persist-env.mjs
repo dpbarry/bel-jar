@@ -55,11 +55,12 @@ export function makeBrowserStorage(seed, opts = {}) {
 
 /**
  * Open a "tab": a fresh vm realm running the Persist bundle over `storage`.
- * Returns { P, S, ctx, tab }. Every write through this tab's storage is heard
+ * Returns { P, S, ctx, tab, fire }. Every write through this tab's storage is heard
  * by the other tabs as a `storage` event, and not by this one.
  */
 export function openTab(storage, extras = {}) {
   const listeners = new Set();
+  const others = new Map(); // every other event the page listens for: type → listeners
   const tab = { listeners, storage: null };
   // Writes made while this tab's code runs are this tab's: other tabs hear them.
   const scoped = new Proxy(storage, {
@@ -80,13 +81,18 @@ export function openTab(storage, extras = {}) {
     TextEncoder,
     crypto: webcrypto,
     localStorage: scoped,
-    addEventListener(type, fn) { if (type === 'storage') listeners.add(fn); },
+    addEventListener(type, fn) {
+      if (type === 'storage') listeners.add(fn);
+      else others.set(type, (others.get(type) || []).concat(fn));
+    },
     removeEventListener(type, fn) { if (type === 'storage') listeners.delete(fn); },
     ...extras,
   });
   ctx.globalThis = ctx;
   runPersistStackInContext(ctx);
-  return { P: ctx.Persist, S: ctx.Settings, ctx, tab };
+  /** Fire a page event (pagehide, pageshow, ...) at this tab, as the browser would. */
+  const fire = (type, event = {}) => { for (const fn of others.get(type) || []) fn(event); };
+  return { P: ctx.Persist, S: ctx.Settings, ctx, tab, fire };
 }
 
 /** A value from a vm realm, copied into this one (so deepEqual compares data, not prototypes). */

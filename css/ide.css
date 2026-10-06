@@ -501,7 +501,7 @@ html.jar-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
 
 .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--base-mid) 50%, transparent);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 @media (hover: hover) and (pointer: fine) {

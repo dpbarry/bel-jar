@@ -452,7 +452,7 @@
   bottom: 0;
   left: 0;
   width: 40%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(90deg,
     transparent 0%,
     color-mix(in srgb, var(--move-accent) 62%, transparent) 38%,
@@ -654,7 +654,7 @@
   display: inline-flex;
   gap: 0.15rem;
   padding: 0.12rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--harpoon-divider) 30%, transparent);
 }
 .harpoon-deriv-tab {
@@ -664,7 +664,7 @@
   font-weight: 600;
   padding: 0.14rem 0.55rem;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--muted-high);
   cursor: pointer;

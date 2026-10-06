@@ -14,6 +14,11 @@
  * here too was a second copy of the schema, and the two had drifted apart.
  * An id the table does not declare throws at load.
  *
+ * `pages: 'both'` is a preference home offers too (it is not about an open
+ * file), and `needs: 'server'` one that exists only where a server answers:
+ * the account's. Without a server it is not attached, not completed and not
+ * found by `:set`, as its panel is not in the Settings dialog.
+ *
  * A boolean flips. A choice cycles its values; when a choice also has a
  * vi-style on/off flavour (`:set list` / `:set nolist`) it names `on` and `off`.
  * `aliases` are the names `:set` answers to — vi's own spellings where vi has one.
@@ -101,7 +106,41 @@ const ROWS = [
     setting: 'quietWhileTyping' },
   { slug: 'hover-sticky', title: 'Sticky hover',
     setting: 'hoverSticky' },
+
+  // ── the two pages ─────────────────────────────────────────────────────────
+  { slug: 'start-page', title: 'Start page', pages: 'both',
+    labels: { home: 'Home', last: 'Last project' },
+    setting: 'startPage' },
+
+  // ── the account (Settings > Account; the labels are that panel's) ─────────
+  { slug: 'sync-settings', title: 'Sync settings', verb: 'settings sync', pages: 'both', needs: 'server',
+    setting: 'syncSettings' },
+  { slug: 'sync-both-changed', title: 'Changed in two places', verb: 'files changed in two places', pages: 'both', needs: 'server',
+    labels: { merge: 'Merge them', ask: 'Ask me' },
+    setting: 'syncBothChanged' },
+  { slug: 'sync-overlap', title: 'Where edits overlap', pages: 'both', needs: 'server',
+    labels: { ask: 'Ask me', mine: 'Keep mine', cloud: 'Keep the cloud’s' },
+    setting: 'syncOverlap' },
+  { slug: 'sync-reconnect', title: 'Back online', verb: 'edits made offline', pages: 'both', needs: 'server',
+    labels: { upload: 'Upload them', ask: 'Ask me first' },
+    setting: 'syncReconnect' },
+  { slug: 'sync-notices', title: 'Say when you go offline', verb: 'offline notices', pages: 'both', needs: 'server',
+    setting: 'syncNotices' },
+  { slug: 'sign-out-keep', title: 'Projects in this browser', verb: 'projects kept on sign-out', pages: 'both', needs: 'server',
+    labels: { remove: 'Remove them', keep: 'Keep them' },
+    setting: 'signOutKeep' },
 ];
+
+/** A server answers here: the account, and the preferences that belong to it, exist. */
+export function serverAnswers() {
+  const A = globalThis.Account;
+  return !!(A && typeof A.available === 'function' && A.available());
+}
+
+/** A preference this page can be asked for by name right now. */
+function offered(s) {
+  return s.needs !== 'server' || serverAnswers();
+}
 
 /** The rows, with what they flip or cycle taken from the settings table. */
 export const SETTINGS = ROWS.map((r) => {
@@ -139,13 +178,14 @@ export function settingEntries() {
     scope: 'global',
     keybindable: true,
     palette: true,
+    pages: s.pages || 'editor',
   }));
 }
 
 /** Every name `:set` answers to, in table order. */
 export function optionNames() {
   const out = [];
-  for (const s of SETTINGS) {
+  for (const s of SETTINGS.filter(offered)) {
     out.push(s.slug);
     for (const a of s.aliases || []) out.push(a);
   }
@@ -155,7 +195,7 @@ export function optionNames() {
 /** Completion rows for the argument slot of `:set`. */
 export function optionCandidates() {
   const out = [];
-  for (const s of SETTINGS) {
+  for (const s of SETTINGS.filter(offered)) {
     out.push({ value: s.slug, label: s.title });
     for (const a of s.aliases || []) out.push({ value: a, label: s.title });
   }
@@ -166,7 +206,7 @@ export function optionCandidates() {
   // Only where turning it off means something: an enum with no `off` value has
   // nothing to negate, which is exactly what `parseSet` reports as
   // `not-boolean`.
-  for (const s of SETTINGS) {
+  for (const s of SETTINGS.filter(offered)) {
     if (s.kind !== 'bool' && s.off === undefined) continue;
     out.push({ value: 'no' + s.slug, label: s.title + ' (off)' });
     for (const a of s.aliases || []) out.push({ value: 'no' + a, label: s.title + ' (off)' });
@@ -194,8 +234,9 @@ export function findSetting(name) {
   const key = String(name == null ? '' : name).toLowerCase();
   if (!key) return null;
   const bare = key.startsWith('set.') ? key.slice(4) : key;
-  return SETTINGS.find((s) => s.slug === bare)
-    || SETTINGS.find((s) => (s.aliases || []).indexOf(bare) >= 0)
+  const here = SETTINGS.filter(offered);
+  return here.find((s) => s.slug === bare)
+    || here.find((s) => (s.aliases || []).indexOf(bare) >= 0)
     || null;
 }
 

@@ -1160,6 +1160,7 @@
     if (!Array.isArray(raw)) return void 0;
     return [...new Set(raw.filter((id) => typeof id === "string" && id !== ""))];
   }
+  var idList = accountIds;
   var PANEL_W = { group: "layout", default: 250, min: 160, max: 512, integer: true, boot: true };
   var PANEL_H = { group: "layout", default: 190, min: 96, max: 384, integer: true, boot: true };
   var DEVICE = [
@@ -1172,6 +1173,16 @@
     // here, usable signed out and never adopted by another account (work.mjs
     // `isVisible`). Each leaves the list when it signs in again.
     { id: "keptAccounts", type: "json", default: [], normalize: accountIds },
+    // Signed out with "Remove": the account whose projects are still to leave
+    // this browser ('' none). They go when the next page loads (work.mjs
+    // `finishSignOut`), never under the page that signed out, which is still live.
+    { id: "leftAccount", type: "string", default: "" },
+    // And the projects of it that stay, kept for it: a session that ended
+    // elsewhere leaves behind nothing the cloud lacks (account.mjs `sessionEnded`).
+    { id: "leftKeep", type: "json", default: [], normalize: idList },
+    // Why this browser was signed out without asking ('' none): 'elsewhere' or
+    // 'ended'. Said once, by the page that loads next (account.mjs).
+    { id: "signedOutNote", type: "string", default: "" },
     // Signing in again: the account whose work this browser should come back
     // to, and the project it had open when it signed out here ('' the newest).
     // Used once, by the first load that finds a blank placeholder open

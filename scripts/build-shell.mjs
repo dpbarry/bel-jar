@@ -38,8 +38,9 @@ const SHELL_ENTRIES = [
   'boot/early-boot.mjs',
   'boot/panel-restore.mjs',
   'boot/error-hook.mjs',
-  // Product boot (index.html):
+  // Product boot: the editor (edit.html), and home (index.html):
   'shell.mjs',
+  'home.mjs',
 ];
 
 const entryPoints = SHELL_ENTRIES.map((rel) => join(jsRoot, rel));

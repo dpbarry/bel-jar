@@ -91,6 +91,8 @@
     { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
     { id: "autosolveFocusNext", section: "harpoon", default: ON },
     { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // Case completion: fill a proof's missing cases when typing pauses, or only on a command.
+    { id: "caseFill", section: "harpoon", default: "auto", values: ["auto", "ask"] },
     // ── REPL ────────────────────────────────────────────────────────────────
     { id: "replAutoscroll", section: "repl", default: ON },
     { id: "replWelcome", section: "repl", default: ON },
@@ -103,9 +105,17 @@
     // Where this browser keeps history: a shared computer is not your laptop.
     { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
     // ── Workspace ───────────────────────────────────────────────────────────
-    { id: "inspectorFollow", section: "workspace", default: ON },
+    // What a plain arrival at BelJar opens: home, or the project last opened, the
+    // way an IDE reopens its last window. Early boot decides, before first paint
+    // (js/boot/early-boot-core.mjs `startTarget`).
+    { id: "startPage", section: "workspace", default: "home", values: ["home", "last"] },
+    { id: "inspectorFollow", section: "workspace", default: OFF },
     { id: "restorePanels", section: "workspace", default: ON },
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Tips seen once on any computer stay seen on all of them (js/ui/hint-seen.mjs):
+    // one row per tip, so two computers that each saw a different one never disagree.
+    { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },

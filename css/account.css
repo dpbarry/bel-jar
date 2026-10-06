@@ -98,9 +98,16 @@
   color: var(--muted-high);
 }
 
+/* Drawn large, so the mark inside has room (cloud-glyphs.mjs): taller than the
+   name's capitals, and centred on them, as far above the cap line as below the
+   baseline (about 1px each). ⛔ Set from PAINTED pixels, at 1x to 3x in both
+   themes (scratch/probes/probe-cloud.mjs reads the screenshot): measured from
+   layout boxes it was "centred" while it was drawn half a pixel high, its base
+   on the baseline, and that is what people saw. */
 .sync-cloud svg {
-  width: 0.95rem;
-  height: 0.95rem;
+  width: 1.125rem;
+  height: 1.125rem;
+  transform: translateY(-0.0125rem);
 }
 
 .sync-cloud__mark {
@@ -278,6 +285,120 @@
 .review__problem {
   margin: 0;
   color: var(--ide-status-error);
+}
+
+/* Version history (js/ui/version-history.mjs): the versions down the left, the
+   chosen one beside the project as it is now. A row is a list row: two washes,
+   no mark (beljar-css). */
+.history {
+  display: grid;
+  grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  font-size: 0.78rem;
+  color: var(--ui-fg);
+}
+
+.history__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.5rem;
+  border-right: 1px solid var(--chrome-divider);
+}
+
+.history__row,
+.history__older {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0.4rem 0.55rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ui-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history__when {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.history__what {
+  color: var(--ui-fg-muted);
+  font-size: 0.72rem;
+}
+
+.history__row[aria-selected="true"] {
+  background: var(--search-row-active-bg);
+  color: var(--search-row-active-fg);
+}
+
+.history__row[aria-selected="true"] .history__what {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.history__older {
+  color: var(--ui-fg-muted);
+  align-items: center;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .history__row:hover:not([aria-selected="true"]),
+  .history__older:hover {
+    background: var(--menu-item-hover-wash);
+  }
+}
+
+.history__row:focus-visible,
+.history__older:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.history__view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.75rem 0.85rem 0.9rem;
+}
+
+.history__head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.history__title {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.history__stamp {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.history__sub,
+.history__note {
+  margin: 0;
+  color: var(--ui-fg-muted);
+}
+
+.history__head .jar-prompt-dialog__btn {
+  width: auto;
+  flex: 0 0 auto;
 }
 
 .review-diff {

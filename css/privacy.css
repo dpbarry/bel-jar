@@ -1,0 +1,112 @@
+/* What BelJar keeps (privacy.html): one page to read, in home's column and
+ * home's voice. A document, not the app: the body scrolls, and nothing is
+ * boxed. */
+
+.doc-page {
+  display: block;
+  height: auto;
+  min-height: 100vh;
+  overflow: auto;
+}
+
+.doc {
+  box-sizing: border-box;
+  max-width: 38rem;
+  margin: 0 auto;
+  padding: clamp(2rem, 10vh, 5rem) 1.5rem 3rem;
+  color: var(--base-higher);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.doc-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 2rem;
+  border-radius: var(--radius-sm);
+  color: var(--base-highest);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.doc-home svg {
+  width: 1.375rem;
+  height: 1.375rem;
+  color: var(--accent-mid);
+}
+
+.doc h1 {
+  margin: 0 0 0.75rem;
+  color: var(--base-highest);
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.doc .doc-lede {
+  margin: 0 0 2rem;
+  font-size: 0.9375rem;
+}
+
+.doc section {
+  margin: 0 0 1.75rem;
+}
+
+.doc h2 {
+  margin: 0 0 0.5rem;
+  color: var(--base-highest);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.doc p {
+  margin: 0;
+}
+
+.doc ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin: 0;
+  padding-left: 1.125rem;
+}
+
+.doc li::marker {
+  color: var(--muted-mid);
+}
+
+.doc strong {
+  color: var(--base-highest);
+  font-weight: 600;
+}
+
+.doc a:not(.doc-home) {
+  color: var(--accent-mid);
+  text-underline-offset: 0.15em;
+}
+
+.doc a:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .doc a:not(.doc-home):hover {
+    color: var(--accent-high);
+  }
+
+  .doc-home:hover {
+    color: var(--accent-high);
+  }
+}
+
+.doc .doc-foot {
+  margin-top: 2.5rem;
+  color: var(--muted-high);
+  font-size: 0.8125rem;
+}

@@ -4,8 +4,12 @@
  *   GET  /api/auth/github/start      → GitHub, with a one-time state in a cookie
  *   GET  /api/auth/github/callback   → checks the state, reads the profile once,
  *                                      starts a session, back to the site
- *   GET  /api/auth/me                → { user } or { user: null }
+ *   GET  /api/auth/me                → { user }, or { user: null } with why this
+ *                                      browser's session ended when it should hear it
  *   POST /api/auth/signout           → ends this browser's session, here and on the server
+ *   GET  /api/auth/sessions          → where the account is signed in (Settings > Account)
+ *   POST /api/auth/sessions/end      → ends one of them, { id }: Sign out there
+ *   POST /api/auth/delete            → deletes the account (deletion.mjs)
  *
  * ⛔ No GitHub token is stored anywhere. The callback exchanges the code, reads
  * the profile, and lets the token go: BelJar needs to know who someone is,
@@ -16,8 +20,11 @@
  * callback without it, or with another state, starts no session.
  */
 import { sha256 } from '../js/persist/sync/protocol.mjs';
+import { deleteAccountRows, deleteTexts, REQUEST_BATCHES } from './deletion.mjs';
 
 export const SESSION_MS = 90 * 24 * 60 * 60 * 1000;
+/** A session's "last used" moves at most this often: one write an hour for a session in use. */
+export const USED_STEP_MS = 60 * 60 * 1000;
 const STATE_S = 10 * 60;
 const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
 const B32 = '0123456789abcdefghjkmnpqrstvwxyz';
@@ -62,7 +69,22 @@ export function cookiePolicy(url) {
     secure,
     session: secure ? '__Host-bj_session' : 'bj_session',
     state: secure ? '__Host-bj_state' : 'bj_state',
+    back: secure ? '__Host-bj_return' : 'bj_return',
   };
+}
+
+/**
+ * Where a sign-in may come back to: a path on this site (the page it was
+ * started from, e.g. /edit?p=ID), or null. ⛔ Only a path. An absolute address,
+ * a scheme-relative one (//host), a backslash a browser would read as a slash,
+ * and anything under /api/ are refused: the sign-in would otherwise deliver a
+ * freshly signed-in person to whatever address a link gave it.
+ */
+export function safeReturn(raw) {
+  if (typeof raw !== 'string' || raw.length > 512) return null;
+  if (!/^\/(?![/\\])[\x21-\x7e]*$/.test(raw) || raw.includes('\\')) return null;
+  if (raw === '/api' || raw.startsWith('/api/') || raw.startsWith('/api?')) return null;
+  return raw;
 }
 
 export function setCookie(name, value, maxAgeSeconds, secure) {
@@ -90,12 +112,75 @@ function json(value, status = 200, cookies = []) {
   return new Response(JSON.stringify(value), { status, headers });
 }
 
+/**
+ * A coarse name for the browser a session was started in ("Chrome on
+ * Windows"), or null: what Settings > Account shows beside it. Only this is
+ * kept, never the User-Agent itself.
+ */
+export function deviceOf(ua) {
+  if (typeof ua !== 'string' || !ua) return null;
+  const browser = /\bEdg(e|A|iOS)?\//.test(ua) ? 'Edge'
+    : /\bOPR\/|\bOpera\b/.test(ua) ? 'Opera'
+      : /\bSamsungBrowser\//.test(ua) ? 'Samsung Internet'
+        : /\bFirefox\/|\bFxiOS\//.test(ua) ? 'Firefox'
+          : /\bChrome\/|\bCriOS\//.test(ua) ? 'Chrome'
+            : /\bSafari\//.test(ua) ? 'Safari'
+              : null;
+  const os = /\biPhone\b/.test(ua) ? 'iPhone'
+    : /\biPad\b/.test(ua) ? 'iPad'
+      : /\bAndroid\b/.test(ua) ? 'Android'
+        : /\bCrOS\b/.test(ua) ? 'ChromeOS'
+          : /\bWindows\b/.test(ua) ? 'Windows'
+            : /\bMac OS X\b|\bMacintosh\b/.test(ua) ? 'macOS'
+              : /\bLinux\b/.test(ua) ? 'Linux'
+                : null;
+  if (browser && os) return browser + ' on ' + os;
+  return browser || os;
+}
+
+/** The hash of this request's session token, as D1 keeps it, or null. */
+async function tokenHash(request) {
+  const token = readCookie(request, cookiePolicy(request.url).session);
+  return token && TOKEN.test(token) ? sha256(token) : null;
+}
+
+/**
+ * This request's session: { userId, idHash }, or null. ⛔ Read beside its
+ * account: a session whose account is gone (one a sign-in finished while the
+ * account was being deleted) is nobody's. Marked used at most once an hour,
+ * and named then if it has no name yet (one started before sessions had one).
+ */
+async function sessionOf(request, env, now = Date.now()) {
+  const idHash = await tokenHash(request);
+  if (!idHash) return null;
+  const row = await env.DB.prepare('SELECT s.user_id, s.expires_at, s.used_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ?')
+    .bind(idHash).first();
+  if (!row || !(row.expires_at > now)) return null;
+  if (row.used_at == null || now - row.used_at >= USED_STEP_MS) {
+    try {
+      await env.DB.prepare('UPDATE sessions SET used_at = ?, device = COALESCE(device, ?) WHERE id_hash = ?')
+        .bind(now, deviceOf(request.headers.get('user-agent')), idHash).run();
+    } catch (_) { /* when it was last used is shown, not relied on: the request goes on */ }
+  }
+  return { userId: row.user_id, idHash };
+}
+
 /** The account this request's session belongs to, or null. */
 export async function sessionAccount(request, env, now = Date.now()) {
-  const token = readCookie(request, cookiePolicy(request.url).session);
-  if (!token || !TOKEN.test(token)) return null;
-  const row = await env.DB.prepare('SELECT user_id, expires_at FROM sessions WHERE id_hash = ?').bind(await sha256(token)).first();
-  return row && row.expires_at > now ? row.user_id : null;
+  const s = await sessionOf(request, env, now);
+  return s ? s.userId : null;
+}
+
+/**
+ * Why this browser's session ended, when it was ended for a reason its browser
+ * should hear: 'elsewhere' (Sign out there) or 'deleted' (the account). Null
+ * for one that expired, or was never there.
+ */
+async function endedReason(request, env) {
+  const idHash = await tokenHash(request);
+  if (!idHash) return null;
+  const row = await env.DB.prepare('SELECT reason FROM ended_sessions WHERE id_hash = ?').bind(idHash).first();
+  return row && (row.reason === 'elsewhere' || row.reason === 'deleted') ? row.reason : null;
 }
 
 /** The account for a GitHub profile: the one this identity signed into before, or a new one. */
@@ -151,14 +236,27 @@ async function start(request, env) {
   target.searchParams.set('redirect_uri', url.origin + '/api/auth/github/callback');
   target.searchParams.set('state', state);
   target.searchParams.set('allow_signup', 'true');
-  return redirect(target.toString(), [setCookie(cookies.state, state, STATE_S, cookies.secure)]);
+  // Back to the page that asked, once signed in: kept beside the state, for as long.
+  const back = safeReturn(url.searchParams.get('return'));
+  return redirect(target.toString(), [
+    setCookie(cookies.state, state, STATE_S, cookies.secure),
+    setCookie(cookies.back, back ? encodeURIComponent(back) : '', back ? STATE_S : 0, cookies.secure),
+  ]);
+}
+
+/** The page the sign-in was started from, as the start kept it; home when there is none. */
+function returnOf(request, cookies) {
+  let raw = readCookie(request, cookies.back);
+  try { raw = raw ? decodeURIComponent(raw) : null; } catch (_) { raw = null; }
+  return safeReturn(raw) || '/';
 }
 
 async function callback(request, env) {
   const url = new URL(request.url);
   const cookies = cookiePolicy(url);
   const clearState = setCookie(cookies.state, '', 0, cookies.secure);
-  const fail = (why, detail) => failed(why, detail, [clearState]);
+  const clearBack = setCookie(cookies.back, '', 0, cookies.secure);
+  const fail = (why, detail) => failed(why, detail, [clearState, clearBack]);
   const state = url.searchParams.get('state');
   const expected = readCookie(request, cookies.state);
   // The detail tells a browser that sent no cookie (blocked, expired after 10 minutes, another
@@ -198,15 +296,20 @@ async function callback(request, env) {
   const now = Date.now();
   const userId = await accountFor(env, profile, now);
   const session = randomToken(32);
-  await env.DB.prepare('INSERT INTO sessions (id_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
-    .bind(await sha256(session), userId, now, now + SESSION_MS).run();
-  return redirect('/', [clearState, setCookie(cookies.session, session, Math.floor(SESSION_MS / 1000), cookies.secure)]);
+  await env.DB.prepare('INSERT INTO sessions (id_hash, user_id, created_at, expires_at, device, used_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .bind(await sha256(session), userId, now, now + SESSION_MS, deviceOf(request.headers.get('user-agent')), now).run();
+  return redirect(returnOf(request, cookies), [
+    clearState, clearBack, setCookie(cookies.session, session, Math.floor(SESSION_MS / 1000), cookies.secure),
+  ]);
 }
 
 async function me(request, env) {
-  const userId = await sessionAccount(request, env);
-  if (!userId) return json({ user: null });
-  const u = await env.DB.prepare('SELECT id, handle, display_name, avatar_url FROM users WHERE id = ?').bind(userId).first();
+  const s = await sessionOf(request, env);
+  if (!s) {
+    const ended = await endedReason(request, env);
+    return json(ended ? { user: null, ended } : { user: null });
+  }
+  const u = await env.DB.prepare('SELECT id, handle, display_name, avatar_url FROM users WHERE id = ?').bind(s.userId).first();
   return json({ user: u ? { id: u.id, handle: u.handle, name: u.display_name, avatar: u.avatar_url } : null });
 }
 
@@ -219,13 +322,86 @@ async function signout(request, env) {
   return json({ ok: true }, 200, [setCookie(cookies.session, '', 0, cookies.secure)]);
 }
 
+/** Where the account is signed in, the most recently used first. */
+async function sessions(request, env) {
+  const now = Date.now();
+  const s = await sessionOf(request, env, now);
+  if (!s) return json({ error: 'signed-out' }, 401);
+  const rows = await env.DB.prepare('SELECT id_hash, device, created_at, used_at FROM sessions WHERE user_id = ? AND expires_at > ? '
+    + 'ORDER BY COALESCE(used_at, created_at) DESC').bind(s.userId, now).all();
+  return json({
+    sessions: rows.results.map((r) => ({
+      id: r.id_hash,
+      device: r.device || null,
+      signedInAt: r.created_at,
+      usedAt: r.used_at || r.created_at,
+      current: r.id_hash === s.idHash,
+    })),
+  });
+}
+
+const SESSION_ID = /^[0-9a-f]{64}$/;
+
+/**
+ * Sign out there: ends another session of this account, and keeps why for its
+ * browser to hear. ⛔ Not this browser's own: Sign out ends that one, once
+ * what it has is in the cloud. Another account's session, or one already
+ * gone, is answered the same as one ended, and nothing happens to it.
+ */
+async function endSession(request, env) {
+  const s = await sessionOf(request, env);
+  if (!s) return json({ error: 'signed-out' }, 401);
+  const body = await request.json().catch(() => null);
+  const id = body && typeof body.id === 'string' && SESSION_ID.test(body.id) ? body.id : null;
+  if (!id) return json({ error: 'bad-request' }, 400);
+  if (id === s.idHash) return json({ error: 'this-session' }, 400);
+  const row = await env.DB.prepare('SELECT expires_at FROM sessions WHERE id_hash = ? AND user_id = ?').bind(id, s.userId).first();
+  if (row) {
+    await env.DB.batch([
+      env.DB.prepare("INSERT OR REPLACE INTO ended_sessions (id_hash, reason, expires_at) VALUES (?, 'elsewhere', ?)").bind(id, row.expires_at),
+      env.DB.prepare('DELETE FROM sessions WHERE id_hash = ? AND user_id = ?').bind(id, s.userId),
+    ]);
+  }
+  return json({ ok: true });
+}
+
+/**
+ * Delete account (deletion.mjs): the rows at once, then the stored texts while
+ * this request lasts, carried on if the page goes first (waitUntil); the daily
+ * job finishes what is left. ⛔ The session cookie stays: it is how this
+ * browser hears, if this answer never reaches it, that the account was deleted
+ * (me: ended 'deleted'), and keeps its projects instead of removing them as an
+ * ended session's browser would.
+ */
+async function deleteAccount(request, env, ctx) {
+  const s = await sessionOf(request, env);
+  if (!s) return json({ error: 'signed-out' }, 401);
+  await deleteAccountRows(env.DB, s.userId, Date.now());
+  const texts = deleteTexts(env.TEXTS, s.userId, REQUEST_BATCHES).catch((err) => {
+    console.error('auth: deleting an account\'s texts:', err && err.stack || err);
+    return false;
+  });
+  if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(texts);
+  return json({ ok: true, finished: await texts });
+}
+
+/** A POST that changes the account: same-site, and JSON (another site cannot send it without a preflight). */
+function accountPost(request, sameSite) {
+  if (!sameSite(request)) return json({ error: 'cross-site' }, 403);
+  if (!/^application\/json\b/.test(request.headers.get('content-type') || '')) return json({ error: 'content-type' }, 415);
+  return null;
+}
+
 /** The /api/auth/* routes; null for anything else. */
-export async function handleAuth(request, env, path, sameSite) {
+export async function handleAuth(request, env, path, sameSite, ctx) {
   if (path === '/api/auth/github/start' && request.method === 'GET') return start(request, env);
   if (path === '/api/auth/github/callback' && request.method === 'GET') return callback(request, env);
   if (path === '/api/auth/me' && request.method === 'GET') return me(request, env);
   if (path === '/api/auth/signout' && request.method === 'POST') {
     return sameSite(request) ? signout(request, env) : json({ error: 'cross-site' }, 403);
   }
+  if (path === '/api/auth/sessions' && request.method === 'GET') return sessions(request, env);
+  if (path === '/api/auth/sessions/end' && request.method === 'POST') return accountPost(request, sameSite) || endSession(request, env);
+  if (path === '/api/auth/delete' && request.method === 'POST') return accountPost(request, sameSite) || deleteAccount(request, env, ctx);
   return null;
 }

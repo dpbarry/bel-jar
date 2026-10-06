@@ -32,11 +32,11 @@ export function createSettings(store) {
     /** Back to defaults for one Settings category. */
     reset(section) {
       if (!SECTIONS.includes(section)) throw new Error(`settings: no section "${section}"`);
-      return table.reset((row) => row.section === section);
+      return table.reset((row) => row.section === section && row.reset !== false);
     },
 
     resetAll() {
-      return table.reset();
+      return table.reset((row) => row.reset !== false);
     },
 
     /** Exactly what the user changed, in a file they can keep. */

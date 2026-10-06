@@ -11,9 +11,10 @@
   "name": "beljar-sync-dev",
   "main": "worker.mjs",
   "compatibility_date": "2026-09-21",
-  // The site itself, from the repository root (its .assetsignore applies, so the
-  // Beluga runtime is not served: locally, sign-in, editing and sync work, and
-  // Beluga checks do not). /api/* reaches the Worker first.
+  // The site itself, from the repository root. Its .assetsignore applies, so
+  // the Beluga runtime's two files are not assets: the Worker passes them on
+  // from DEV_RUNTIME_ORIGIN, where scripts/dev-server.mjs serves them from the
+  // working tree. /api/* reaches the Worker first.
   "assets": { "directory": "..", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
   "d1_databases": [
     {
@@ -26,6 +27,7 @@
   "r2_buckets": [
     { "binding": "TEXTS", "bucket_name": "beljar-texts-dev" }
   ],
-  // The account comes from the X-BelJar-Account header: local only, never deployed.
-  "vars": { "DEV_ACCOUNT_HEADER": "yes" }
+  // Local only, never deployed: the account may come from the X-BelJar-Account
+  // header, and the runtime from the dev server's file server.
+  "vars": { "DEV_ACCOUNT_HEADER": "yes", "DEV_RUNTIME_ORIGIN": "http://127.0.0.1:8788" }
 }

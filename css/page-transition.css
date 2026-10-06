@@ -1,0 +1,125 @@
+/* Between home and the editor (docs/UI.md §0; js/boot/page-transition-core.mjs).
+ *
+ * Two documents, joined by the browser's own animation of the navigation. Both
+ * opt in, in the documents themselves (`@view-transition` in a `<style>` in each
+ * head: from here, through @import, it was not seen in time). ⛔ Nothing depends
+ * on it: a browser without cross-document view transitions navigates as before.
+ *
+ *   app-header    the strip: the same on both pages, so it stays where it is
+ *   proj-title    the project's name: its row on home, the header in the editor
+ *   proj-row      the row that was opened, or come back to
+ *   proj-surface  the editor's working area, which grows out of that row and
+ *                 shrinks back onto it (page-transition-core.mjs `zoomSurface`)
+ *   (root)        everything else cross-fades
+ *
+ * ⛔ Measured into it, each seen on a real screen (scratch/film-live.mjs records
+ * Chrome's own frames as it plays; a paused, stepped film hides all of these):
+ *   - The strip does not travel. It was once the editor's "band", grown out of
+ *     the row: the strip already on screen left its place and came back, and
+ *     the two pages' words crossed in it on the way.
+ *   - Nothing is stretched. A box moved by transform scales what is in it, so
+ *     the working area is scaled evenly (by the row's width), never squeezed to
+ *     the row's shape: squeezed, it was drawn from 32 rows of pixels and its
+ *     lines came out as wavy bands.
+ *   - Nothing is blank. A plain surface that grew and then took the editor's
+ *     picture half way was a flash; the working area is itself what grows.
+ *   - One balanced curve (`--ease-in-out`), the same for everything that moves.
+ *     The house's sharp ease-out did nine tenths of the way in the first third
+ *     and crept the rest: it read as shuddering to a halt.
+ *   - Nothing pops at the end. The row come back to is not washed (only a row
+ *     clicked is, `data-opening`): a wash there stayed to the end and went in
+ *     one frame.
+ *
+ * A name may be on one element at a time, so only the row being opened carries
+ * its own (set as the page is left or revealed). The theme is never animated:
+ * both documents paint it before first paint, so the grounds match. */
+
+body > header {
+  view-transition-name: app-header;
+}
+
+#header-context-name,
+.home-row[data-opening] .home-row__name,
+.home-row[data-landing] .home-row__name {
+  view-transition-name: proj-title;
+}
+
+.home-row[data-opening],
+.home-row[data-landing] {
+  view-transition-name: proj-row;
+}
+
+body:not(.home-page) > .workspace {
+  view-transition-name: proj-surface;
+}
+
+::view-transition-old(root),
+::view-transition-new(root),
+::view-transition-old(app-header),
+::view-transition-new(app-header) {
+  animation-duration: var(--page-fade);
+}
+
+/* The strip's box is the same on both pages: it is not moved, only what is
+   written in it changes. */
+::view-transition-group(app-header) {
+  animation: none;
+}
+
+/* Moved by transform alone, from their top left corner (page-transition-core.mjs:
+   `transformOnly` for the name, `zoomSurface` for the working area). */
+::view-transition-group(proj-title),
+::view-transition-group(proj-surface) {
+  animation-duration: var(--page-morph);
+  animation-timing-function: var(--ease-in-out);
+  transform-origin: 0 0;
+}
+
+/* The name travels over the working area, never under it. */
+::view-transition-group(proj-title) {
+  z-index: 1;
+}
+
+/* Back on home the name lands with the area gone (it is gone by 55% of the
+   time): at the full length it crept the last stretch onto its row, across the
+   heading just above it. */
+:root:has(> body.home-page)::view-transition-group(proj-title) {
+  animation-duration: calc(var(--page-morph) * 0.8);
+}
+
+/* The row's own picture: what was clicked goes as the area grows out of it;
+   come back to, it arrives under the area as the area goes (page-transition-core.mjs
+   `zoomFrames`: gone by 55% of the time). */
+::view-transition-old(proj-row) {
+  animation: page-row-leave var(--page-morph) linear both;
+}
+
+::view-transition-new(proj-row) {
+  animation: page-row-land var(--page-morph) linear both;
+}
+
+@keyframes page-row-leave {
+  from { opacity: 1; }
+  35%, to { opacity: 0; }
+}
+
+@keyframes page-row-land {
+  from, 25% { opacity: 0; }
+  65%, to { opacity: 1; }
+}
+
+/* The system's preference. BelJar's own setting skips the transition in script
+   (it can also ask for full motion, which a media query could not grant). */
+@media (prefers-reduced-motion: reduce) {
+  html:not(.jar-motion-full)::view-transition-group(*),
+  html:not(.jar-motion-full)::view-transition-old(*),
+  html:not(.jar-motion-full)::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+html.jar-motion-reduce::view-transition-group(*),
+html.jar-motion-reduce::view-transition-old(*),
+html.jar-motion-reduce::view-transition-new(*) {
+  animation: none !important;
+}

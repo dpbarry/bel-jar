@@ -216,14 +216,34 @@
       return id ? Persist.getFileById(id) : null;
     }
 
+    const baseOf = (p) => p.slice(p.lastIndexOf('/') + 1);
+
+    // Holes are syntax, so a member is counted from its text — the later members
+    // too, which the active file's check never loads. Keyed on the text, so an
+    // unchanged member is not reparsed on every switch.
+    const holeCounts = new Map();
+    function holesInFile(f) {
+      const text = projectFileText(f.id) || '';
+      const hit = holeCounts.get(f.id);
+      if (hit && hit.text === text) return hit.n;
+      const ed = typeof BelEditor !== 'undefined' ? BelEditor : null;
+      const n = ed && ed.scanFileHoles ? ed.scanFileHoles(text).length : 0;
+      holeCounts.set(f.id, { text, n });
+      return n;
+    }
+
     // The status strip's suite segment. A .cfg is the suite itself, not a member of one.
     function publishSuite(file) {
       const strip = typeof StatusStrip !== 'undefined' ? StatusStrip : null;
       if (!strip || !strip.setSuite) return;
       const m = file && !/\.cfg$/i.test(file.name) ? activeSuiteMembership(file.name) : null;
-      strip.setSuite(m && m.member
-        ? { name: m.cfg.slice(m.cfg.lastIndexOf('/') + 1).replace(/\.cfg$/i, ''), index: m.index, count: m.count }
-        : null);
+      if (!m || !m.member) { strip.setSuite(null); return; }
+      const { cfg, index, count } = m;
+      const elsewhere = ProjectSource.developmentFilesForCfg(Persist.listFiles(), cfg, projectFileText)
+        .filter((f) => f.id !== file.id)
+        .map((f) => ({ name: baseOf(f.name), holes: holesInFile(f) }))
+        .filter((x) => x.holes);
+      strip.setSuite({ name: baseOf(cfg).replace(/\.cfg$/i, ''), index, count, elsewhere });
     }
 
     function updateRunButtonTooltip() {

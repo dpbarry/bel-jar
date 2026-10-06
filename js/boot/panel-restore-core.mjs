@@ -1,6 +1,29 @@
 import { SCHEMA } from '../persist/store.mjs';
 import { readBootSettings } from '../persist/settings-schema.mjs';
 import { readBootSession } from '../persist/keys.mjs';
+import { readBootDevice } from '../persist/device-schema.mjs';
+import { projectOf } from '../frame/routes.mjs';
+import { showableProject } from './boot-project.mjs';
+
+/**
+ * The project's name, in the header, before first paint. The document ships
+ * with a placeholder there, and the editor's own scripts replace it only once
+ * three megabytes of them have run: every load showed the wrong name first.
+ * It is also what the transition from home lands the name on
+ * (css/page-transition.css): a target with the wrong text in it would show.
+ *
+ * The project is the one the address names; a bare address means the last one
+ * opened. Returns the name painted, or null (nothing known: the placeholder stays).
+ */
+export function paintProjectName(document, storage, loc) {
+  const el = document.getElementById('header-context-name');
+  if (!el) return null;
+  const device = readBootDevice(storage, SCHEMA);
+  const meta = showableProject(storage, device, projectOf(loc) || device.activeProject);
+  if (!meta || typeof meta.name !== 'string' || !meta.name) return null;
+  el.textContent = meta.name;
+  return meta.name;
+}
 
 const PANEL_CONFIG = {
   harpoon: {

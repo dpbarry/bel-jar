@@ -2,7 +2,7 @@
 // split. Pure ESM: the grammar and the corpus on disk, no Beluga, no DOM.
 import { readFileSync } from 'node:fs';
 import {
-  declaredFamilies, ruleIndex, armRuleHead, armArrowIndex,
+  declaredFamilies, ruleIndex, armRuleHead, armArrowIndex, armArrow, splitArm,
   authoredPieces, missingRules,
 } from '../js/editor-src/prover/case-pieces.mjs';
 import { outerArms } from '../scripts/case-read-arms.mjs';
@@ -28,6 +28,11 @@ t_false : oft false bool.`;
 
 expect(declaredFamilies(lfStyle).join(',') === 'tm,step', 'block-form families are found');
 expect(declaredFamilies(twelfStyle).join(',') === 'tp,oft', 'Twelf-form families are found');
+// The editor writes glyph arrows (greedy alias expansion, the default): a family whose
+// result follows `→` is a family too. Regression, 2026-10-05.
+const glyphStyle = lfStyle.replace(/->/g, '→');
+expect(declaredFamilies(glyphStyle).join(',') === 'tm,step', 'families declared with glyph arrows are found');
+expect(declaredFamilies(twelfStyle.replace(/->/g, '→')).join(',') === 'tp,oft', 'in either dialect');
 expect(
   !declaredFamilies(twelfStyle).includes('bool'),
   'a constant whose result is not `type` is not a family',
@@ -40,6 +45,23 @@ expect(idx.get('s_beta') === 'step' && idx.get('app') === 'tm', 'the rule index 
 const mutual = `LF even : nat -> type = | ez : even z
 and odd : nat -> type = | oz : odd (s z);`;
 expect(declaredFamilies(mutual).join(',') === 'even,odd', 'both heads of a mutual block are families');
+
+// ── computation-level inductives are judgments too ────────────────────────────
+// Regression, found by the harness: these end in `ctype`, not `type`, so a proof by
+// induction on one (logical relations, strong normalisation) resolved to no judgment
+// and got no assignment table. The enumerator already knew their constructors.
+const compLevel = `LF tm : type = | unit : tm | app : tm -> tm -> tm;
+inductive Sn : [ |- tm] -> ctype =
+| SUnit : Sn [ |- unit]
+| SApp : Sn [ |- M] -> Sn [ |- N] -> Sn [ |- app M N];
+stratified Red : [ |- tm] -> ctype =
+| RUnit : Red [ |- unit];
+coinductive Stream : ctype = | (Hd : Stream :: [ |- tm]);`;
+expect(declaredFamilies(compLevel).join(',') === 'tm,Sn,Red', 'inductive and stratified ctypes are families; codata is left out');
+expect(ruleIndex(compLevel).get('SApp') === 'Sn', 'their constructors index back to them');
+const snPieces = authoredPieces(compLevel, ['SUnit => ?', 'SApp s1 s2 ⇒ ?']);
+expect(snPieces.judgment === 'Sn' && snPieces.pieces.length === 2, 'a proof by induction on a ctype resolves its judgment');
+expect(missingRules(compLevel, 'Sn', snPieces.pieces.slice(0, 1)).map((r) => r.name).join(',') === 'SApp', 'and names its missing rule');
 
 // ── an arm's head comes from its PATTERN, never its body ──────────────────────
 // Regression: reading the arm whole made the LAST turnstile win, so
@@ -61,6 +83,34 @@ expect(
   "a turnstile in the body never supplies the pattern's head",
 );
 expect(armRuleHead('[ |- #p.h[..]] => ?') === null, 'a projection is not a constructor and is refused');
+// Regression: a computation-level pattern has boxes in its ARGUMENTS; their turnstile is
+// not the pattern's, and stripping to it read `M_dot sigma' [h |- M]` as headed by `M`.
+expect(armRuleHead("M_dot sigma' [h |- M] => ?") === 'M_dot', 'a computation-level pattern is headed by its constructor');
+expect(armRuleHead('Ae_v => ?') === 'Ae_v', 'including one with no arguments');
+
+// ── both arrow spellings ──────────────────────────────────────────────────────
+// Regression: Beluga takes `=>` and `⇒`, the corpus writes the second in 222 arms of
+// 76 proofs, and reading only the first skipped every one of them. They differ in
+// WIDTH, so the body must not be sliced at a fixed offset.
+const uni = '[ |- e_succ S] ⇒\n  let [ |- t_succ D] = d in [ |- D]';
+expect(armArrow(uni).length === 1 && armArrow(armWithBody).length === 2, 'the arrow reports its own width');
+expect(armRuleHead(uni) === 'e_succ', 'a Unicode arrow separates pattern from body');
+expect(splitArm(uni).pattern === '[ |- e_succ S]', 'the pattern stops at a Unicode arrow');
+expect(splitArm(uni).body === 'let [ |- t_succ D] = d in [ |- D]', 'and the body starts right after it, one character on');
+expect(splitArm(armWithBody).body === 'let [ |- t_switch D D1 D2] = d in [ |- D1]', 'an ASCII arrow is two characters wide');
+expect(splitArm('| [ |- z] => [ |- z]').pattern === '[ |- z]', 'a leading bar is not part of the pattern');
+// Both turnstiles. Regression (2026-10-05): the editor's alias expansion writes `⊢`, so an
+// arm typed in BelJar reads `[ ⊢ e_succ S] ⇒`; reading only `|-` found no head in any of them.
+expect(armRuleHead('[ ⊢ e_succ S] ⇒ let [ ⊢ t_succ D] = d in [ ⊢ D]') === 'e_succ', 'a glyph turnstile is a turnstile');
+expect(armRuleHead('[g, h:hyp A ⊢ axiom H1[..]] ⇒ ?') === 'axiom', 'with a context in front of it too');
+expect(armRuleHead('[g ⊢ #p.h[..]] ⇒ ?') === null, 'and a projection behind it is still refused');
+// No space after the arrow: whitespace would hide a slice that starts one character late.
+expect(splitArm('[ |- z] ⇒[ |- z]').body === '[ |- z]', 'the body is sliced by the width of the arrow that is there');
+expect(splitArm('[ |- z]') === null, 'an arm with no arrow is not split, and not guessed at');
+expect(
+  splitArm('[g |- lam (\\x. M)] : [g |- tm (arr A B)] ⇒ ?').pattern === '[g |- lam (\\x. M)] : [g |- tm (arr A B)]',
+  'the pattern keeps its type annotation',
+);
 
 // ── constructor names may carry symbols ───────────────────────────────────────
 // Regression: a hand-rolled letters-only identifier class truncated `step_@1` to

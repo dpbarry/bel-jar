@@ -10,6 +10,7 @@
  *   id            stable, dotted, domain-first
  *   title/section as shown in the palette and the Keybindings sheet
  *   scope         global | editor  (where the chord is dispatched)
+ *   pages         editor | home | both  (which page it runs on: `PAGES` below)
  *   defaultSpec   default chord; `macDefaultSpec` overrides it on macOS
  *   keybindable   appears in the Keybindings sheet and the chord tables
  *   palette       appears in the command palette's `>` list
@@ -30,16 +31,18 @@
 
 import { settingEntries } from './command-settings.mjs';
 
-export const CATALOG = [
+const ROWS = [
   // ── File ───────────────────────────────────────────────────────────────────
   { id: 'project.new', title: 'New Project…', section: 'File', scope: 'global', palette: true },
-  { id: 'file.new', title: 'New file…', section: 'File', scope: 'global', palette: true },
+  { id: 'file.new', title: 'New File…', section: 'File', scope: 'global', palette: true },
   { id: 'file.upload', title: 'Upload File', section: 'File', scope: 'global', palette: true },
   { id: 'file.upload-folder', title: 'Upload Folder', section: 'File', scope: 'global', palette: true },
   { id: 'file.import-folder', title: 'Import Folder as New Project', section: 'File', scope: 'global', palette: true },
   { id: 'file.download', title: 'Download Current File', section: 'File', scope: 'global', palette: true },
   // The whole project as a zip: how work outlives a browser that clears its storage.
   { id: 'project.download', title: 'Download Project', section: 'File', scope: 'global', palette: true },
+  // Every version the cloud keeps, and Restore (js/ui/version-history.mjs): signed in only.
+  { id: 'project.history', title: 'Version History', section: 'File', scope: 'global', palette: true },
   { id: 'tab.next', title: 'Next Tab', section: 'File', scope: 'global', palette: true, keybindable: true, ex: ['bn'] },
   { id: 'tab.prev', title: 'Previous Tab', section: 'File', scope: 'global', palette: true, keybindable: true, ex: ['bp'] },
   { id: 'tab.close', title: 'Close Tab', section: 'File', scope: 'global', palette: true, keybindable: true },
@@ -502,6 +505,37 @@ export const CATALOG = [
     ex: ['harpoon'],
     styles: { vim: 'always' },
   },
+  // Case completion (docs/case-completion.md). The missing cases of a proof are filled
+  // in the background and drawn as faint arms; these act on the one whose ghost hangs
+  // from the caret's line, else on every one of the proof under the caret. Gated on
+  // there being something to act on, so the palette stays quiet otherwise.
+  {
+    id: 'prover.case-accept',
+    title: 'Accept Filled Case',
+    section: 'Prover',
+    scope: 'editor',
+    keybindable: true,
+    palette: true,
+    styles: { vim: 'always' },
+  },
+  {
+    id: 'prover.case-fill',
+    title: 'Fill This Case',
+    section: 'Prover',
+    scope: 'editor',
+    keybindable: true,
+    palette: true,
+    styles: { vim: 'always' },
+  },
+  {
+    id: 'prover.case-dismiss',
+    title: 'Dismiss Filled Case',
+    section: 'Prover',
+    scope: 'editor',
+    keybindable: true,
+    palette: true,
+    styles: { vim: 'always' },
+  },
   // Reading the proof state, from the editor. Not gated on standing IN a hole:
   // "how many are left" is a question you ask from anywhere in the file.
   {
@@ -696,6 +730,10 @@ export const CATALOG = [
    * flush every buffer to storage, so a reload loses nothing.
    */
   { id: 'app.reload', title: 'Reload BelJar', section: 'Tools', scope: 'global', palette: true, keybindable: true, ex: ['reload', 'refresh'] },
+  // Home: your projects and the account (index.html). The brand in the header
+  // is the same link; this is its name, for the palette and the command line.
+  { id: 'app.home', title: 'Go Home', section: 'Tools', scope: 'global', palette: true, keybindable: true, ex: ['home'] },
+  { id: 'app.report-issue', title: 'Report an Issue', section: 'Tools', scope: 'global', palette: true, keybindable: true },
   { id: 'cmdline.repeat', title: 'Repeat Last Command', section: 'Tools', scope: 'global', palette: true, keybindable: true },
   { id: 'cmdline.open', title: 'Command Line', section: 'Tools', scope: 'global', palette: true, keybindable: true },
   { id: 'tools.palette', title: 'Open Command Palette', section: 'Tools', scope: 'global', palette: true, shortcut: 'Mod+K' },
@@ -720,3 +758,36 @@ export const CATALOG = [
     styles: { emacs: 'off' },
   },
 ];
+
+/**
+ * Where each command runs. BelJar is two pages (docs/PERSIST.md §5.11): home
+ * has the projects and the account, the editor has one project open.
+ *
+ * ⛔ A command is the editor's unless it is named here. These are the ones home
+ * runs too: nothing in them needs an open file. A generated preference says so
+ * on its own row (command-settings.mjs). The registry will not attach, list or
+ * run a command on a page it does not declare, so a surface on home can only
+ * offer what works there, and tests/test-page-commands.mjs holds that what home
+ * attaches is exactly this list.
+ */
+export const HOME_TOO = [
+  'project.new',
+  'file.import-folder',
+  'nav.anywhere',
+  'view.theme',
+  'account.sign-in',
+  'account.sign-out',
+  'sync.now',
+  'sync.review',
+  'sync.review-offline',
+  'app.reload',
+  'app.report-issue',
+  'tools.palette',
+  'tools.commands',
+];
+
+export const PAGES = ['editor', 'home', 'both'];
+
+export const CATALOG = ROWS.map((row) => (
+  Object.assign({ pages: HOME_TOO.includes(row.id) ? 'both' : 'editor' }, row)
+));

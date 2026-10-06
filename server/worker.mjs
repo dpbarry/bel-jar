@@ -18,8 +18,9 @@
  */
 import { createSyncStore } from './sync-store.mjs';
 import { handleAuth, sessionAccount } from './auth.mjs';
+import { dailySweep } from './deletion.mjs';
 
-const METHODS = new Set(['heads', 'head', 'blobs', 'missing', 'putBlobs', 'commit', 'remove', 'settings', 'commitSettings']);
+const METHODS = new Set(['heads', 'head', 'blobs', 'missing', 'putBlobs', 'commit', 'remove', 'settings', 'commitSettings', 'versions', 'version']);
 const ACCOUNT = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_BODY = 16 * 1024 * 1024;
 
@@ -68,16 +69,32 @@ export async function handleSync(request, env, method) {
   }
 }
 
+// The Beluga runtime, the two files .assetsignore keeps out of the upload
+// (the live site loads them from R2).
+const RUNTIME = /^\/beluga_web\.bc(\.dt)?\.js$/;
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const m = /^\/api\/sync\/([A-Za-z]+)$/.exec(url.pathname);
     if (m) return handleSync(request, env, m[1]);
     if (url.pathname.startsWith('/api/auth/')) {
-      const res = await handleAuth(request, env, url.pathname, sameSite);
+      const res = await handleAuth(request, env, url.pathname, sameSite, ctx);
       if (res) return res;
     }
     if (url.pathname.startsWith('/api/')) return json({ error: 'not-found' }, 404);
+    // Local development only (server/wrangler.jsonc): `npm run dev` serves the
+    // runtime from the working tree, so Beluga checks run here as they do live.
+    // Production never sets DEV_RUNTIME_ORIGIN (tests/test-deploy-config.mjs).
+    if (env.DEV_RUNTIME_ORIGIN && RUNTIME.test(url.pathname)) {
+      return fetch(new URL(url.pathname + url.search, env.DEV_RUNTIME_ORIGIN));
+    }
     return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Not found', { status: 404 });
+  },
+
+  // The daily job (wrangler.jsonc `triggers`): finishes deletions, and lets
+  // go of sessions past their time (deletion.mjs).
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(dailySweep(env, controller.scheduledTime || Date.now()));
   },
 };

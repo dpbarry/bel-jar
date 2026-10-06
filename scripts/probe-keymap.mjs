@@ -3152,9 +3152,16 @@ const mChord = async (mods, code) => {
     // `C-x g` then "did nothing" because the graph was already open and the
     // editor never saw the chord. A probe artifact that reads exactly like a
     // dead binding, which is the whole reason section 3 has a control.
+    // ⚠ Nor the inspector. `gi` and `K` both reveal it at the cursor, and with
+    // the inspector no longer following the cursor (inspectorFollow off, the
+    // default since 2026-10-04) `K` found it already open on the same spot:
+    // a working key that changed nothing to see. Closed, each opens it anew.
     await page.evaluate(() => {
       if (window.FloatingWindow && FloatingWindow.closeAll) FloatingWindow.closeAll();
       if (window.CommandPalette && CommandPalette.close) CommandPalette.close();
+      const ws = document.querySelector('.workspace.is-inspector-open');
+      const btn = document.getElementById('btn-inspector');
+      if (ws && btn) btn.click();
       StatusStrip.setMessage('');
     });
     await page.click('.cm-content');

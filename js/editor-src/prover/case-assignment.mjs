@@ -23,6 +23,9 @@
 // answer — can move it to `checked`. Generate-and-check is the whole safety
 // argument, so the type makes "probably fine" unrepresentable.
 
+import { parseTotality } from './prover-comp-type.mjs';
+import { stripLfComments } from './prover-certify.mjs';
+
 /**
  * The verdict vocabulary. `settled` means the row needs nothing further from the
  * author; `actionable` means reassigning could change the answer.
@@ -46,7 +49,8 @@ export const VERDICT_ORDER = Object.freeze(['authored', 'checked', 'pending', 'r
  * declaration's own totality declaration (`recsgn.ml:1603` sets `Total.enabled`
  * around one theorem and resets it immediately; `coverage.ml:3592` reads it). A
  * declaration with a deleted arm and no `/ total /` passes, even with a totalied
- * sibling in the same file.
+ * sibling in the same file. The one exception is a file-level `--coverage`, which
+ * is its own strength below.
  *
  * ⛔ So a table must never report the same confidence for both. The surface shows
  * this, it does not bury it.
@@ -56,6 +60,16 @@ export const STRENGTH = Object.freeze({
     key: 'total',
     label: 'Coverage and termination checked',
     guarantees: ['well-typed', 'covering', 'terminating'],
+  },
+  // A `--coverage` pragma at the head of the file and no totality declaration.
+  // ⛔ THE TRAP. Beluga notices a missing case here, so it looks like it is judging
+  // candidates, but it checks no termination: a case that calls the theorem on its
+  // own unchanged argument is accepted (measured 2026-10-01). A `checked` at this
+  // strength is not a proof, and nothing may present it as one.
+  covering: {
+    key: 'covering',
+    label: 'Coverage checked, termination is not',
+    guarantees: ['well-typed', 'covering'],
   },
   typedOnly: {
     key: 'typedOnly',
@@ -73,10 +87,29 @@ export const PROVENANCE = Object.freeze({
 /**
  * Strength of a declaration, from the declaration itself. Takes the decl text
  * because the totality pragma is the only thing that decides it.
+ *
+ * ⛔ COMMENTS ARE STRIPPED FIRST, and here that is the whole point. The corpus has
+ * ~93 declarations whose pragma is commented out (`% / total e (ca _ _ _ _ e) /`),
+ * and some that say `/ trust /` and keep the old measure in a comment beside it.
+ * Beluga enforces nothing on those. The first cut of this function was a bare regex
+ * that called them all `total`; the harness's negative control caught it, as 100
+ * proofs from which any case could be deleted unnoticed.
+ *
+ * `parseTotality` itself is DELIBERATELY comment-blind: to the search, a commented
+ * pragma is the author's hint about which argument decreases. That is a different
+ * question. This one is "what does Beluga actually check", so it asks the same
+ * parser about the text Beluga actually reads.
+ *
+ * `programText` is the file the declaration sits in. It matters for one thing: a
+ * `--coverage` pragma, legal only at the head of a file, turns coverage checking on
+ * for every declaration in it (`coverage.ml:3592` reads `Total.enabled ||
+ * enableCoverage`). Without the program, a declaration can only be told apart as
+ * total or not.
  */
-export function strengthOf(declText) {
-  return /\/\s*total\b/.test(String(declText == null ? '' : declText))
-    ? STRENGTH.total
+export function strengthOf(declText, programText = '') {
+  if (parseTotality(stripLfComments(declText))) return STRENGTH.total;
+  return /^[ \t]*--coverage\b/m.test(stripLfComments(programText))
+    ? STRENGTH.covering
     : STRENGTH.typedOnly;
 }
 

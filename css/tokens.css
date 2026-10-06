@@ -99,6 +99,10 @@
   --ui-fg-faint: var(--muted-mid);
   --ui-fg-on-accent: light-dark(hsl(0, 0%, 100%), hsl(222, 20%, 8%));
   --ui-fg-on-solid: light-dark(hsl(0, 0%, 100%), hsl(214, 40%, 96%));
+  /* An action that cannot be undone, in words (Delete account in Settings). */
+  --danger-fg: light-dark(hsl(0, 58%, 42%), hsl(0, 72%, 68%));
+  --danger-wash: light-dark(hsla(0, 72%, 46%, 0.08), hsla(0, 75%, 60%, 0.12));
+  --danger-border: light-dark(hsla(0, 58%, 42%, 0.45), hsla(0, 72%, 68%, 0.4));
 
   --mono: 'JetBrains Mono', monospace;
   --sans: 'Inter', system-ui, sans-serif;
@@ -107,6 +111,8 @@
 
   --radius-sm: 3px;
   --radius-md: 6px;
+  /* A pill: as round as the box is short. */
+  --radius-pill: 999px;
 
   /* Motion. ⛔ ONE curve. `--ease-out` is easeOutQuint, which the app had already
      converged on by hand in 17 places before it was named; the sixteen other
@@ -122,6 +128,10 @@
      Reach for it only when the thing should feel like it has mass. */
   --ease-spring: cubic-bezier(0.34, 1.2, 0.64, 1);
   --dur-fast: 120ms;
+  /* Between home and the editor (css/page-transition.css): the page cross-fades,
+     and the project's name and surface travel a touch longer than that. */
+  --page-fade: 260ms;
+  --page-morph: 300ms;
 
   --transition-fast: 75ms var(--ease-out);
   --transition: 150ms var(--ease-out);
@@ -217,6 +227,11 @@
   --notif-card-bg-hover: light-dark(hsl(220, 15%, 95%), hsl(222, 12%, 13.2%));
   --notif-card-border: light-dark(hsla(220, 12%, 40%, 0.13), hsla(220, 12%, 82%, 0.11));
   --notif-recess-bg: light-dark(hsla(220, 14%, 88%, 0.7), hsla(222, 18%, 5%, 0.34));
+
+  /* Home's ways to start: flat tiles, one step off the page ground and no
+     edge, so the step alone makes them (css/home.css). */
+  --home-tile-bg: light-dark(hsl(220, 15%, 95%), hsl(222, 13%, 9.5%));
+  --home-tile-bg-hover: light-dark(hsl(220, 15%, 92.5%), hsl(222, 12%, 12.5%));
   --notif-kind-error: var(--repl-error);
   --notif-kind-warn: var(--repl-warn);
   --notif-kind-info: var(--accent-mid);
@@ -248,7 +263,7 @@
   --search-drop-shadow: var(--shadow-popover);
   --search-drop-pad: 0;
 
-  --search-row-radius: var(--menu-item-radius);
+  --search-row-radius: 0;
   --search-row-hover-bg: var(--menu-item-hover-wash);
   --search-row-hover-fg: var(--menu-item-fg-hover);
   --search-row-active-bg: color-mix(in srgb, var(--accent-lower) 65%, transparent);

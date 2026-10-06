@@ -82,7 +82,7 @@ const ok = (cond, msg) => { console.log((cond ? '  ok   ' : '  FAIL ') + msg); i
 try {
   const page = await browser.newPage();
   page.on('pageerror', (e) => { fails.push('page error: ' + e.message); console.log('  PAGEERROR ' + e.message); });
-  await page.goto(`http://localhost:${port}/index.html`, { waitUntil: 'networkidle0', timeout: 60000 });
+  await page.goto(`http://localhost:${port}/edit.html`, { waitUntil: 'networkidle0', timeout: 60000 });
   await page.waitForFunction(() => !!(window.BelJarEditor && window.BelugaClient && window.Harpoon && window.HarpoonPanel),
     { timeout: 40000 });
 
@@ -322,11 +322,32 @@ try {
 
   // The derivation only exists once the proof has steps, so run Orca on this hole first.
   // This is also the surface state the graph is actually read in: after a search.
-  await page.evaluate(() => {
+  // Started and left at once (plan v6 phase 04, n3): a search that ends with the panel
+  // closed leaves one notice, named and opening the hole. The real threshold is 10 s; this
+  // search is quicker, so the probe lowers it.
+  const started = await page.evaluate(() => {
+    window.BELJAR_ORCA_NOTICE_MS = 0;
+    window.Notifications.clear();
     const btn = Array.from(document.querySelectorAll('button')).find((b) =>
       /orca/i.test(b.className + ' ' + (b.getAttribute('data-tooltip') || '') + ' ' + b.textContent));
-    if (btn) btn.click();
+    if (!btn) return false;
+    btn.click();
+    document.getElementById('btn-harpoon').click();
+    return !document.querySelector('.workspace.is-harpoon-open');
   });
+  ok(started, 'Orca started, and the panel closed while it searched');
+  await page.waitForFunction(() => {
+    const s = window.Harpoon.activeSession();
+    return window.Notifications.list().some((r) => r.source === 'orca.finished')
+      || !!(s && s.nativeAuto && (s.nativeAuto.phase === 'solved' || s.nativeAuto.phase === 'stuck'));
+  }, { timeout: 120000 });
+  await new Promise((r) => setTimeout(r, 300));
+  const orcaLeft = await page.evaluate(() => window.Notifications.list().filter((r) => r.source === 'orca.finished'));
+  ok(orcaLeft.length === 1 && /^Orca (proved|gave up on) tp_refl$/.test(orcaLeft[0].title),
+    `a search that ends with the panel closed leaves one notice, named (${JSON.stringify(orcaLeft.map((r) => r.title))})`);
+  ok(!!(orcaLeft[0] && orcaLeft[0].links && orcaLeft[0].links.fileId && orcaLeft[0].links.from >= 0),
+    `and it opens the hole (${JSON.stringify(orcaLeft[0] && orcaLeft[0].links)})`);
+  await page.evaluate(() => { delete window.BELJAR_ORCA_NOTICE_MS; document.getElementById('btn-harpoon').click(); });
   await page.waitForFunction(
     () => !!document.querySelector('.harpoon-deriv'),
     { timeout: 120000 });

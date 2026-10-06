@@ -3,10 +3,13 @@
  * and semantic cache (docs/PERSIST.md §4.2). Everything here goes through the
  * store; nothing here knows about the editor, the explorer or `.cfg` files.
  *
- * ⛔ A page is pinned to its project. `projectId()` is decided once, on first
- * use, and changes only through `setActiveProject` (after which the app
- * reloads). The device table's `activeProject` is which project to open NEXT time:
- * every tab shares it, so reading it per call let a second tab switching
+ * ⛔ A page is pinned to its project. The editor's address names it
+ * (`pinProject`, from persist.mjs; js/frame/routes.mjs), and a page with no
+ * name in its address settles on the last project opened, on first use
+ * (`projectId()`). It changes only through `setActiveProject`, after which the
+ * app leaves for that project's address. The device table's `activeProject` is
+ * only the last project opened: what home lists first and what a bare /edit
+ * opens. Every tab shares it, so reading it per call let a second tab switching
  * projects redirect this tab's saves into the other project.
  *
  * ⛔ No record is shared by every project. Each project is its own `meta`
@@ -41,7 +44,9 @@ import {
 import { createTable } from './table.mjs';
 import { DEVICE, DEVICE_KEY } from './device-schema.mjs';
 
-export const DEFAULT_PROJECT_NAME = 'Untitled Project';
+export const DEFAULT_PROJECT_NAME = 'Untitled project';
+/** The default name until 2026-10-06 (sentence case since): a placeholder made then is still one. */
+const DEFAULT_NAME_BEFORE = 'Untitled Project';
 export const FIRST_FILE_NAME = 'main.bel';
 
 const CACHE_LIMIT = 1024;
@@ -195,6 +200,11 @@ export function createWork(opts) {
   const cache = new Map();
   const PROJECTS = ' projects';
   let pinned = null;
+  // Whose the pinned project was when last seen (null: this browser's own):
+  // what is left to go on once the project itself has gone (`ownerLeft`).
+  let pinnedOwner = null;
+  // Signed out on this page (`leaveAccount`): it is leaving, and makes no project.
+  let closing = false;
 
   store.subscribe((evt) => {
     if (evt.key == null) {
@@ -203,8 +213,16 @@ export function createWork(opts) {
     }
     cache.delete(evt.key);
     const k = parseKey(evt.key);
-    if (k && k.kind === 'meta') cache.delete(PROJECTS);
+    if (k && k.kind === 'meta') {
+      cache.delete(PROJECTS);
+      if (k.pid === pinned) noteOwner();
+    }
   });
+
+  function noteOwner() {
+    const meta = pinned ? normalizeMeta(pinned, store.get(metaKey(pinned))) : null;
+    if (meta) pinnedOwner = meta.owner;
+  }
 
   function remember(key, value) {
     if (cache.size >= CACHE_LIMIT) cache.clear();
@@ -289,7 +307,7 @@ export function createWork(opts) {
    */
   function isBlankProject(pid) {
     const meta = normalizeMeta(pid, store.get(metaKey(pid)));
-    if (!meta || meta.owner !== null || meta.name !== DEFAULT_PROJECT_NAME) return false;
+    if (!meta || meta.owner !== null || (meta.name !== DEFAULT_PROJECT_NAME && meta.name !== DEFAULT_NAME_BEFORE)) return false;
     const t = peekTree(pid);
     if (t.files.length !== 1 || t.files[0].name !== FIRST_FILE_NAME || t.folders.length) return false;
     if (t.suites && Object.keys(t.suites).length) return false;
@@ -311,8 +329,26 @@ export function createWork(opts) {
   }
 
   function isVisible(p) {
-    if (p.owner === null || p.owner === account()) return true;
-    return !account() && kept().includes(p.owner);
+    return ownerShown(p.owner);
+  }
+
+  function ownerShown(owner) {
+    if (owner === null || owner === account()) return true;
+    return !account() && kept().includes(owner);
+  }
+
+  /**
+   * This page's project is an account's, and that account is no longer the one
+   * signed in on this browser: it signed out in another tab. True once, and
+   * from then on this page makes no project: the caller sends it home. Works
+   * whether or not the project has left storage yet.
+   */
+  function ownerLeft() {
+    if (!pinned) return false;
+    noteOwner();
+    if (ownerShown(pinnedOwner)) return false;
+    closing = true;
+    return true;
   }
 
   /** The projects this page may show: this device's own, and the account's. */
@@ -333,11 +369,55 @@ export function createWork(opts) {
   }
 
   /**
-   * Signing out on a shared computer: remove every project `uid` owns from
-   * this device, with the sync bookkeeping that went with them. The server
-   * keeps them; signing in again brings them back. Returns how many went.
+   * Signing out, removing: `uid`'s projects leave this browser at the next
+   * page load, not now. ⛔ The page that signed out is still live until the
+   * browser has left it, and anything in it that reads the project list while
+   * none is visible makes one (`ensureProjects`): removing under it left a
+   * stray blank project behind, which home then listed. So the account is noted
+   * here, this page makes no project from now on, and the next page to load
+   * (home, with no project of its own) does the removing (`finishSignOut`).
+   * `keep`: projects of it that stay instead, kept for it (`keptAccounts`).
    */
-  function removeAccountProjects(uid) {
+  function leaveAccount(uid, keep) {
+    closing = true;
+    if (!uid) return false;
+    const stay = Array.isArray(keep) ? keep.filter((pid) => typeof pid === 'string' && pid) : [];
+    if (stay.length) device.set('leftKeep', stay);
+    else device.reset((row) => row.id === 'leftKeep');
+    return device.set('leftAccount', String(uid));
+  }
+
+  /** Why this browser was signed out without asking, for the next page to say once ('elsewhere', 'ended'). */
+  function noteSignedOut(reason) {
+    return device.set('signedOutNote', String(reason || ''));
+  }
+
+  /** The note, once: read and cleared. */
+  function takeSignedOutNote() {
+    const note = device.get('signedOutNote');
+    if (note) device.reset((row) => row.id === 'signedOutNote');
+    return note || '';
+  }
+
+  /** At page load: remove what a sign-out left to be removed. Returns how many projects went. */
+  function finishSignOut() {
+    const uid = device.get('leftAccount');
+    if (!uid) return 0;
+    const keep = new Set(device.get('leftKeep'));
+    device.reset((row) => row.id === 'leftAccount' || row.id === 'leftKeep');
+    // Signed in again as the same account before any page loaded: they stay.
+    if (account() === uid) return 0;
+    const n = removeAccountProjects(uid, keep);
+    if (peekProjects().some((p) => p.owner === uid)) keepAccountProjects(uid);
+    return n;
+  }
+
+  /**
+   * Remove every project `uid` owns from this device (but those in `keep`),
+   * with the sync bookkeeping that went with them. The server keeps them;
+   * signing in again brings them back. Returns how many went.
+   */
+  function removeAccountProjects(uid, keep) {
     if (!uid) return 0;
     // What was open here, to come back to when the account signs in again.
     const open = pinned || device.get('activeProject');
@@ -345,7 +425,7 @@ export function createWork(opts) {
     setResume(String(uid), wasTheirs ? open : '');
     let n = 0;
     for (const p of peekProjects()) {
-      if (p.owner !== uid) continue;
+      if (p.owner !== uid || (keep && keep.has(p.id))) continue;
       store.remove(metaKey(p.id));
       store.removeAll(projectPrefix(p.id));
       if (pinned === p.id) pinned = null;
@@ -362,6 +442,41 @@ export function createWork(opts) {
     // Nothing of theirs is here now: nothing waits, and nothing is kept.
     if (device.get('syncHeldFor') === String(uid)) device.reset((row) => row.id === 'syncHeldFor');
     if (kept().includes(String(uid))) device.set('keptAccounts', kept().filter((id) => id !== String(uid)));
+    return n;
+  }
+
+  /**
+   * The account was deleted: its projects in this browser stay, as this
+   * browser's own (no account), and nothing of the account is left beside
+   * them: no sync bookkeeping (the cloud no longer has their versions), no
+   * tombstones, no marks to keep, leave or come back to it. A later sign-in
+   * adopts them like any of this browser's own. Returns how many stayed.
+   */
+  function releaseAccount(uid) {
+    if (!uid) return 0;
+    let n = 0;
+    for (const p of peekProjects()) {
+      if (p.owner !== uid) continue;
+      const meta = normalizeMeta(p.id, store.get(metaKey(p.id)));
+      if (!meta) continue;
+      meta.owner = null;
+      if (!put(metaKey(p.id), metaRecord(meta)).ok) continue;
+      store.remove(syncKey(p.id));
+      n += 1;
+    }
+    const tombs = readTombstones();
+    let dropped = false;
+    for (const pid of Object.keys(tombs)) {
+      if (tombs[pid].owner === uid) { delete tombs[pid]; dropped = true; }
+    }
+    if (dropped) writeTombstones(tombs);
+    const synced = store.get(SETTINGS_SYNC_KEY);
+    if (synced && synced.account === uid) store.remove(SETTINGS_SYNC_KEY);
+    const id = String(uid);
+    if (device.get('syncHeldFor') === id) device.reset((row) => row.id === 'syncHeldFor');
+    if (device.get('resumeAccount') === id) clearResume();
+    if (device.get('leftAccount') === id) device.reset((row) => row.id === 'leftAccount' || row.id === 'leftKeep');
+    if (kept().includes(id)) device.set('keptAccounts', kept().filter((k) => k !== id));
     return n;
   }
 
@@ -397,7 +512,7 @@ export function createWork(opts) {
 
   /** There is always at least one project this page can show: the first run creates it. */
   function ensureProjects() {
-    if (!peekVisible().length) {
+    if (!peekVisible().length && !closing) {
       const pid = createProject(DEFAULT_PROJECT_NAME);
       if (!pid) throw new Error('BelJar could not create a project: storage refused the write (full, or owned by another version)');
       writeDevice(pid);
@@ -414,12 +529,44 @@ export function createWork(opts) {
     return pinned;
   }
 
+  /** This page's project is the one in use now (its tab came to the front): it is the last one opened. */
+  function projectInUse() {
+    if (pinned && device.get('activeProject') !== pinned && peekVisible().some((p) => p.id === pinned)) writeDevice(pinned);
+  }
+
+  /** The projects this page may show, without making one: home may be empty. */
+  function visibleProjects() {
+    return peekVisible().map((p) => Object.assign({}, p));
+  }
+
+  /** The last project opened in this browser, if it can still be shown. Pins nothing, creates nothing. */
+  function lastProject() {
+    const want = device.get('activeProject');
+    return want && peekVisible().some((p) => p.id === want) ? want : null;
+  }
+
+  /**
+   * This page is on `pid`: its address says so. False when this browser cannot
+   * show that project (deleted, another account's, not here yet), or the page
+   * has already settled on another; the caller then leaves, it never works on
+   * a different project under that address.
+   */
+  function pinProject(pid) {
+    if (pinned) return pinned === pid;
+    if (!pid || !peekVisible().some((p) => p.id === pid)) return false;
+    pinned = pid;
+    noteOwner();
+    if (device.get('activeProject') !== pid) writeDevice(pid);
+    return true;
+  }
+
   /** The project this page works on. See the header: pinned, not re-read. */
   function projectId() {
     if (pinned) return pinned;
     const list = ensureProjects();
     const want = device.get('activeProject');
     pinned = list.some((p) => p.id === want) ? want : list[0].id;
+    noteOwner();
     if (want !== pinned) writeDevice(pinned);
     return pinned;
   }
@@ -434,6 +581,7 @@ export function createWork(opts) {
     if (!ensureProjects().some((p) => p.id === pid)) return false;
     writeDevice(pid);
     pinned = pid;
+    noteOwner();
     return true;
   }
 
@@ -454,6 +602,21 @@ export function createWork(opts) {
   function deleteProject(pid) {
     const list = ensureProjects();
     if (list.length <= 1) return null;
+    return dropProject(pid, list);
+  }
+
+  /**
+   * Home's delete: the same, except that the last project may go (home can be
+   * empty, and makes no project to fill itself). True when it went.
+   */
+  function removeProject(pid) {
+    const list = peekVisible();
+    if (!list.some((p) => p.id === pid)) return false;
+    const next = dropProject(pid, list);
+    return next !== null || !peekVisible().some((p) => p.id === pid);
+  }
+
+  function dropProject(pid, list) {
     const idx = list.findIndex((p) => p.id === pid);
     if (idx === -1) return null;
     const others = list.filter((p) => p.id !== pid);
@@ -472,8 +635,11 @@ export function createWork(opts) {
     }
     store.remove(metaKey(pid));
     store.removeAll(projectPrefix(pid));
-    const next = others[Math.max(0, idx - 1)].id;
-    if (device.get('activeProject') === pid) writeDevice(next);
+    const next = others.length ? others[Math.max(0, idx - 1)].id : null;
+    if (device.get('activeProject') === pid) {
+      if (next) writeDevice(next);
+      else device.reset((row) => row.id === 'activeProject');
+    }
     if (pinned === pid) pinned = next;
     return next;
   }
@@ -782,6 +948,11 @@ export function createWork(opts) {
     hasProject,
     projectId,
     pinnedProject,
+    pinProject,
+    projectInUse,
+    lastProject,
+    visibleProjects,
+    removeProject,
     setActiveProject,
     createProject,
     renameProject,
@@ -820,6 +991,12 @@ export function createWork(opts) {
     isBlankProject,
     claimProject,
     removeAccountProjects,
+    leaveAccount,
+    finishSignOut,
+    releaseAccount,
+    noteSignedOut,
+    takeSignedOutNote,
+    ownerLeft,
     keepAccountProjects,
     // the online layer
     allProjects,

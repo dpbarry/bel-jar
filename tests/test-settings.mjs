@@ -68,6 +68,7 @@ function fresh(storage = fakeStorage(), events = fakeEvents()) {
     expect(['enum', 'bool', 'string', 'json'].includes(typeOf(row)), `${row.id}: has a type`);
   }
   for (const s of SECTIONS) expect(SETTINGS.some((r) => r.section === s), `section ${s} has settings`);
+  expect(settingRow('inspectorFollow').default === false, 'inspector follow starts off');
   expect(SETTINGS.filter((r) => r.boot).map((r) => r.id).sort().join() ===
     'editorFontFamily,editorHoleEmphasis,motionPref,theme,uiFontSize,uiTextContrast',
     'exactly the settings first paint needs are marked boot');
@@ -127,7 +128,14 @@ function fresh(storage = fakeStorage(), events = fakeEvents()) {
   let threw = false;
   try { b.reset('everything'); } catch (_) { threw = true; }
   expect(threw, 'an unknown section throws');
+  // A tip seen is not a preference (`reset: false`; js/ui/hint-seen.mjs): no Reset brings it back.
+  b.set('hintSeenLibrary', true);
+  b.set('restorePanels', false);
+  b.reset('workspace');
+  expect(b.get('restorePanels') === true && b.get('hintSeenLibrary') === true, "resetting Workspace leaves the tips seen as they are");
   expect(b.resetAll() && b.get('theme') === 'dark' && b.get('replEcho') === true, 'resetAll restores everything');
+  expect(b.get('hintSeenLibrary') === true, 'and so does Reset all: a tip seen stays seen');
+  b.set('hintSeenLibrary', false);
   const all = b.values();
   expect(Object.keys(all).length === SETTINGS.length && all.theme === 'dark', 'values() is every setting, resolved');
 }

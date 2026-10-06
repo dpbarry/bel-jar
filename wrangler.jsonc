@@ -31,6 +31,10 @@
   "r2_buckets": [
     { "binding": "TEXTS", "bucket_name": "beljar-texts" }
   ],
+  // The daily job (server/deletion.mjs, the Worker's `scheduled`): finishes
+  // account deletions, and lets go of sessions past their time. 07:00 UTC, the
+  // middle of the night in Montreal.
+  "triggers": { "crons": ["0 7 * * *"] },
   // The live GitHub OAuth app. The id is public (GitHub shows it in every sign-in link).
   "vars": { "GITHUB_CLIENT_ID": "Ov23liywDmLbi2XHRnOZ" }
 }

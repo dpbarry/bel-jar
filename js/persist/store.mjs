@@ -7,10 +7,49 @@
  * Design and invariants: docs/PERSIST.md.
  */
 
-/** Bump when the stored format changes. A mismatch wipes every BelJar key. */
+/**
+ * Bump when the stored format changes, and add the step to migrations.mjs in
+ * the same change (tests/test-migrations.mjs): the app refuses older data it
+ * cannot migrate, it does not delete it.
+ */
 export const SCHEMA = 4;
 
 export const SCHEMA_KEY = 'beljar/schema';
+
+/**
+ * Take the stored format up to `schema`, in place: every step from the stored
+ * version on, in order, then the new version stamped. { result, from, at?,
+ * error? }, result one of 'current', 'fresh' (nothing stored), 'newer' (a later
+ * BelJar's), 'unreadable', 'missing' (a version with no step: nothing is run),
+ * 'threw' (a step failed: the data stays as that step left it, unstamped),
+ * 'migrated'. Never wipes: what a gap means is the caller's to decide
+ * (createStore's policy).
+ *
+ * ⛔ The one place the steps run. Early boot runs it before it reads anything,
+ * so the first paint after a format change shows the person's settings, not
+ * the defaults (js/boot/early-boot-core.mjs); the store then finds the format
+ * current.
+ */
+export function migrateStorage(storage, schema, migrations) {
+  const raw = storage.getItem(SCHEMA_KEY);
+  if (raw === String(schema)) return { result: 'current', from: schema };
+  if (raw == null) return { result: 'fresh', from: null };
+  const n = Number(raw);
+  const from = raw !== '' && Number.isInteger(n) ? n : null;
+  if (from == null) return { result: 'unreadable', from: null };
+  if (from > schema) return { result: 'newer', from };
+  const steps = migrations || {};
+  for (let v = from; v < schema; v++) if (typeof steps[v] !== 'function') return { result: 'missing', from, at: v };
+  for (let v = from; v < schema; v++) {
+    try {
+      steps[v](storage);
+    } catch (err) {
+      return { result: 'threw', from, at: v, error: String(err && err.message || err) };
+    }
+  }
+  storage.setItem(SCHEMA_KEY, String(schema));
+  return { result: 'migrated', from };
+}
 
 /**
  * What each key IS, decided by its shape — never by the caller, who could
@@ -113,9 +152,9 @@ function parseEnvelope(raw) {
  * @param {Record<number, (storage: Storage) => void>} [opts.migrations]
  *   `migrations[n]` turns stored format n into n + 1, synchronously, in place.
  * @param {'wipe'|'refuse'} [opts.onMissingMigration]
- *   Older data no migration reaches: 'wipe' (the default while nobody's work
- *   depends on it) or 'refuse' (open read-only, touch nothing; the policy once
- *   users exist).
+ *   Older data no migration reaches: 'refuse' (open read-only, touch nothing:
+ *   what the app's store passes, persist.mjs) or 'wipe' (the default, for a
+ *   store of conveniences such as the tab store).
  * @param {(version: number) => void} [opts.onVersionAhead]
  *   The stored data is from a NEWER BelJar (another tab updated): this page is
  *   read-only from now on and should ask to be reloaded.
@@ -169,46 +208,29 @@ export function createStore(opts = {}) {
   }
 
   const storedRaw = storage.getItem(SCHEMA_KEY);
-  const storedVersion = versionOf(storedRaw);
-  if (storedRaw === String(schema)) {
-    // current
-  } else if (storedVersion != null && storedVersion > schema) {
+  const up = migrateStorage(storage, schema, migrations);
+  if (up.result === 'newer') {
     readOnly = true;
     resetReason = 'newer';
-    onVersionAhead(storedVersion);
-  } else if (storedRaw == null) {
+    onVersionAhead(up.from);
+  } else if (up.result === 'fresh') {
     resetReason = 'fresh';
     wipeAndStamp();
-  } else {
-    let v = storedVersion;
-    let failure = v == null ? 'unreadable' : null;
-    while (!failure && v < schema) {
-      const step = migrations[v];
-      if (typeof step !== 'function') { failure = 'missing'; break; }
-      try {
-        step(storage);
-      } catch (err) {
-        // Half-migrated data is still the user's data: never wipe it.
-        failure = 'threw';
-        readOnly = true;
-        resetReason = 'refused';
-        onCannotUpgrade('migration from ' + v + ' failed: ' + String(err && err.message || err));
-        break;
-      }
-      v += 1;
-    }
-    if (!failure) {
-      resetReason = 'migrated';
-      storage.setItem(SCHEMA_KEY, String(schema));
-    } else if (failure !== 'threw') {
-      if (missingPolicy === 'wipe') {
-        resetReason = 'schema-changed';
-        wipeAndStamp();
-      } else {
-        readOnly = true;
-        resetReason = 'refused';
-        onCannotUpgrade('no migration from ' + storedRaw + ' to ' + schema);
-      }
+  } else if (up.result === 'migrated') {
+    resetReason = 'migrated';
+  } else if (up.result === 'threw') {
+    // Half-migrated data is still the user's data: never wipe it.
+    readOnly = true;
+    resetReason = 'refused';
+    onCannotUpgrade('migration from ' + up.at + ' failed: ' + up.error);
+  } else if (up.result === 'missing' || up.result === 'unreadable') {
+    if (missingPolicy === 'wipe') {
+      resetReason = 'schema-changed';
+      wipeAndStamp();
+    } else {
+      readOnly = true;
+      resetReason = 'refused';
+      onCannotUpgrade('no migration from ' + storedRaw + ' to ' + schema);
     }
   }
 

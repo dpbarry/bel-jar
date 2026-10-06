@@ -2,6 +2,26 @@
   // js/persist/store.mjs
   var SCHEMA = 4;
   var SCHEMA_KEY = "beljar/schema";
+  function migrateStorage(storage, schema, migrations) {
+    const raw = storage.getItem(SCHEMA_KEY);
+    if (raw === String(schema)) return { result: "current", from: schema };
+    if (raw == null) return { result: "fresh", from: null };
+    const n = Number(raw);
+    const from = raw !== "" && Number.isInteger(n) ? n : null;
+    if (from == null) return { result: "unreadable", from: null };
+    if (from > schema) return { result: "newer", from };
+    const steps = migrations || {};
+    for (let v = from; v < schema; v++) if (typeof steps[v] !== "function") return { result: "missing", from, at: v };
+    for (let v = from; v < schema; v++) {
+      try {
+        steps[v](storage);
+      } catch (err) {
+        return { result: "threw", from, at: v, error: String(err && err.message || err) };
+      }
+    }
+    storage.setItem(SCHEMA_KEY, String(schema));
+    return { result: "migrated", from };
+  }
   var CLASSES = [
     { pattern: /^beljar\/settings$/, cls: "settings" },
     { pattern: /^beljar\/device$/, cls: "device" },
@@ -113,47 +133,28 @@
       storage.setItem(SCHEMA_KEY, String(schema));
     }
     const storedRaw = storage.getItem(SCHEMA_KEY);
-    const storedVersion = versionOf(storedRaw);
-    if (storedRaw === String(schema)) {
-    } else if (storedVersion != null && storedVersion > schema) {
+    const up = migrateStorage(storage, schema, migrations);
+    if (up.result === "newer") {
       readOnly = true;
       resetReason = "newer";
-      onVersionAhead(storedVersion);
-    } else if (storedRaw == null) {
+      onVersionAhead(up.from);
+    } else if (up.result === "fresh") {
       resetReason = "fresh";
       wipeAndStamp();
-    } else {
-      let v = storedVersion;
-      let failure = v == null ? "unreadable" : null;
-      while (!failure && v < schema) {
-        const step = migrations[v];
-        if (typeof step !== "function") {
-          failure = "missing";
-          break;
-        }
-        try {
-          step(storage);
-        } catch (err) {
-          failure = "threw";
-          readOnly = true;
-          resetReason = "refused";
-          onCannotUpgrade("migration from " + v + " failed: " + String(err && err.message || err));
-          break;
-        }
-        v += 1;
-      }
-      if (!failure) {
-        resetReason = "migrated";
-        storage.setItem(SCHEMA_KEY, String(schema));
-      } else if (failure !== "threw") {
-        if (missingPolicy === "wipe") {
-          resetReason = "schema-changed";
-          wipeAndStamp();
-        } else {
-          readOnly = true;
-          resetReason = "refused";
-          onCannotUpgrade("no migration from " + storedRaw + " to " + schema);
-        }
+    } else if (up.result === "migrated") {
+      resetReason = "migrated";
+    } else if (up.result === "threw") {
+      readOnly = true;
+      resetReason = "refused";
+      onCannotUpgrade("migration from " + up.at + " failed: " + up.error);
+    } else if (up.result === "missing" || up.result === "unreadable") {
+      if (missingPolicy === "wipe") {
+        resetReason = "schema-changed";
+        wipeAndStamp();
+      } else {
+        readOnly = true;
+        resetReason = "refused";
+        onCannotUpgrade("no migration from " + storedRaw + " to " + schema);
       }
     }
     const READ_ONLY = { ok: false, error: { code: "read-only" } };
@@ -312,6 +313,9 @@
     }
     return store2;
   }
+
+  // js/persist/migrations.mjs
+  var MIGRATIONS = {};
 
   // js/persist/table.mjs
   function typeOf(row) {
@@ -569,6 +573,8 @@
     { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
     { id: "autosolveFocusNext", section: "harpoon", default: ON },
     { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // Case completion: fill a proof's missing cases when typing pauses, or only on a command.
+    { id: "caseFill", section: "harpoon", default: "auto", values: ["auto", "ask"] },
     // ── REPL ────────────────────────────────────────────────────────────────
     { id: "replAutoscroll", section: "repl", default: ON },
     { id: "replWelcome", section: "repl", default: ON },
@@ -581,9 +587,17 @@
     // Where this browser keeps history: a shared computer is not your laptop.
     { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
     // ── Workspace ───────────────────────────────────────────────────────────
-    { id: "inspectorFollow", section: "workspace", default: ON },
+    // What a plain arrival at BelJar opens: home, or the project last opened, the
+    // way an IDE reopens its last window. Early boot decides, before first paint
+    // (js/boot/early-boot-core.mjs `startTarget`).
+    { id: "startPage", section: "workspace", default: "home", values: ["home", "last"] },
+    { id: "inspectorFollow", section: "workspace", default: OFF },
     { id: "restorePanels", section: "workspace", default: ON },
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Tips seen once on any computer stay seen on all of them (js/ui/hint-seen.mjs):
+    // one row per tip, so two computers that each saw a different one never disagree.
+    { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },
@@ -644,10 +658,10 @@
       /** Back to defaults for one Settings category. */
       reset(section) {
         if (!SECTIONS.includes(section)) throw new Error(`settings: no section "${section}"`);
-        return table.reset((row) => row.section === section);
+        return table.reset((row) => row.section === section && row.reset !== false);
       },
       resetAll() {
-        return table.reset();
+        return table.reset((row) => row.reset !== false);
       },
       /** Exactly what the user changed, in a file they can keep. */
       exportBundle(now = Date.now()) {
@@ -707,6 +721,7 @@
     if (!Array.isArray(raw)) return void 0;
     return [...new Set(raw.filter((id) => typeof id === "string" && id !== ""))];
   }
+  var idList = accountIds;
   var PANEL_W = { group: "layout", default: 250, min: 160, max: 512, integer: true, boot: true };
   var PANEL_H = { group: "layout", default: 190, min: 96, max: 384, integer: true, boot: true };
   var DEVICE = [
@@ -719,6 +734,16 @@
     // here, usable signed out and never adopted by another account (work.mjs
     // `isVisible`). Each leaves the list when it signs in again.
     { id: "keptAccounts", type: "json", default: [], normalize: accountIds },
+    // Signed out with "Remove": the account whose projects are still to leave
+    // this browser ('' none). They go when the next page loads (work.mjs
+    // `finishSignOut`), never under the page that signed out, which is still live.
+    { id: "leftAccount", type: "string", default: "" },
+    // And the projects of it that stay, kept for it: a session that ended
+    // elsewhere leaves behind nothing the cloud lacks (account.mjs `sessionEnded`).
+    { id: "leftKeep", type: "json", default: [], normalize: idList },
+    // Why this browser was signed out without asking ('' none): 'elsewhere' or
+    // 'ended'. Said once, by the page that loads next (account.mjs).
+    { id: "signedOutNote", type: "string", default: "" },
     // Signing in again: the account whose work this browser should come back
     // to, and the project it had open when it signed out here ('' the newest).
     // Used once, by the first load that finds a blank placeholder open
@@ -864,7 +889,8 @@
   }
 
   // js/persist/work.mjs
-  var DEFAULT_PROJECT_NAME = "Untitled Project";
+  var DEFAULT_PROJECT_NAME = "Untitled project";
+  var DEFAULT_NAME_BEFORE = "Untitled Project";
   var FIRST_FILE_NAME = "main.bel";
   var CACHE_LIMIT = 1024;
   function cleanName(name) {
@@ -974,6 +1000,8 @@
     const cache = /* @__PURE__ */ new Map();
     const PROJECTS = " projects";
     let pinned = null;
+    let pinnedOwner = null;
+    let closing = false;
     store2.subscribe((evt) => {
       if (evt.key == null) {
         cache.clear();
@@ -981,8 +1009,15 @@
       }
       cache.delete(evt.key);
       const k = parseKey(evt.key);
-      if (k && k.kind === "meta") cache.delete(PROJECTS);
+      if (k && k.kind === "meta") {
+        cache.delete(PROJECTS);
+        if (k.pid === pinned) noteOwner();
+      }
     });
+    function noteOwner() {
+      const meta = pinned ? normalizeMeta(pinned, store2.get(metaKey(pinned))) : null;
+      if (meta) pinnedOwner = meta.owner;
+    }
     function remember(key, value) {
       if (cache.size >= CACHE_LIMIT) cache.clear();
       cache.set(key, value);
@@ -1035,7 +1070,7 @@
     }
     function isBlankProject(pid) {
       const meta = normalizeMeta(pid, store2.get(metaKey(pid)));
-      if (!meta || meta.owner !== null || meta.name !== DEFAULT_PROJECT_NAME) return false;
+      if (!meta || meta.owner !== null || meta.name !== DEFAULT_PROJECT_NAME && meta.name !== DEFAULT_NAME_BEFORE) return false;
       const t = peekTree(pid);
       if (t.files.length !== 1 || t.files[0].name !== FIRST_FILE_NAME || t.folders.length) return false;
       if (t.suites && Object.keys(t.suites).length) return false;
@@ -1049,8 +1084,18 @@
       return Array.isArray(ids) ? ids : [];
     }
     function isVisible(p) {
-      if (p.owner === null || p.owner === account()) return true;
-      return !account() && kept().includes(p.owner);
+      return ownerShown(p.owner);
+    }
+    function ownerShown(owner) {
+      if (owner === null || owner === account()) return true;
+      return !account() && kept().includes(owner);
+    }
+    function ownerLeft() {
+      if (!pinned) return false;
+      noteOwner();
+      if (ownerShown(pinnedOwner)) return false;
+      closing = true;
+      return true;
     }
     function peekVisible() {
       return peekProjects().filter(isVisible);
@@ -1062,14 +1107,40 @@
       meta.owner = uid;
       return put(metaKey(pid), metaRecord(meta)).ok;
     }
-    function removeAccountProjects(uid) {
+    function leaveAccount(uid, keep) {
+      closing = true;
+      if (!uid) return false;
+      const stay = Array.isArray(keep) ? keep.filter((pid) => typeof pid === "string" && pid) : [];
+      if (stay.length) device.set("leftKeep", stay);
+      else device.reset((row) => row.id === "leftKeep");
+      return device.set("leftAccount", String(uid));
+    }
+    function noteSignedOut(reason) {
+      return device.set("signedOutNote", String(reason || ""));
+    }
+    function takeSignedOutNote() {
+      const note = device.get("signedOutNote");
+      if (note) device.reset((row) => row.id === "signedOutNote");
+      return note || "";
+    }
+    function finishSignOut() {
+      const uid = device.get("leftAccount");
+      if (!uid) return 0;
+      const keep = new Set(device.get("leftKeep"));
+      device.reset((row) => row.id === "leftAccount" || row.id === "leftKeep");
+      if (account() === uid) return 0;
+      const n = removeAccountProjects(uid, keep);
+      if (peekProjects().some((p) => p.owner === uid)) keepAccountProjects(uid);
+      return n;
+    }
+    function removeAccountProjects(uid, keep) {
       if (!uid) return 0;
       const open = pinned || device.get("activeProject");
       const wasTheirs = peekProjects().some((p) => p.id === open && p.owner === uid);
       setResume(String(uid), wasTheirs ? open : "");
       let n = 0;
       for (const p of peekProjects()) {
-        if (p.owner !== uid) continue;
+        if (p.owner !== uid || keep && keep.has(p.id)) continue;
         store2.remove(metaKey(p.id));
         store2.removeAll(projectPrefix(p.id));
         if (pinned === p.id) pinned = null;
@@ -1090,6 +1161,36 @@
       if (kept().includes(String(uid))) device.set("keptAccounts", kept().filter((id) => id !== String(uid)));
       return n;
     }
+    function releaseAccount(uid) {
+      if (!uid) return 0;
+      let n = 0;
+      for (const p of peekProjects()) {
+        if (p.owner !== uid) continue;
+        const meta = normalizeMeta(p.id, store2.get(metaKey(p.id)));
+        if (!meta) continue;
+        meta.owner = null;
+        if (!put(metaKey(p.id), metaRecord(meta)).ok) continue;
+        store2.remove(syncKey(p.id));
+        n += 1;
+      }
+      const tombs = readTombstones();
+      let dropped = false;
+      for (const pid of Object.keys(tombs)) {
+        if (tombs[pid].owner === uid) {
+          delete tombs[pid];
+          dropped = true;
+        }
+      }
+      if (dropped) writeTombstones(tombs);
+      const synced = store2.get(SETTINGS_SYNC_KEY);
+      if (synced && synced.account === uid) store2.remove(SETTINGS_SYNC_KEY);
+      const id = String(uid);
+      if (device.get("syncHeldFor") === id) device.reset((row) => row.id === "syncHeldFor");
+      if (device.get("resumeAccount") === id) clearResume();
+      if (device.get("leftAccount") === id) device.reset((row) => row.id === "leftAccount" || row.id === "leftKeep");
+      if (kept().includes(id)) device.set("keptAccounts", kept().filter((k) => k !== id));
+      return n;
+    }
     function readTombstones() {
       return normalizeTombstones(store2.get(TOMBSTONES_KEY));
     }
@@ -1108,7 +1209,7 @@
       return null;
     }
     function ensureProjects() {
-      if (!peekVisible().length) {
+      if (!peekVisible().length && !closing) {
         const pid = createProject(DEFAULT_PROJECT_NAME);
         if (!pid) throw new Error("BelJar could not create a project: storage refused the write (full, or owned by another version)");
         writeDevice(pid);
@@ -1121,11 +1222,30 @@
     function pinnedProject() {
       return pinned;
     }
+    function projectInUse() {
+      if (pinned && device.get("activeProject") !== pinned && peekVisible().some((p) => p.id === pinned)) writeDevice(pinned);
+    }
+    function visibleProjects() {
+      return peekVisible().map((p) => Object.assign({}, p));
+    }
+    function lastProject() {
+      const want = device.get("activeProject");
+      return want && peekVisible().some((p) => p.id === want) ? want : null;
+    }
+    function pinProject(pid) {
+      if (pinned) return pinned === pid;
+      if (!pid || !peekVisible().some((p) => p.id === pid)) return false;
+      pinned = pid;
+      noteOwner();
+      if (device.get("activeProject") !== pid) writeDevice(pid);
+      return true;
+    }
     function projectId() {
       if (pinned) return pinned;
       const list = ensureProjects();
       const want = device.get("activeProject");
       pinned = list.some((p) => p.id === want) ? want : list[0].id;
+      noteOwner();
       if (want !== pinned) writeDevice(pinned);
       return pinned;
     }
@@ -1137,6 +1257,7 @@
       if (!ensureProjects().some((p) => p.id === pid)) return false;
       writeDevice(pid);
       pinned = pid;
+      noteOwner();
       return true;
     }
     function renameProject(pid, name) {
@@ -1148,6 +1269,15 @@
     function deleteProject(pid) {
       const list = ensureProjects();
       if (list.length <= 1) return null;
+      return dropProject(pid, list);
+    }
+    function removeProject(pid) {
+      const list = peekVisible();
+      if (!list.some((p) => p.id === pid)) return false;
+      const next = dropProject(pid, list);
+      return next !== null || !peekVisible().some((p) => p.id === pid);
+    }
+    function dropProject(pid, list) {
       const idx = list.findIndex((p) => p.id === pid);
       if (idx === -1) return null;
       const others = list.filter((p) => p.id !== pid);
@@ -1166,8 +1296,11 @@
       }
       store2.remove(metaKey(pid));
       store2.removeAll(projectPrefix(pid));
-      const next = others[Math.max(0, idx - 1)].id;
-      if (device.get("activeProject") === pid) writeDevice(next);
+      const next = others.length ? others[Math.max(0, idx - 1)].id : null;
+      if (device.get("activeProject") === pid) {
+        if (next) writeDevice(next);
+        else device.reset((row) => row.id === "activeProject");
+      }
       if (pinned === pid) pinned = next;
       return next;
     }
@@ -1378,6 +1511,11 @@
       hasProject,
       projectId,
       pinnedProject,
+      pinProject,
+      projectInUse,
+      lastProject,
+      visibleProjects,
+      removeProject,
       setActiveProject,
       createProject,
       renameProject,
@@ -1416,6 +1554,12 @@
       isBlankProject,
       claimProject,
       removeAccountProjects,
+      leaveAccount,
+      finishSignOut,
+      releaseAccount,
+      noteSignedOut,
+      takeSignedOutNote,
+      ownerLeft,
       keepAccountProjects,
       // the online layer
       allProjects,
@@ -1439,9 +1583,9 @@
       return i === -1 ? "" : name.slice(0, i);
     }
     function notifyProjectTreeChanged(kind) {
-      var g2 = typeof window !== "undefined" ? window : null;
-      if (g2 && typeof g2.dispatchEvent === "function") {
-        g2.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
+      var g3 = typeof window !== "undefined" ? window : null;
+      if (g3 && typeof g3.dispatchEvent === "function") {
+        g3.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
       }
     }
     function listFiles() {
@@ -1958,9 +2102,9 @@
       return t && t.charAt(0) !== "%" && isCfgEntryToken(t);
     }
     function cfgTextForRewrite(fileId) {
-      var g2 = typeof window !== "undefined" ? window : null;
-      if (g2) {
-        var ed = g2.CurrentEditor;
+      var g3 = typeof window !== "undefined" ? window : null;
+      if (g3) {
+        var ed = g3.CurrentEditor;
         if (fileId === getActiveFileId() && ed && typeof ed.getValue === "function") {
           return String(ed.getValue() ?? "");
         }
@@ -1969,9 +2113,9 @@
     }
     function notifyCfgRewritten(fileIds) {
       if (!fileIds.length) return;
-      var g2 = typeof window !== "undefined" ? window : null;
-      if (g2 && typeof g2.dispatchEvent === "function") {
-        g2.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
+      var g3 = typeof window !== "undefined" ? window : null;
+      if (g3 && typeof g3.dispatchEvent === "function") {
+        g3.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
       }
     }
     function rewriteCfgBody(text, cfgDir, oldName, newName) {
@@ -2476,9 +2620,9 @@
         if (providers && typeof providers.applyExternalText === "function") providers.applyExternalText(text);
       }
       function announceConflict(source) {
-        var g2 = typeof window !== "undefined" ? window : null;
-        if (g2 && typeof g2.dispatchEvent === "function" && typeof CustomEvent === "function") {
-          g2.dispatchEvent(new CustomEvent("beljar:text-conflict", { detail: { fileId: documentId, source } }));
+        var g3 = typeof window !== "undefined" ? window : null;
+        if (g3 && typeof g3.dispatchEvent === "function" && typeof CustomEvent === "function") {
+          g3.dispatchEvent(new CustomEvent("beljar:text-conflict", { detail: { fileId: documentId, source } }));
         }
       }
       function reconcile() {
@@ -2659,7 +2803,7 @@
         work2.removeConflict(documentId);
         return { ok: true, copyId };
       }
-      var handle = { noteFileChange };
+      var handle = { noteFileChange, flushIfDirty: flushCheckpointIfDirty };
       open.add(handle);
       return {
         getEditorText: function() {
@@ -2694,7 +2838,15 @@
         }
       };
     }
-    return { createPersist };
+    function flushPending() {
+      open.forEach(function(doc) {
+        try {
+          if (doc.flushIfDirty) doc.flushIfDirty();
+        } catch (_) {
+        }
+      });
+    }
+    return { createPersist, flushPending };
   }
 
   // js/persist/device-records.mjs
@@ -2881,6 +3033,7 @@
 
   // js/persist/sync/protocol.mjs
   var MANIFEST_VERSION = 1;
+  var QUOTA = { projects: 1e3, textBytes: 1024 * 1024 * 1024 };
   function canonicalJson(value) {
     if (value === null || typeof value !== "object") return JSON.stringify(value);
     if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
@@ -2896,6 +3049,120 @@
     for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, "0");
     return s;
   }
+  function sha256Sync(text) {
+    const bytes = new TextEncoder().encode(String(text));
+    const n = bytes.length;
+    const words = new Uint32Array(n + 9 + 63 >> 6 << 4);
+    for (let i = 0; i < n; i++) words[i >> 2] |= bytes[i] << 24 - (i & 3) * 8;
+    words[n >> 2] |= 128 << 24 - (n & 3) * 8;
+    words[words.length - 1] = n * 8;
+    words[words.length - 2] = Math.floor(n / 536870912);
+    const h = new Uint32Array(SHA_INIT);
+    const w = new Uint32Array(64);
+    for (let off = 0; off < words.length; off += 16) {
+      for (let t = 0; t < 16; t++) w[t] = words[off + t];
+      for (let t = 16; t < 64; t++) {
+        const x = w[t - 15];
+        const y = w[t - 2];
+        const s0 = (x >>> 7 | x << 25) ^ (x >>> 18 | x << 14) ^ x >>> 3;
+        const s1 = (y >>> 17 | y << 15) ^ (y >>> 19 | y << 13) ^ y >>> 10;
+        w[t] = w[t - 16] + s0 + w[t - 7] + s1 | 0;
+      }
+      let a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g3 = h[6], k = h[7];
+      for (let t = 0; t < 64; t++) {
+        const S1 = (e >>> 6 | e << 26) ^ (e >>> 11 | e << 21) ^ (e >>> 25 | e << 7);
+        const t1 = k + S1 + (e & f ^ ~e & g3) + SHA_K[t] + w[t] | 0;
+        const S0 = (a >>> 2 | a << 30) ^ (a >>> 13 | a << 19) ^ (a >>> 22 | a << 10);
+        const t2 = S0 + (a & b ^ a & c ^ b & c) | 0;
+        k = g3;
+        g3 = f;
+        f = e;
+        e = d + t1 | 0;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 + t2 | 0;
+      }
+      h[0] += a;
+      h[1] += b;
+      h[2] += c;
+      h[3] += d;
+      h[4] += e;
+      h[5] += f;
+      h[6] += g3;
+      h[7] += k;
+    }
+    let s = "";
+    for (let i = 0; i < 8; i++) s += h[i].toString(16).padStart(8, "0");
+    return s;
+  }
+  var SHA_INIT = [1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225];
+  var SHA_K = new Uint32Array([
+    1116352408,
+    1899447441,
+    3049323471,
+    3921009573,
+    961987163,
+    1508970993,
+    2453635748,
+    2870763221,
+    3624381080,
+    310598401,
+    607225278,
+    1426881987,
+    1925078388,
+    2162078206,
+    2614888103,
+    3248222580,
+    3835390401,
+    4022224774,
+    264347078,
+    604807628,
+    770255983,
+    1249150122,
+    1555081692,
+    1996064986,
+    2554220882,
+    2821834349,
+    2952996808,
+    3210313671,
+    3336571891,
+    3584528711,
+    113926993,
+    338241895,
+    666307205,
+    773529912,
+    1294757372,
+    1396182291,
+    1695183700,
+    1986661051,
+    2177026350,
+    2456956037,
+    2730485921,
+    2820302411,
+    3259730800,
+    3345764771,
+    3516065817,
+    3600352804,
+    4094571909,
+    275423344,
+    430227734,
+    506948616,
+    659060556,
+    883997877,
+    958139571,
+    1322822218,
+    1537002063,
+    1747873779,
+    1955562222,
+    2024104815,
+    2227730452,
+    2361852424,
+    2428436474,
+    2756734187,
+    3204031479,
+    3329325298
+  ]);
   async function sha256(text) {
     const subtle = globalThis.crypto && globalThis.crypto.subtle;
     if (!subtle) throw new Error("sync: Web Crypto is not available");
@@ -3006,7 +3273,7 @@
           const baseText = b ? need(b.hash) : "";
           const theirs = need(t.hash);
           if (baseText === void 0 || theirs === void 0) continue;
-          const r = merge3(baseText, mine, theirs);
+          const r = baseText === null ? { ok: false } : merge3(baseText, mine, theirs);
           if (r.ok && !a.askAll) {
             out.push({ id, path, text: r.text });
           } else {
@@ -3014,7 +3281,7 @@
             if (conflicted.has(id)) {
               copies.push({ of: id, text: mine });
             } else {
-              conflicts.push({ id, base: baseText, mine, theirs });
+              conflicts.push({ id, base: baseText === null ? "" : baseText, mine, theirs });
               notices.push({ kind: "conflict", path });
             }
           }
@@ -3144,8 +3411,15 @@
       }
       return { version: raw.version, values: cleanSyncedValues(raw.values) };
     }
-    async function sync() {
+    async function sync(hint) {
       if (!o.settings.get("syncSettings")) return { status: "off" };
+      const told = hint && Number.isInteger(hint.head) ? hint.head : null;
+      if (told !== null) {
+        const rec = readRecord(store2, account);
+        const mine = local();
+        if (rec && !rec.pending && rec.version === told && sameValues(mine, rec.values)) return { status: "clean" };
+        if (!rec && told === 0 && !Object.keys(mine).length) return { status: "clean" };
+      }
       for (let i = 0; i < attempts; i++) {
         const rec = readRecord(store2, account);
         if (rec && rec.pending) {
@@ -3180,9 +3454,20 @@
 
   // js/persist/sync/engine.mjs
   var ATTEMPTS = 8;
+  var CARRY_TEXTS = 200;
+  var CARRY_BYTES = 512 * 1024;
+  var utf8Bytes2 = (text) => new TextEncoder().encode(String(text)).length;
   function unreachable(method, err) {
     const e = new Error("sync: " + method + " could not reach the server" + (err && err.message ? " (" + err.message + ")" : ""));
     e.offline = true;
+    e.stopsRound = true;
+    e.cause = err;
+    return e;
+  }
+  function refusedByServer(method, err) {
+    const e = new Error("sync: the server answered " + err.status + " to " + method);
+    e.status = err.status;
+    e.stopsRound = true;
     e.cause = err;
     return e;
   }
@@ -3204,7 +3489,13 @@
     if (raw.pending && typeof raw.pending === "object" && typeof raw.pending.id === "string" && raw.pending.id) {
       const m = normalizeManifest(raw.pending.manifest);
       const base = Number.isInteger(raw.pending.base) && raw.pending.base >= 0 ? raw.pending.base : -1;
-      if (m && base >= 0) pending = { id: raw.pending.id, base, manifest: m };
+      if (m && base >= 0) {
+        pending = { id: raw.pending.id, base, manifest: m };
+        const t = raw.pending.texts;
+        if (t && typeof t === "object" && !Array.isArray(t) && Object.entries(t).every(([h, x]) => isHash(h) && typeof x === "string") && Object.keys(t).length) {
+          pending.texts = Object.assign({}, t);
+        }
+      }
     }
     return { version, manifest, pending };
   }
@@ -3215,6 +3506,11 @@
     const manifest = deleted ? null : normalizeManifest(raw.manifest);
     if (!deleted && !manifest) throw bad("the server sent a manifest this version cannot read");
     return { version: raw.version, deleted, manifest, commit: typeof raw.commit === "string" ? raw.commit : null };
+  }
+  function readList(raw) {
+    if (Array.isArray(raw)) return { heads: readHeads(raw), settings: null };
+    if (!raw || !Array.isArray(raw.projects)) throw bad("the server sent a project list this version cannot read");
+    return { heads: readHeads(raw.projects), settings: Number.isInteger(raw.settings) && raw.settings >= 0 ? raw.settings : null };
   }
   function readHeads(raw) {
     if (!Array.isArray(raw)) throw bad("the server sent a project list this version cannot read");
@@ -3229,11 +3525,17 @@
     const { store: store2, work: work2, transport, account } = opts;
     if (!account) throw new Error("sync: an engine syncs one account; none was given");
     const hash = opts.hash || sha256;
+    const hashSync = opts.hashSync || sha256Sync;
     const notify = opts.notify || (() => {
     });
     const commitId = opts.commitId || (() => newId("c"));
     const trace = opts.trace || (() => {
     });
+    const own = opts.own || ((fn) => fn());
+    const applyProject = (pid, next, o) => own(() => work2.applyProject(pid, next, o));
+    const forgetProject = (pid) => own(() => work2.forgetProject(pid));
+    const dropTombstone = (pid) => own(() => work2.dropTombstone(pid));
+    const removeConflict = (fid, pid) => own(() => work2.removeConflict(fid, pid));
     function moved(pid, at) {
       trace({ kind: "moved", pid, at });
       return null;
@@ -3243,7 +3545,7 @@
       try {
         return await transport[method](...args);
       } catch (err) {
-        throw unreachable(method, err);
+        throw err && Number.isInteger(err.status) ? refusedByServer(method, err) : unreachable(method, err);
       }
     }
     async function hashFile(pid, fid, text) {
@@ -3251,6 +3553,14 @@
       const known = hashed.get(key);
       if (known && known.text === text) return known.hash;
       const h = await hash(text);
+      hashed.set(key, { text, hash: h });
+      return h;
+    }
+    function hashFileSync(pid, fid, text) {
+      const key = pid + "/" + fid;
+      const known = hashed.get(key);
+      if (known && known.text === text) return known.hash;
+      const h = hashSync(text);
       hashed.set(key, { text, hash: h });
       return h;
     }
@@ -3269,6 +3579,15 @@
       snap.manifest = manifestOf(snap.meta, snap.tree, hashes);
       return snap;
     }
+    function localSideSync(pid) {
+      const snap = work2.snapshotProject(pid);
+      if (!snap) return null;
+      const hashes = {};
+      for (const f of snap.tree.files) hashes[f.id] = hashFileSync(pid, f.id, snap.texts[f.id]);
+      snap.hashes = hashes;
+      snap.manifest = manifestOf(snap.meta, snap.tree, hashes);
+      return snap;
+    }
     function unchangedSince(pid, snap) {
       const now = work2.snapshotProject(pid);
       if (!now) return false;
@@ -3278,6 +3597,18 @@
       if (now.conflicted.size !== snap.conflicted.size) return false;
       for (const id of now.conflicted) if (!snap.conflicted.has(id)) return false;
       return true;
+    }
+    async function fetchSome(pid, wanted) {
+      const got = /* @__PURE__ */ new Map();
+      if (!wanted.length) return got;
+      const res = await call("blobs", pid, wanted);
+      for (const h of wanted) {
+        const text = res && typeof res[h] === "string" ? res[h] : void 0;
+        if (text === void 0) continue;
+        if (await hash(text) !== h) throw bad("a file arrived damaged");
+        got.set(h, text);
+      }
+      return got;
     }
     async function fetchTexts(pid, wanted) {
       const got = /* @__PURE__ */ new Map();
@@ -3291,7 +3622,7 @@
       }
       return got;
     }
-    function settle(pid, kept, pending, res) {
+    function settle2(pid, kept, pending, res) {
       if (res && res.ok && Number.isInteger(res.version) && res.version > 0) {
         writeRecord(pid, { version: res.version, manifest: pending.manifest, pending: null });
         return true;
@@ -3300,25 +3631,107 @@
       writeRecord(pid, { version: kept.version, manifest: kept.manifest, pending: null });
       return false;
     }
+    function freshTexts(local, rec) {
+      const known = new Set(rec && rec.version && rec.manifest ? rec.manifest.files.map((f) => f.hash) : []);
+      const out = {};
+      for (const f of local.tree.files) {
+        const h = local.hashes[f.id];
+        if (!known.has(h)) out[h] = local.texts[f.id];
+      }
+      return out;
+    }
+    function tooMuchToCarry(texts) {
+      const all = Object.values(texts);
+      if (all.length > CARRY_TEXTS) return true;
+      let size = 0;
+      for (const t of all) if ((size += utf8Bytes2(t)) > CARRY_BYTES) return true;
+      return false;
+    }
+    async function upload(pid, texts) {
+      let batch = {};
+      let count = 0;
+      let size = 0;
+      const send = async () => {
+        if (!count) return;
+        const res = await call("putBlobs", pid, batch);
+        if (res && res.error) throw refused(res);
+        if (!res || !res.ok) throw bad("the server did not take the files");
+        batch = {};
+        count = 0;
+        size = 0;
+      };
+      for (const [h, t] of Object.entries(texts)) {
+        const b = utf8Bytes2(t);
+        if (count && (count >= CARRY_TEXTS || size + b > CARRY_BYTES)) await send();
+        batch[h] = t;
+        count += 1;
+        size += b;
+      }
+      await send();
+    }
     async function push(pid, local, rec, base) {
       const texts = /* @__PURE__ */ new Map();
       for (const f of local.tree.files) texts.set(local.hashes[f.id], local.texts[f.id]);
-      const missing = await call("missing", pid, [...texts.keys()]);
-      if (!Array.isArray(missing)) throw bad("the server sent an answer this version cannot read");
-      if (missing.length) {
-        const up = {};
-        for (const h of missing) {
-          if (!texts.has(h)) throw bad("the server asked for a file this version never named");
-          up[h] = texts.get(h);
-        }
-        const res = await call("putBlobs", pid, up);
-        if (res && res.error) throw refused(res);
-        if (!res || !res.ok) throw bad("the server did not take the files");
+      let carried = freshTexts(local, rec);
+      if (tooMuchToCarry(carried)) {
+        await upload(pid, carried);
+        carried = {};
       }
+      const still = work2.getProject(pid);
+      if (!still || still.owner !== account) return moved(pid, "push") || false;
+      const now = readRecord2(pid);
+      if (now && now.pending || (now ? now.version : 0) !== (rec ? rec.version : 0)) return moved(pid, "pending") || false;
       const kept = { version: rec ? rec.version : 0, manifest: rec ? rec.manifest : null };
       const pending = { id: commitId(), base, manifest: local.manifest };
+      if (Object.keys(carried).length) pending.texts = carried;
       writeRecord(pid, { version: kept.version, manifest: kept.manifest, pending });
-      return settle(pid, kept, pending, await call("commit", pid, pending));
+      let res = await call("commit", pid, pending);
+      if (res && !res.ok && Array.isArray(res.missing) && res.missing.length) {
+        const more = {};
+        for (const h of res.missing) {
+          if (!texts.has(h)) throw bad("the server asked for a file this version never named");
+          more[h] = texts.get(h);
+        }
+        if (tooMuchToCarry(more)) {
+          await upload(pid, more);
+        } else {
+          pending.texts = Object.assign({}, pending.texts || {}, more);
+          writeRecord(pid, { version: kept.version, manifest: kept.manifest, pending });
+        }
+        res = await call("commit", pid, pending);
+      }
+      return settle2(pid, kept, pending, res);
+    }
+    function flush(send, budget) {
+      const sent = [];
+      let left = budget == null ? Infinity : budget;
+      const tombs = work2.readTombstones();
+      const open = typeof work2.pinnedProject === "function" ? work2.pinnedProject() : null;
+      const mine = work2.allProjects().filter((x) => x.owner === account && !tombs[x.id]);
+      mine.sort((a, b) => a.id === open ? -1 : b.id === open ? 1 : 0);
+      for (const { id: pid } of mine) {
+        try {
+          const rec = readRecord2(pid);
+          if (rec && rec.pending) continue;
+          const local = localSideSync(pid);
+          if (!local || !local.manifest) continue;
+          if (rec && rec.version && sameManifest(local.manifest, rec.manifest)) continue;
+          const kept = { version: rec ? rec.version : 0, manifest: rec ? rec.manifest : null };
+          const body = { id: commitId(), base: kept.version, manifest: local.manifest, texts: freshTexts(local, rec) };
+          const size = utf8Bytes2(JSON.stringify({ args: [pid, body] }));
+          if (size > left) continue;
+          writeRecord(pid, { version: kept.version, manifest: kept.manifest, pending: body });
+          left -= size;
+          sent.push(pid);
+          Promise.resolve(send(pid, body)).then((res) => {
+            const now = readRecord2(pid);
+            if (now && now.pending && now.pending.id === body.id) settle2(pid, kept, now.pending, res);
+          }).catch(() => {
+          });
+        } catch (_) {
+        }
+      }
+      return sent;
     }
     async function pull(pid, local, rec, head) {
       const theirs = head.manifest;
@@ -3339,12 +3752,18 @@
         });
         if (r.needs) {
           if (fetched) throw bad("a merge needed a file the server did not send");
-          for (const [h, t] of await fetchTexts(pid, r.needs)) texts.set(h, t);
+          const got = await fetchSome(pid, r.needs);
+          const named = new Set(theirs.files.map((f) => f.hash));
+          for (const h of r.needs) {
+            if (got.has(h)) texts.set(h, got.get(h));
+            else if (named.has(h)) throw bad("the server is missing a file its version lists");
+            else texts.set(h, null);
+          }
           fetched = true;
           continue;
         }
         if (!unchangedSince(pid, local)) return moved(pid, "merge");
-        if (!work2.applyProject(pid, r.project, { conflicts: r.conflicts })) throw storageFailure("a merged project");
+        if (!applyProject(pid, r.project, { conflicts: r.conflicts })) throw storageFailure("a merged project");
         writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
         for (const n of r.notices) notify(Object.assign({ pid, project: r.project.name }, n));
         return;
@@ -3361,7 +3780,7 @@
         folders: theirs.folders,
         suites: theirs.suites
       };
-      if (!work2.applyProject(pid, project, { owner: account })) throw storageFailure("a downloaded project");
+      if (!applyProject(pid, project, { owner: account })) throw storageFailure("a downloaded project");
       writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
       return { status: "downloaded" };
     }
@@ -3417,8 +3836,8 @@
       const head = readHead(await call("head", pid));
       if (!head) return false;
       if (head.deleted) {
-        if (work2.readTombstones()[pid]) work2.dropTombstone(pid);
-        if (work2.snapshotProject(pid)) work2.forgetProject(pid);
+        if (work2.readTombstones()[pid]) dropTombstone(pid);
+        if (work2.snapshotProject(pid)) forgetProject(pid);
         return true;
       }
       const theirs = head.manifest;
@@ -3431,27 +3850,27 @@
         suites: theirs.suites
       };
       const snap = work2.snapshotProject(pid);
-      if (snap) for (const fid of snap.conflicted) work2.removeConflict(fid, pid);
-      if (work2.readTombstones()[pid]) work2.dropTombstone(pid);
-      if (!work2.applyProject(pid, project, { owner: account })) throw storageFailure("the cloud\u2019s version of a project");
+      if (snap) for (const fid of snap.conflicted) removeConflict(fid, pid);
+      if (work2.readTombstones()[pid]) dropTombstone(pid);
+      if (!applyProject(pid, project, { owner: account })) throw storageFailure("the cloud\u2019s version of a project");
       writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
       return true;
     }
     async function settleTombstone(pid, tomb, head) {
       if (!head || head.deleted) {
-        work2.dropTombstone(pid);
+        dropTombstone(pid);
         return { status: "deleted" };
       }
       if (head.version === tomb.version || tomb.pending && head.commit === tomb.pending) {
         const res = await call("remove", pid, { id: commitId(), base: head.version });
         if (res && res.ok) {
-          work2.dropTombstone(pid);
+          dropTombstone(pid);
           return { status: "deleted" };
         }
         if (res && res.error) throw refused(res);
         return null;
       }
-      work2.dropTombstone(pid);
+      dropTombstone(pid);
       notify({ kind: "project-restored", pid, project: head.manifest.name });
       return null;
     }
@@ -3459,15 +3878,16 @@
       const rec = readRecord2(pid);
       if (rec && rec.pending) {
         const res = await call("commit", pid, rec.pending);
-        settle(pid, rec, rec.pending, res);
+        settle2(pid, rec, rec.pending, res);
         return null;
       }
       const tomb = work2.readTombstones()[pid];
       const local = await localSide(pid);
       if (local && local.meta.owner !== account) return { status: "not-ours" };
       if (local && !local.manifest) return { status: "error", message: "two files share a path" };
-      if (hint && local && rec && rec.version && !tomb && !hint.deleted && hint.version === rec.version && sameManifest(local.manifest, rec.manifest)) {
-        return { status: "clean" };
+      if (hint && local && rec && rec.version && !tomb && !hint.deleted && hint.version === rec.version) {
+        if (sameManifest(local.manifest, rec.manifest)) return { status: "clean" };
+        return await push(pid, local, rec, rec.version) ? { status: "pushed" } : null;
       }
       const head = readHead(await call("head", pid));
       if (!local) {
@@ -3482,7 +3902,7 @@
       if (head.deleted) {
         if (synced && sameManifest(local.manifest, synced.manifest) && !local.conflicted.size) {
           if (!unchangedSince(pid, local)) return moved(pid, "forget");
-          work2.forgetProject(pid);
+          forgetProject(pid);
           notify({ kind: "project-deleted", pid, project: local.meta.name });
           return { status: "forgot" };
         }
@@ -3512,7 +3932,8 @@
       call
     });
     async function syncAll() {
-      const heads = readHeads(await call("heads"));
+      const list = readList(await call("heads", { settings: true }));
+      const heads = list.heads;
       const byId = new Map(heads.map((h) => [h.id, h]));
       const ids = /* @__PURE__ */ new Set();
       for (const p of work2.allProjects()) if (p.owner === account) ids.add(p.id);
@@ -3524,20 +3945,53 @@
         try {
           projects[pid] = await syncProject(pid, byId.get(pid) || null);
         } catch (err) {
-          if (err && err.offline) throw err;
-          projects[pid] = { pid, status: "error", message: String(err && err.message || err) };
+          if (err && err.stopsRound) throw err;
+          projects[pid] = { pid, status: "error", message: String(err && err.message || err), code: err && err.code || null };
         }
       }
       let settings;
       try {
-        settings = await settingsSync.sync();
+        settings = await settingsSync.sync({ head: list.settings });
       } catch (err) {
-        if (err && err.offline) throw err;
-        settings = { status: "error", message: String(err && err.message || err) };
+        if (err && err.stopsRound) throw err;
+        settings = { status: "error", message: String(err && err.message || err), code: err && err.code || null };
       }
       return { projects, settings };
     }
-    return { account, syncAll, syncProject, syncSettings: settingsSync.sync, localChanges, cloudSide, useCloud };
+    async function history(pid, o) {
+      const list = await call("versions", pid, o || {});
+      return Array.isArray(list) ? list : [];
+    }
+    async function readVersion(pid, n) {
+      const v = await call("version", pid, n);
+      if (!v) return null;
+      if (v.deleted) return { version: v.version, createdAt: v.createdAt, deleted: true, name: null, files: [], folders: [], suites: {} };
+      const m = normalizeManifest(v.manifest);
+      if (!m) throw bad("the server sent a version that is not one");
+      const got = await fetchTexts(pid, [...new Set(m.files.map((f) => f.hash))]);
+      return {
+        version: v.version,
+        createdAt: v.createdAt,
+        deleted: false,
+        name: m.name,
+        files: m.files.map((f) => ({ id: f.id, path: f.path, text: got.get(f.hash) })),
+        folders: m.folders,
+        suites: m.suites
+      };
+    }
+    async function restoreVersion2(pid, n) {
+      const v = await readVersion(pid, n);
+      if (!v || v.deleted) return { ok: false, error: "no-version" };
+      const local = await localSide(pid);
+      const rec = readRecord2(pid);
+      if (!local || !rec || !rec.version || rec.pending || !sameManifest(local.manifest, rec.manifest)) return { ok: false, error: "unsynced" };
+      if (local.conflicted && local.conflicted.size) return { ok: false, error: "review" };
+      if (!unchangedSince(pid, local)) return { ok: false, error: "unsynced" };
+      const next = { name: v.name, createdAt: local.meta.createdAt, files: v.files, folders: v.folders, suites: v.suites };
+      if (!work2.applyProject(pid, next, { owner: account })) throw storageFailure("a restored version");
+      return { ok: true };
+    }
+    return { account, syncAll, syncProject, syncSettings: settingsSync.sync, localChanges, cloudSide, useCloud, flush, history, readVersion, restoreVersion: restoreVersion2 };
   }
 
   // js/persist/sync/runner.mjs
@@ -3557,8 +4011,9 @@
     const maxWaitMs = o.maxWaitMs != null ? o.maxWaitMs : 3e4;
     const pollMs = o.pollMs != null ? o.pollMs : 6e4;
     const backoff = o.backoff || [5e3, 15e3, 6e4, 3e5];
+    const visible = typeof o.visible === "function" ? o.visible : () => true;
     const listeners = /* @__PURE__ */ new Set();
-    let status = { state: "waiting", leader: false, lastSync: 0, error: null, pending: false, safe: false, held: false };
+    let status = { state: "waiting", leader: false, lastSync: 0, error: null, reason: null, pending: false, safe: false, held: false };
     let leader = false;
     let stopped = false;
     let running = null;
@@ -3567,6 +4022,7 @@
     let firstChange = 0;
     let failures = 0;
     let dirty = false;
+    let heard = false;
     let held = false;
     let release = null;
     let abort = null;
@@ -3584,12 +4040,14 @@
       if (timer != null) timers.clear(timer);
       timer = timers.set(() => {
         timer = null;
+        if (!dirty && !failures && !visible()) return;
         round();
       }, Math.max(0, ms));
     }
     function changed() {
       if (!leader || stopped) return;
       dirty = true;
+      if (running) heard = true;
       if (!status.pending) update({ pending: true });
       const t = now();
       if (!firstChange) firstChange = t;
@@ -3597,8 +4055,8 @@
     }
     function problems(res) {
       const out = [];
-      for (const r of Object.values(res.projects || {})) if (r.status === "error") out.push(r.message);
-      if (res.settings && res.settings.status === "error") out.push(res.settings.message);
+      for (const r of Object.values(res.projects || {})) if (r.status === "error") out.push(r);
+      if (res.settings && res.settings.status === "error") out.push(res.settings);
       return out;
     }
     function round() {
@@ -3619,20 +4077,36 @@
         failures = 0;
         const errs = problems(res);
         if (errs.length && carried) dirty = true;
-        update({ state: errs.length ? "error" : "idle", lastSync: now(), error: errs[0] || null, result: res, pending: dirty, safe: roundIsSafe(res) });
+        update({
+          state: errs.length ? "error" : "idle",
+          lastSync: now(),
+          error: errs.length ? errs[0].message : null,
+          reason: errs.length && errs[0].code ? "refused-" + errs[0].code : null,
+          result: res,
+          pending: dirty,
+          safe: roundIsSafe(res)
+        });
         return res;
       }, (err) => {
         failures += 1;
         if (carried) dirty = true;
-        update({ state: err && err.offline ? "offline" : "error", error: String(err && err.message || err), pending: dirty, safe: false });
+        update({
+          state: err && err.offline ? "offline" : "error",
+          error: String(err && err.message || err),
+          reason: err && Number.isInteger(err.status) ? "status-" + err.status : null,
+          pending: dirty,
+          safe: false
+        });
         return null;
       }).then((res) => {
         running = null;
+        const timed = heard && !failures && timer != null;
+        heard = false;
         if (stopped) return res;
         if (again) {
           again = false;
           round();
-        } else {
+        } else if (!timed) {
           wakeIn(failures ? backoff[Math.min(failures, backoff.length) - 1] : pollMs);
         }
         return res;
@@ -3646,6 +4120,7 @@
         if (unsubscribe) return;
         unsubscribe = o.store.subscribe((e) => {
           if (e.origin === "remote") return;
+          if (o.ignore && o.ignore(e)) return;
           if (e.cls === "work" || e.cls === "settings" || e.key === TOMBSTONES_KEY) changed();
         });
         const locks = o.locks;
@@ -3677,6 +4152,17 @@
           if (running) return running;
         }
         return round();
+      },
+      /**
+       * The page is going out of sight, and may be closing: what waits for the
+       * quiet spell goes now, each project in one request `send` makes outlive
+       * the page (engine.mjs `flush`). Only the tab that syncs, and never while
+       * rounds are held for the person ("Back online: Ask me first"): what waits
+       * then is theirs to look at first. Returns the projects sent.
+       */
+      flush(send, budget) {
+        if (!leader || stopped || held || typeof engine.flush !== "function") return [];
+        return engine.flush(send, budget);
       },
       status() {
         return status;
@@ -3714,8 +4200,14 @@
       /**
        * Stop, and resolve once a round in flight has finished: nothing sync does
        * lands after this resolves (signing out removes projects right after).
+       *
+       * `hold`: stop, but keep the lock until stop() is called again or the page
+       * goes. Signing out stops this way: letting go at once handed the lock to
+       * another tab, which began a round for an account whose session was ending
+       * (every request of it refused). Held, no tab syncs until this one has
+       * said, to all of them, that nobody is signed in.
        */
-      stop() {
+      stop(opts) {
         stopped = true;
         if (timer != null) {
           timers.clear(timer);
@@ -3725,8 +4217,13 @@
           unsubscribe();
           unsubscribe = null;
         }
-        if (abort) abort.abort();
-        if (release) release();
+        if (!(opts && opts.hold)) {
+          if (abort) abort.abort();
+          if (release) {
+            release();
+            release = null;
+          }
+        }
         leader = false;
         update({ state: "stopped", leader: false });
         return Promise.resolve(running).then(() => void 0);
@@ -3739,7 +4236,7 @@
   var ASK_MESSAGE = "sync-ask";
   function summarize({ account, runner, online, differs }) {
     const files2 = differs || [];
-    if (!account) return { signedIn: false, state: files2.length ? "differs" : "off", lastSync: 0, error: null, differs: files2 };
+    if (!account) return { signedIn: false, state: files2.length ? "differs" : "off", lastSync: 0, error: null, reason: null, differs: files2 };
     const st = runner || {};
     let state;
     if (files2.length) state = "differs";
@@ -3751,7 +4248,8 @@
     else if (st.pending) state = "pending";
     else if (st.lastSync) state = "synced";
     else state = "syncing";
-    return { signedIn: true, state, lastSync: st.lastSync || 0, error: st.state === "error" ? st.error || null : null, differs: files2 };
+    const failing = state === "error";
+    return { signedIn: true, state, lastSync: st.lastSync || 0, error: failing ? st.error || null : null, reason: failing ? st.reason || null : null, differs: files2 };
   }
   function createSyncStatus(o) {
     const now = o.now || (() => Date.now());
@@ -3789,6 +4287,7 @@
         pending: !!st.pending,
         lastSync: st.lastSync || 0,
         error: st.error || null,
+        reason: st.reason || null,
         safe: !!st.safe,
         held: !!st.held,
         at: now(),
@@ -3986,7 +4485,7 @@
       state.warned = true;
       o.warn();
     }
-    function settle(granted) {
+    function settle2(granted) {
       state.persisted = !!granted;
       if (!state.persisted) warnIfAtRisk();
     }
@@ -4004,7 +4503,7 @@
         } catch (err) {
           answer = Promise.reject(err);
         }
-        Promise.resolve(answer).then(settle, () => settle(false));
+        Promise.resolve(answer).then(settle2, () => settle2(false));
       };
       o.events.addEventListener("pointerdown", onClick, true);
     }
@@ -4047,8 +4546,13 @@
         });
       },
       /** { persisted: true | false | null (not known yet), workToLose, asked, warned } */
+      /**
+       * `atRisk`: Safari may delete what is here (its 7-day rule applies, there
+       * is work to lose, and the browser has not agreed to keep the storage).
+       * That is state, not news: home shows it for as long as it holds.
+       */
       status() {
-        return Object.assign({}, state);
+        return Object.assign({ atRisk: !!o.sevenDayRule && state.workToLose && !state.persisted }, state);
       },
       dispose() {
         disposed = true;
@@ -4065,6 +4569,110 @@
       }
     };
   }
+
+  // js/frame/routes.mjs
+  var g = typeof window !== "undefined" ? window : globalThis;
+  var PROJECT_ID = /^p_[0-9a-hjkmnp-tv-z]{26}$/;
+  var EDIT_SHORT = /(?:^|\/)edit\/?$/;
+  var EDIT_ANY = /(?:^|\/)edit(?:\.html)?\/?$/;
+  var PRIVACY_ANY = /(?:^|\/)privacy(?:\.html)?\/?$/;
+  function short() {
+    if (g.BELJAR_DEPLOYED) return true;
+    const path = g.location && typeof g.location.pathname === "string" ? g.location.pathname : "";
+    return EDIT_SHORT.test(path);
+  }
+  function query(pairs) {
+    const parts = [];
+    for (const [k, v] of pairs) if (v) parts.push(k + "=" + encodeURIComponent(v));
+    return parts.length ? "?" + parts.join("&") : "";
+  }
+  function startsOnLast() {
+    const S = g.Settings;
+    try {
+      return !!S && typeof S.get === "function" && S.get("startPage") === "last";
+    } catch (_) {
+      return false;
+    }
+  }
+  function homeUrl(opts) {
+    const base = short() ? "/" : "index.html";
+    if (opts && opts.open) return base + query([["open", opts.open]]);
+    return base + (startsOnLast() ? "?home" : "");
+  }
+  function editUrl(pid) {
+    return (short() ? "/edit" : "edit.html") + query([["p", pid]]);
+  }
+  function privacyUrl() {
+    return short() ? "/privacy" : "privacy.html";
+  }
+  function signInUrl(loc) {
+    const l = loc || g.location;
+    const back = l ? String(l.pathname || "/") + String(l.search || "") : "/";
+    return "/api/auth/github/start" + query([["return", back]]);
+  }
+  function pageOf(loc) {
+    const p = String(loc && loc.pathname || "");
+    if (EDIT_ANY.test(p)) return "edit";
+    return PRIVACY_ANY.test(p) ? "privacy" : "home";
+  }
+  function projectParam(loc, name) {
+    const pairs = String(loc && loc.search || "").replace(/^\?/, "").split("&");
+    for (const pair of pairs) {
+      const eq = pair.indexOf("=");
+      if (eq === -1 || pair.slice(0, eq) !== name) continue;
+      let v = pair.slice(eq + 1);
+      try {
+        v = decodeURIComponent(v);
+      } catch (_) {
+        return null;
+      }
+      return PROJECT_ID.test(v) ? v : null;
+    }
+    return null;
+  }
+  function projectOf(loc) {
+    return pageOf(loc) === "edit" ? projectParam(loc, "p") : null;
+  }
+  function pendingOf(loc) {
+    return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
+  }
+  var ISSUES_URL = "https://github.com/dpbarry/bel-jar/issues";
+  function reportIssue() {
+    if (typeof g.open === "function") g.open(ISSUES_URL, "_blank", "noopener");
+  }
+  function go(url, opts) {
+    if (!g.location) return;
+    if (opts && opts.replace) g.location.replace(url);
+    else g.location.assign(url);
+  }
+  function settle(url) {
+    const h = g.history;
+    const l = g.location;
+    if (!h || !l || typeof h.replaceState !== "function") return false;
+    h.replaceState(h.state, "", url + String(l.hash || ""));
+    return true;
+  }
+  function nameProject(pid) {
+    const l = g.location;
+    if (!l || pageOf(l) !== "edit" || projectOf(l) === pid) return false;
+    return settle(editUrl(pid));
+  }
+  var Routes = {
+    PROJECT_ID,
+    ISSUES_URL,
+    homeUrl,
+    editUrl,
+    privacyUrl,
+    signInUrl,
+    pageOf,
+    projectOf,
+    pendingOf,
+    go,
+    settle,
+    nameProject,
+    reportIssue
+  };
+  g.Routes = Routes;
 
   // js/persist/persist.mjs
   var CAPACITY_DEDUPE = "persist.capacity";
@@ -4133,33 +4741,66 @@
     return null;
   }
   var sessionArea = browserArea("sessionStorage");
-  var store = createStore({
-    storage: browserArea("localStorage") || createMemoryStorage(),
-    alsoWipe: [sessionArea].filter(Boolean),
-    onCapacity: function(state, detail) {
-      if (state === "blocked") reportCapacityFailure(detail);
-      else clearCapacityFailure();
-    },
-    onVersionAhead: function() {
-      announceReadOnly("BelJar was updated in another tab. Reload to keep editing: changes here are not being saved.");
-    },
-    onCannotUpgrade: function() {
-      announceReadOnly("This BelJar can\u2019t open what an older one saved, so it changed nothing. Changes here are not being saved.");
-    }
-  });
+  function openStore(storage, alsoWipe) {
+    return createStore({
+      storage,
+      alsoWipe,
+      migrations: MIGRATIONS,
+      onMissingMigration: "refuse",
+      onCapacity: function(state, detail) {
+        if (state === "blocked") reportCapacityFailure(detail);
+        else clearCapacityFailure();
+      },
+      onVersionAhead: function() {
+        announceReadOnly("BelJar was updated in another tab. Reload to keep editing: changes here are not being saved.");
+      },
+      onCannotUpgrade: function() {
+        announceReadOnly("This BelJar can\u2019t open what an older one saved, so it changed nothing. Changes here are not being saved.");
+      }
+    });
+  }
+  var store = openStore(browserArea("localStorage") || createMemoryStorage(), [sessionArea].filter(Boolean));
+  if (store.resetReason === "refused") {
+    store.dispose();
+    store = openStore(createMemoryStorage(), []);
+  }
   var tabStore = createStore({ storage: sessionArea || createMemoryStorage() });
-  var Settings = createSettings(store);
-  var Device = createTable(store, {
-    key: DEVICE_KEY,
-    rows: DEVICE,
-    unknown: function(id) {
-      return 'device: no row "' + id + '" (declare it in device-schema.mjs)';
-    }
-  });
-  var work = createWork({ store, device: Device });
-  var files = create({ work, settings: Settings });
-  var documents = createDocuments({ work, settings: Settings, files });
-  var records = create2({ store, tabStore, work, settings: Settings });
+  var Settings;
+  var Device;
+  var work;
+  var files;
+  var documents;
+  var records;
+  function compose() {
+    Settings = createSettings(store);
+    Device = createTable(store, {
+      key: DEVICE_KEY,
+      rows: DEVICE,
+      unknown: function(id) {
+        return 'device: no row "' + id + '" (declare it in device-schema.mjs)';
+      }
+    });
+    work = createWork({ store, device: Device });
+    files = create({ work, settings: Settings });
+    documents = createDocuments({ work, settings: Settings, files });
+    records = create2({ store, tabStore, work, settings: Settings });
+  }
+  compose();
+  work.finishSignOut();
+  var leaving = null;
+  (function pinToAddress() {
+    var loc = globalThis.location;
+    if (!loc || Routes.pageOf(loc) !== "edit") return;
+    var named = Routes.projectOf(loc);
+    if (!named || work.pinProject(named)) return;
+    leaving = named;
+    store.dispose();
+    tabStore.dispose();
+    store = openStore(createMemoryStorage(), []);
+    tabStore = createStore({ storage: createMemoryStorage() });
+    compose();
+    Routes.go(Routes.homeUrl({ open: named }), { replace: true });
+  })();
   var treeNoticeQueued = false;
   var projectGoneShown = false;
   function noteTreeChanged() {
@@ -4167,15 +4808,19 @@
     treeNoticeQueued = true;
     Promise.resolve().then(function() {
       treeNoticeQueued = false;
-      var g2 = typeof window !== "undefined" ? window : null;
-      if (g2 && typeof g2.dispatchEvent === "function" && typeof CustomEvent === "function") {
-        g2.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
+      var g3 = typeof window !== "undefined" ? window : null;
+      if (g3 && typeof g3.dispatchEvent === "function" && typeof CustomEvent === "function") {
+        g3.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
       }
     });
   }
   function announceProjectGone() {
     if (projectGoneShown) return;
     projectGoneShown = true;
+    if (work.ownerLeft()) {
+      Routes.go(Routes.homeUrl(), { replace: true });
+      return;
+    }
     var message = "This project was deleted in another tab or on another device. Changes here can\u2019t be saved.";
     whenPageReady(function() {
       var C = globalThis.ConfirmDialog;
@@ -4202,6 +4847,15 @@
     if (k.kind === "meta" && !work.hasProject(pid)) announceProjectGone();
     else if (k.kind === "tree" || k.kind === "meta") noteTreeChanged();
   });
+  if (typeof globalThis.addEventListener === "function") {
+    globalThis.addEventListener("pageshow", function(e) {
+      if (e && e.persisted && globalThis.location && typeof globalThis.location.reload === "function") globalThis.location.reload();
+    });
+    globalThis.addEventListener("pagehide", function() {
+      sendOnHide();
+      stopSync();
+    });
+  }
   var SYNC_NOTICES = {
     copied: function(n) {
       return { kind: "warn", title: "Saved this device\u2019s " + n.from + " as " + n.path, body: "Another device changed the same lines while a conflict here was still open." };
@@ -4247,7 +4901,8 @@
     return !app;
   }
   function announceSevenDays() {
-    if (globalThis.Toasts && typeof globalThis.Toasts.warn === "function") {
+    var onHome = !!globalThis.location && Routes.pageOf(globalThis.location) === "home";
+    if (!onHome && globalThis.Toasts && typeof globalThis.Toasts.warn === "function") {
       globalThis.Toasts.warn(
         "Safari deletes this site\u2019s data after 7 days without a visit. To keep a copy, download your projects from the Project menu.",
         { duration: 0, closable: true, notify: false }
@@ -4286,7 +4941,9 @@
   });
   var syncRunner = null;
   var syncEngine = null;
+  var syncTransport = null;
   var holdPolicy = null;
+  var CLOSING_PAGE_BYTES = 60 * 1024;
   var syncStatus = createSyncStatus({
     account: work.account,
     conflicts: work.listConflicts,
@@ -4306,17 +4963,35 @@
     if (!opts || !opts.transport) throw new Error("Persist.startSync needs a transport (js/persist/sync/protocol.mjs)");
     stopSync();
     var nav = globalThis.navigator;
+    var engineWrites = 0;
     var engine = createSyncEngine({
       store,
       work,
       settings: Settings,
       transport: opts.transport,
       account,
-      notify: announceSync
+      notify: announceSync,
+      own: function(fn) {
+        engineWrites += 1;
+        try {
+          return fn();
+        } finally {
+          engineWrites -= 1;
+        }
+      }
     });
     syncRunner = createSyncRunner({
       engine,
       store,
+      // A tab nobody can see does not poll (plan v6 c8): a phone in a pocket, a tab behind others.
+      visible: function() {
+        return typeof document === "undefined" || document.visibilityState !== "hidden";
+      },
+      // Not a change waiting to sync: what the engine wrote settling a round (a
+      // project forgotten, a deletion settled).
+      ignore: function() {
+        return engineWrites > 0;
+      },
       locks: opts.locks !== void 0 ? opts.locks : nav && nav.locks || null
     });
     syncEngine = engine;
@@ -4331,18 +5006,49 @@
         return !n || n.onLine !== false;
       }
     });
+    syncTransport = opts.transport;
     syncRunner.start();
     syncStatus.attach(syncRunner);
+    startPollAsk();
     return syncRunner;
   }
-  function stopSync() {
+  var heldRunner = null;
+  function stopSync(opts) {
+    stopPollAsk();
     const r = syncRunner;
     syncRunner = null;
     syncEngine = null;
+    syncTransport = null;
     if (holdPolicy) holdPolicy.stop();
     holdPolicy = null;
     syncStatus.detach();
+    if (opts && opts.hold && r) {
+      heldRunner = r;
+      return r.stop({ hold: true });
+    }
+    if (heldRunner) {
+      heldRunner.stop();
+      heldRunner = null;
+    }
     return r ? r.stop() : Promise.resolve();
+  }
+  function unsyncedProjects(uid) {
+    if (!uid) return Promise.resolve([]);
+    var engine = createSyncEngine({ store, work, settings: Settings, transport: {}, account: uid });
+    return engine.localChanges().then(function(list) {
+      return list.filter(function(c) {
+        return !c.deleted;
+      }).map(function(c) {
+        return c.pid;
+      });
+    });
+  }
+  function restoreVersion(pid, n) {
+    if (!syncEngine) return Promise.resolve({ ok: false, error: "signed-out" });
+    return syncEngine.restoreVersion(pid, n).then(function(res) {
+      if (res && res.ok) syncStatus.confirm();
+      return res;
+    });
   }
   function syncNow() {
     return syncRunner ? syncRunner.syncNow() : Promise.resolve(null);
@@ -4363,7 +5069,44 @@
   });
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
     document.addEventListener("visibilitychange", function() {
-      if (document.visibilityState === "visible") syncNow();
+      if (document.visibilityState === "visible") seenAgain();
+    });
+  }
+  function seenAgain() {
+    if (!syncRunner) return;
+    if (syncRunner.status().leader) syncNow();
+    else syncStatus.confirm();
+  }
+  var POLL_ASK_MS = 6e4;
+  var pollAsk = null;
+  function startPollAsk() {
+    stopPollAsk();
+    if (typeof globalThis.setInterval !== "function" || typeof document === "undefined") return;
+    pollAsk = globalThis.setInterval(function() {
+      if (!syncRunner || document.visibilityState === "hidden" || syncRunner.status().leader) return;
+      syncStatus.confirm();
+    }, POLL_ASK_MS);
+  }
+  function stopPollAsk() {
+    if (pollAsk != null && typeof globalThis.clearInterval === "function") globalThis.clearInterval(pollAsk);
+    pollAsk = null;
+  }
+  function sendOnHide() {
+    if (!syncRunner || !syncTransport) return;
+    var nav = globalThis.navigator;
+    if (nav && nav.onLine === false) return;
+    documents.flushPending();
+    var t = syncTransport;
+    var send = typeof t.commitOnHide === "function" ? function(pid, req) {
+      return t.commitOnHide(pid, req);
+    } : function(pid, req) {
+      return t.commit(pid, req);
+    };
+    syncRunner.flush(send, CLOSING_PAGE_BYTES);
+  }
+  if (typeof globalThis.addEventListener === "function" && typeof document !== "undefined") {
+    globalThis.addEventListener("visibilitychange", function() {
+      if (document.visibilityState === "hidden") sendOnHide();
     });
   }
   var Persist = {
@@ -4372,14 +5115,43 @@
     normalizeViewportAnchor,
     isSaveBlocked: store.isBlocked,
     isReadOnly: store.isReadOnly,
+    // The project the address named and this browser cannot show: the page is on its way home.
+    leaving: function() {
+      return leaving;
+    },
     // accounts and sync (docs/PERSIST.md §5)
     getAccount: work.account,
     setAccount: work.setAccount,
     claimProject: work.claimProject,
     projectStats: work.projectStats,
     onFileChange: work.onFileChange,
+    // home's list: fn() whenever a project, its files, a file's text, a file to
+    // review or this browser's device state changes, from this tab or anywhere
+    onProjectsChange: function(fn) {
+      return store.subscribe(function(e) {
+        var k = e && e.key ? parseKey(e.key) : null;
+        if (!e || e.key == null || e.key === DEVICE_KEY || k && (k.kind === "meta" || k.kind === "tree" || k.kind === "f" || k.kind === "conflict")) fn();
+      });
+    },
+    // fn(account) when another tab signs in or out: this tab follows (account.mjs)
+    onAccountElsewhere: function(fn) {
+      var seen = work.account();
+      return store.subscribe(function(e) {
+        if (!e || e.key != null && e.key !== DEVICE_KEY) return;
+        var now = work.account();
+        if (now === seen) return;
+        seen = now;
+        if (e.origin !== "local") fn(now);
+      });
+    },
+    ownerLeft: work.ownerLeft,
     removeAccountProjects: work.removeAccountProjects,
+    leaveAccount: work.leaveAccount,
     keepAccountProjects: work.keepAccountProjects,
+    releaseAccount: work.releaseAccount,
+    unsyncedProjects,
+    noteSignedOut: work.noteSignedOut,
+    takeSignedOutNote: work.takeSignedOutNote,
     // signing in again: back to the account's work, not a blank placeholder
     resumeFor: work.resumeFor,
     clearResume: work.clearResume,
@@ -4404,6 +5176,14 @@
     cloudSide: function(pid, fids) {
       return syncEngine ? syncEngine.cloudSide(pid, fids) : Promise.resolve({ state: "unknown", name: null, texts: {} });
     },
+    // Version history (plan v6 c6, js/ui/version-history.mjs): signed in only.
+    projectHistory: function(pid, o) {
+      return syncEngine ? syncEngine.history(pid, o) : Promise.resolve(null);
+    },
+    readVersion: function(pid, n) {
+      return syncEngine ? syncEngine.readVersion(pid, n) : Promise.resolve(null);
+    },
+    restoreVersion,
     useCloud: function(pid) {
       return syncEngine ? syncEngine.useCloud(pid) : Promise.resolve(false);
     },
@@ -4418,6 +5198,23 @@
     createPersist: documents.createPersist,
     // projects
     listProjects: work.listProjects,
+    // home: what there is, without making one; the last one opened; a delete that may empty the list
+    projects: work.visibleProjects,
+    lastProjectId: work.lastProject,
+    projectInUse: work.projectInUse,
+    removeProject: work.removeProject,
+    // a project as files, for its zip: { name, files: [{ path, text }], folders }, or null
+    projectFiles: function(pid) {
+      var snap = work.snapshotProject(pid);
+      if (!snap) return null;
+      return {
+        name: snap.meta.name,
+        files: snap.tree.files.map(function(f) {
+          return { path: f.name, text: snap.texts[f.id] };
+        }),
+        folders: snap.tree.folders.slice()
+      };
+    },
     getActiveProjectId: work.projectId,
     setActiveProjectId: work.setActiveProject,
     createProject: work.createProject,
@@ -4488,9 +5285,9 @@
     postTabMessage: records.postTabMessage,
     onTabMessage: records.onTabMessage
   };
-  var g = typeof window !== "undefined" ? window : globalThis;
-  g.Persist = Persist;
-  g.Settings = Settings;
-  g.Device = Device;
-  g.BelJarPersist = g.Persist;
+  var g2 = typeof window !== "undefined" ? window : globalThis;
+  g2.Persist = Persist;
+  g2.Settings = Settings;
+  g2.Device = Device;
+  g2.BelJarPersist = g2.Persist;
 })();

@@ -160,11 +160,10 @@ var CHEVRON_SVG =
 
     function prepareLibraryInsert(code, ref) {
       var path = libraryInsertPath(ref);
-      if (!/\.(bel|elf)$/i.test(path)) return code;
-      if (typeof BelEditor !== 'undefined' && typeof BelEditor.maybeExpandBelAliases === 'function') {
-        return BelEditor.maybeExpandBelAliases(code);
-      }
-      return code;
+      if (!/\.(bel|elf)$/i.test(path) || typeof BelEditor === 'undefined') return code;
+      var expanded = typeof BelEditor.maybeExpandBelAliases === 'function' ? BelEditor.maybeExpandBelAliases(code) : code;
+      if (typeof BelEditor.formatSource !== 'function') return expanded;
+      return BelEditor.formatSource(expanded, { quiet: true }) ?? expanded;
     }
 
     function isLibraryProjectFile(item) {

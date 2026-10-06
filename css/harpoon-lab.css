@@ -104,7 +104,7 @@
   justify-content: center;
   width: 1.6rem;
   height: 1.6rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--harpoon-strip-accent);
   color: var(--ui-fg-on-accent);
 }
@@ -301,7 +301,7 @@ button.harpoon-lab-banner:focus-visible {
   flex: 0 0 auto;
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--repl-holes-accent);
 }
 .harpoon-lab-status-dot.is-done {
@@ -350,7 +350,7 @@ button.harpoon-lab-banner:focus-visible {
   height: 1.6rem;
   padding: 0 0.4rem;
   border: 1px solid var(--harpoon-card-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--harpoon-card-bg);
   font-family: var(--mono);
   font-size: 0.7rem;
@@ -478,7 +478,7 @@ button.harpoon-lab-banner:focus-visible {
   font-size: 0.76rem;
   padding: 0.28rem 0.62rem;
   border: 1px solid var(--harpoon-card-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--harpoon-card-bg);
   color: var(--base-higher);
   cursor: pointer;
@@ -1157,7 +1157,7 @@ button.harpoon-lab-banner:focus-visible {
   margin-top: 0.09rem;
   width: var(--step-node-col, 0.44rem);
   height: var(--step-node-col, 0.44rem);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--repl-holes-accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--repl-holes-accent) 18%, transparent);
   z-index: 1;
@@ -1914,7 +1914,7 @@ button.harpoon-lab-banner:focus-visible {
   overflow: hidden;
   height: 0.52rem;
   max-width: 100%;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   /* A FLAT, faint base — the light is a separate narrow band travelling across
      it (the REPL run-skeleton technique). Animating a wide gradient's position
      instead makes the whole bar pulse, which reads as muddy at this scale. */

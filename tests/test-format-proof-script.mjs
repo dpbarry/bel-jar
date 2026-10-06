@@ -1,22 +1,6 @@
 import assert from 'node:assert/strict';
 import { parser } from '../js/editor-src/beluga-parser.js';
 import { formatString } from '../js/editor-src/format/document-format.mjs';
-import { reindentProofBlock } from '../js/editor-src/format/proof-script.mjs';
-
-const raw = `⊃I (\\u. % (A v A) true
-    ⊃I (\\v. % (B) true
-      (vE u
-        (\\w.w)
-        (\\w'. x))
-    % comment
-  )`;
-
-const lines = reindentProofBlock(raw, 2, 2);
-assert.equal(lines[0].search(/\S/), 2);
-assert.equal(lines[1].search(/\S/), 4);
-assert.equal(lines[2].search(/\S/), 6);
-assert.equal(lines[5].search(/\S/), 6, 'comment aligns with ∨E block');
-assert.equal(lines[6].search(/\S/), 4, 'close paren dedents');
 
 const src = `rec nex4 : [ ⊢ nd ((A ∨ ¬ A) ⊃ (¬ ¬ A) ⊃ A) ] =
   [ ⊢  ⊃I (\\u. %  (A ∨ ¬ A) true

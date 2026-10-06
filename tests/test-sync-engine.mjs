@@ -679,10 +679,12 @@ function world() {
   a.work.renameProject(blank, 'Lemmas');
   expect(!a.work.isBlankProject(blank), 'renamed, it is the person’s');
   a.work.renameProject(blank, 'Untitled Project');
+  expect(a.work.isBlankProject(blank), 'the default name before 2026-10-06 still marks a placeholder');
+  a.work.renameProject(blank, 'Untitled project');
   addFile(a.work, blank, 'more.bel', '');
   expect(!a.work.isBlankProject(blank), 'with a second file, too');
   signIn(a, server, 'u_dean');
-  const theirs = a.work.createProject('Untitled Project');
+  const theirs = a.work.createProject('Untitled project');
   expect(!a.work.isBlankProject(theirs), 'an account’s own empty project is never a placeholder to drop');
 }
 {

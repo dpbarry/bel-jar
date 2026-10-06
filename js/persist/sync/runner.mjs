@@ -10,7 +10,8 @@
  * for other devices' changes; and at once when asked (an explicit save,
  * coming back online, the tab coming back into view). A round that cannot
  * reach the server backs off. Rounds never overlap: a change during one
- * starts another after it.
+ * starts another after it. And as the page goes out of sight, what waits for
+ * the quiet spell goes at once (`flush`: engine.mjs).
  */
 import { TOMBSTONES_KEY } from '../keys.mjs';
 
@@ -32,6 +33,9 @@ export function roundIsSafe(result) {
  * @param {object} o
  * @param {{ syncAll(): Promise<object> }} o.engine
  * @param {{ subscribe(fn): () => void }} o.store
+ * @param {(event: object) => boolean} [o.ignore]
+ *   a store event that is not a change waiting to sync: one the engine wrote
+ *   itself while settling a round.
  * @param {{ request(name, opts, fn): Promise<any> } | null} o.locks   navigator.locks
  * @param {{ set(fn, ms): any, clear(handle): void }} [o.timers]
  * @param {() => number} [o.now]
@@ -39,6 +43,11 @@ export function roundIsSafe(result) {
  * @param {number} [o.maxWaitMs]  after the first change, however busy
  * @param {number} [o.pollMs]     for other devices' changes
  * @param {number[]} [o.backoff]  after 1, 2, 3… failed rounds in a row
+ * @param {() => boolean} [o.visible]  the page can be seen (default: always).
+ *   A poll is for other devices' changes, and nobody is looking: hidden, the
+ *   poll is skipped and the runner waits for a change, for syncNow (the page
+ *   seen again), or for another tab to ask (plan v6 c8). A change still goes
+ *   up, hidden or not, and so does a retry.
  */
 export function createSyncRunner(o) {
   const engine = o.engine;
@@ -51,12 +60,13 @@ export function createSyncRunner(o) {
   const maxWaitMs = o.maxWaitMs != null ? o.maxWaitMs : 30000;
   const pollMs = o.pollMs != null ? o.pollMs : 60000;
   const backoff = o.backoff || [5000, 15000, 60000, 300000];
+  const visible = typeof o.visible === 'function' ? o.visible : () => true;
   const listeners = new Set();
 
   // pending: a change this tab heard that no finished round has carried yet.
   // safe: the last round confirmed every project's work is on the server.
   // held: rounds wait for the person ("Back online: Ask me first").
-  let status = { state: 'waiting', leader: false, lastSync: 0, error: null, pending: false, safe: false, held: false };
+  let status = { state: 'waiting', leader: false, lastSync: 0, error: null, reason: null, pending: false, safe: false, held: false };
   let leader = false;
   let stopped = false;
   let running = null;
@@ -65,6 +75,7 @@ export function createSyncRunner(o) {
   let firstChange = 0;
   let failures = 0;
   let dirty = false; // a change heard since the last round began
+  let heard = false; // one heard while a round was running: its quiet spell is already timed
   let held = false;
   let release = null;
   let abort = null;
@@ -81,6 +92,8 @@ export function createSyncRunner(o) {
     if (timer != null) timers.clear(timer);
     timer = timers.set(() => {
       timer = null;
+      // Only a poll waits for the page to be seen: nothing here to send, no retry due.
+      if (!dirty && !failures && !visible()) return;
       round();
     }, Math.max(0, ms));
   }
@@ -89,6 +102,7 @@ export function createSyncRunner(o) {
   function changed() {
     if (!leader || stopped) return;
     dirty = true;
+    if (running) heard = true;
     if (!status.pending) update({ pending: true });
     const t = now();
     if (!firstChange) firstChange = t;
@@ -97,8 +111,8 @@ export function createSyncRunner(o) {
 
   function problems(res) {
     const out = [];
-    for (const r of Object.values(res.projects || {})) if (r.status === 'error') out.push(r.message);
-    if (res.settings && res.settings.status === 'error') out.push(res.settings.message);
+    for (const r of Object.values(res.projects || {})) if (r.status === 'error') out.push(r);
+    if (res.settings && res.settings.status === 'error') out.push(res.settings);
     return out;
   }
 
@@ -118,20 +132,33 @@ export function createSyncRunner(o) {
       failures = 0;
       const errs = problems(res);
       if (errs.length && carried) dirty = true;
-      update({ state: errs.length ? 'error' : 'idle', lastSync: now(), error: errs[0] || null, result: res, pending: dirty, safe: roundIsSafe(res) });
+      update({
+        state: errs.length ? 'error' : 'idle', lastSync: now(), error: errs.length ? errs[0].message : null,
+        reason: errs.length && errs[0].code ? 'refused-' + errs[0].code : null, result: res, pending: dirty, safe: roundIsSafe(res),
+      });
       return res;
     }, (err) => {
       failures += 1;
       if (carried) dirty = true;
-      update({ state: err && err.offline ? 'offline' : 'error', error: String(err && err.message || err), pending: dirty, safe: false });
+      // Offline only when the server was never reached: one that answered a
+      // limit or an outage is "couldn't sync", with why (sync-ui.mjs cloudWords).
+      update({
+        state: err && err.offline ? 'offline' : 'error', error: String(err && err.message || err),
+        reason: err && Number.isInteger(err.status) ? 'status-' + err.status : null, pending: dirty, safe: false,
+      });
       return null;
     }).then((res) => {
       running = null;
+      // ⛔ A change heard during the round set its own quiet-spell timer, and
+      // that timer stands: putting the poll in its place left the change
+      // waiting a minute, with the cloud saying so all the while.
+      const timed = heard && !failures && timer != null;
+      heard = false;
       if (stopped) return res;
       if (again) {
         again = false;
         round();
-      } else {
+      } else if (!timed) {
         wakeIn(failures ? backoff[Math.min(failures, backoff.length) - 1] : pollMs);
       }
       return res;
@@ -147,6 +174,7 @@ export function createSyncRunner(o) {
       if (unsubscribe) return;
       unsubscribe = o.store.subscribe((e) => {
         if (e.origin === 'remote') return;
+        if (o.ignore && o.ignore(e)) return;
         if (e.cls === 'work' || e.cls === 'settings' || e.key === TOMBSTONES_KEY) changed();
       });
       const locks = o.locks;
@@ -178,6 +206,18 @@ export function createSyncRunner(o) {
         if (running) return running;
       }
       return round();
+    },
+
+    /**
+     * The page is going out of sight, and may be closing: what waits for the
+     * quiet spell goes now, each project in one request `send` makes outlive
+     * the page (engine.mjs `flush`). Only the tab that syncs, and never while
+     * rounds are held for the person ("Back online: Ask me first"): what waits
+     * then is theirs to look at first. Returns the projects sent.
+     */
+    flush(send, budget) {
+      if (!leader || stopped || held || typeof engine.flush !== 'function') return [];
+      return engine.flush(send, budget);
     },
 
     status() {
@@ -221,13 +261,21 @@ export function createSyncRunner(o) {
     /**
      * Stop, and resolve once a round in flight has finished: nothing sync does
      * lands after this resolves (signing out removes projects right after).
+     *
+     * `hold`: stop, but keep the lock until stop() is called again or the page
+     * goes. Signing out stops this way: letting go at once handed the lock to
+     * another tab, which began a round for an account whose session was ending
+     * (every request of it refused). Held, no tab syncs until this one has
+     * said, to all of them, that nobody is signed in.
      */
-    stop() {
+    stop(opts) {
       stopped = true;
       if (timer != null) { timers.clear(timer); timer = null; }
       if (unsubscribe) { unsubscribe(); unsubscribe = null; }
-      if (abort) abort.abort();
-      if (release) release();
+      if (!(opts && opts.hold)) {
+        if (abort) abort.abort();
+        if (release) { release(); release = null; }
+      }
       leader = false;
       update({ state: 'stopped', leader: false });
       return Promise.resolve(running).then(() => undefined);

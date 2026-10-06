@@ -269,7 +269,7 @@
 .jar-kb__key {
   display: inline-block;
   padding: 0.08rem 0.3rem;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   border: 1px solid light-dark(hsla(220, 12%, 74%, 0.95), color-mix(in srgb, var(--chrome-divider) 55%, transparent));
   background: light-dark(hsla(220, 14%, 94%, 1), var(--repl-kbd-bg));
   color: light-dark(hsla(220, 16%, 28%, 1), var(--repl-kbd-fg));

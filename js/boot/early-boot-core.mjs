@@ -1,7 +1,11 @@
-import { SCHEMA } from '../persist/store.mjs';
+import { SCHEMA, migrateStorage } from '../persist/store.mjs';
+import { MIGRATIONS } from '../persist/migrations.mjs';
 import { readBootSettings } from '../persist/settings-schema.mjs';
 import { applyDocumentSettings } from '../persist/settings-apply.mjs';
 import { DEVICE, readBootDevice } from '../persist/device-schema.mjs';
+import { pageOf, editUrl, go } from '../frame/routes.mjs';
+import { showableProject } from './boot-project.mjs';
+import { installPageTransitions } from './page-transition-core.mjs';
 
 export const SPLIT_STACK_MQ = '(max-width: 48rem)';
 
@@ -37,9 +41,58 @@ export function applyPanelDimensionPrefs(rootStyle, device) {
   }
 }
 
+/**
+ * The start page (Settings > Workspace). With "Last project", a plain arrival
+ * at BelJar goes straight to the project last opened, the way an IDE reopens
+ * its last window. Decided here, before first paint, by REPLACING the address:
+ * home never flashes, and Back does not return to a page that would send you
+ * forward again.
+ *
+ * Only a bare home address is a plain arrival. Anything in it says what was
+ * asked for: `?home` (every link to home BelJar makes while this setting is
+ * on: js/frame/routes.mjs `homeUrl`), a sign-in coming back, a project to wait
+ * for. And only a fresh navigation: a reload, or Back, shows the page that was
+ * there. Returns the project to open, or null: stay.
+ */
+export function startTarget({ settings, device, storage, loc, navType }) {
+  if (!settings || settings.startPage !== 'last') return null;
+  if (!loc || pageOf(loc) !== 'home' || loc.search || loc.hash) return null;
+  if (navType === 'reload' || navType === 'back_forward') return null;
+  const pid = device && device.activeProject;
+  // Only a project this browser can show. One that left with its account, or
+  // was deleted, would send the editor straight back here.
+  return pid && showableProject(storage, device, pid) ? pid : null;
+}
+
 export function installEarlyBoot(env) {
   const { document, window, localStorage } = env;
+  // ⛔ A format change is migrated before anything is read: read in the old
+  // format, every setting would be the default for this one paint (a light
+  // theme painted dark, then light). The store finds it current after.
+  try {
+    migrateStorage(localStorage, SCHEMA, MIGRATIONS);
+  } catch (_) { /* the store tries again, and says why */ }
   const device = readBootDevice(localStorage, SCHEMA);
+  // The navigation between the two pages is animated by the browser; what a
+  // stylesheet cannot decide about it is decided here, before either page is shown.
+  installPageTransitions({ window, document, bootMotion: () => readBootSettings(localStorage, SCHEMA).motionPref });
+  const nav = window.performance && typeof window.performance.getEntriesByType === 'function'
+    ? window.performance.getEntriesByType('navigation')[0] : null;
+  const pid = startTarget({
+    settings: readBootSettings(localStorage, SCHEMA),
+    device,
+    storage: localStorage,
+    loc: window.location,
+    navType: nav ? nav.type : 'navigate',
+  });
+  if (pid) {
+    // On its way to the editor: nothing of home is shown, and home's script
+    // starts nothing (js/home/home.mjs, js/account/account.mjs read this).
+    window.BELJAR_LEAVING = true;
+    document.documentElement.style.display = 'none';
+    go(editUrl(pid), { replace: true });
+    return;
+  }
   applyStoredSettings(document.documentElement, localStorage);
   applyPanelDimensionPrefs(document.documentElement.style, device);
   applySplitVars(document.documentElement.style, device.editorSplit, SPLIT_STACK_MQ, window.matchMedia.bind(window));

@@ -12,7 +12,7 @@
 // A fallback that names an undefined token is the same lie with a safety net
 // painted on: `var(--muted-mid, var(--muted))` reads as "and if that is ever
 // removed, this" — and `--muted` does not exist either.
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 
@@ -45,8 +45,8 @@ for (const f of jsFiles) {
   for (const m of s.matchAll(/setProperty\(\s*['"`](--[A-Za-z0-9_-]+)/g)) defined.add(m[1]);
   for (const m of s.matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)) defined.add(m[1]);
 }
-for (const m of readFileSync(join(root, 'index.html'), 'utf8').matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)) {
-  defined.add(m[1]);
+for (const doc of ['index.html', 'edit.html']) {
+  for (const m of readFileSync(join(root, doc), 'utf8').matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)) defined.add(m[1]);
 }
 
 const problems = [];
@@ -69,4 +69,51 @@ if (problems.length) {
   process.exit(1);
 }
 
-console.log(`OK css tokens (${defined.size} defined, every var() in ${cssFiles.length} files resolves)`);
+// ── Values retyped instead of taken from tokens.css (plan v6 phase 02, u3) ──
+// Per file, the colours, radii and spacing written as literals, and the
+// uppercase styling the voice forbids spreading (u4, docs/UI.md §5: no small
+// capitals shouting). The count may only go down: a new file starts at none,
+// and a value with no token gets one in tokens.css. Comments are not counted.
+// `node tests/test-css-tokens.mjs --write` records a lower count, and refuses
+// a higher one.
+const KINDS = {
+  colour: /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(/g,
+  radius: /border(?:-[a-z]+)*-radius\s*:[^;{}]*?\d(?:\.\d+)?(?:px|rem|em)\b/g,
+  spacing: /(?:^|[;{\s])(?:padding|margin|gap|row-gap|column-gap)(?:-[a-z]+)*\s*:[^;{}]*?\d(?:\.\d+)?(?:px|rem|em)\b/g,
+  uppercase: /text-transform\s*:\s*uppercase|small-caps|font-variant-caps\s*:\s*(?:all-)?(?:small|petite)/g,
+};
+const baselinePath = join(here, 'css-literals.json');
+const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+const counted = {};
+for (const [f, s] of cssText) {
+  const rel = relative(root, f).replace(/\\/g, '/');
+  if (rel === 'css/tokens.css') continue;
+  const bare = s.replace(/\/\*[\s\S]*?\*\//g, '');
+  counted[rel] = Object.fromEntries(Object.entries(KINDS).map(([k, re]) => [k, (bare.match(re) || []).length]));
+}
+const rose = [];
+const fell = [];
+for (const [rel, c] of Object.entries(counted)) {
+  const was = baseline[rel] || {};
+  for (const k of Object.keys(KINDS)) {
+    if (c[k] > (was[k] || 0)) rose.push(`${rel}: ${c[k]} ${k} literals, held at ${was[k] || 0}`);
+    else if (c[k] < (was[k] || 0)) fell.push(`${rel}: ${k} ${was[k]} → ${c[k]}`);
+  }
+}
+const total = (o) => Object.values(o).reduce((t, c) => t + Object.values(c).reduce((a, b) => a + b, 0), 0);
+if (rose.length) {
+  console.error('FAIL: values retyped in CSS where tokens.css should supply them (use a token, or add one):');
+  for (const r of rose) console.error('  ' + r);
+  process.exit(1);
+}
+if (process.argv.includes('--write')) {
+  const sorted = Object.fromEntries(Object.keys(counted).sort().map((k) => [k, counted[k]]));
+  writeFileSync(baselinePath, JSON.stringify(sorted, null, 1) + '\n');
+  console.log(`wrote ${relative(root, baselinePath)}: ${total(baseline)} → ${total(counted)} literals`);
+} else if (fell.length) {
+  console.error('FAIL: fewer literals than recorded, which is the point: record it with `node tests/test-css-tokens.mjs --write`');
+  for (const r of fell) console.error('  ' + r);
+  process.exit(1);
+}
+
+console.log(`OK css tokens (${defined.size} defined, every var() in ${cssFiles.length} files resolves; ${total(counted)} retyped values, none added)`);

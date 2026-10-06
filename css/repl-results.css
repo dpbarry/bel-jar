@@ -174,7 +174,7 @@
   height: 0.7em;
   width: var(--w, 60%);
   max-width: 100%;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: color-mix(in oklab, var(--muted-low) 32%, transparent);
 }
 
@@ -450,7 +450,7 @@
   justify-content: center;
   min-width: 1.4rem;
   padding: 0.08rem 0.34rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-family: var(--mono);
   font-size: 0.72rem;
   font-weight: 700;

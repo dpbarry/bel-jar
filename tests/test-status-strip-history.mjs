@@ -152,12 +152,12 @@ const entry = (over) => ({
   expect(undoSeg && !undoSeg.disabled && undoSeg.command === 'edit.undo', 'undo is live with steps behind you');
   expect(redoSeg && redoSeg.disabled && redoSeg.command === 'edit.redo', 'redo is shown but off with nothing ahead');
 
-  const branched = buildSegments({ ...base, undoDepth: 7, redoDepth: 2 }, 'standard');
-  expect(branched.find((s) => s.key === 'history').tone === 'branched',
-    'a waiting redo branch changes the tone');
+  const withRedo = buildSegments({ ...base, undoDepth: 7, redoDepth: 2 }, 'standard');
+  expect(withRedo.find((s) => s.key === 'history').tone === 'plain',
+    'a waiting redo branch does not colour the icon');
 
   // Where it sits: immediately left of the checker, in the right-hand group.
-  const keys = branched.map((s) => s.key);
+  const keys = withRedo.map((s) => s.key);
   expect(keys.indexOf('history') === keys.indexOf('checker') - 1,
     `the widget sits directly left of the checker (${keys.join(',')})`);
   expect(keys.indexOf('spacer') < keys.indexOf('history'),

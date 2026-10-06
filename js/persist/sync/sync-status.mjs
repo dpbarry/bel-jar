@@ -28,7 +28,7 @@ export const ASK_MESSAGE = 'sync-ask';
  */
 export function summarize({ account, runner, online, differs }) {
   const files = differs || [];
-  if (!account) return { signedIn: false, state: files.length ? 'differs' : 'off', lastSync: 0, error: null, differs: files };
+  if (!account) return { signedIn: false, state: files.length ? 'differs' : 'off', lastSync: 0, error: null, reason: null, differs: files };
   const st = runner || {};
   let state;
   if (files.length) state = 'differs';
@@ -42,7 +42,8 @@ export function summarize({ account, runner, online, differs }) {
   else if (st.pending) state = 'pending';
   else if (st.lastSync) state = 'synced';
   else state = 'syncing'; // signed in, and no round has finished yet
-  return { signedIn: true, state, lastSync: st.lastSync || 0, error: st.state === 'error' ? st.error || null : null, differs: files };
+  const failing = state === 'error';
+  return { signedIn: true, state, lastSync: st.lastSync || 0, error: failing ? st.error || null : null, reason: failing ? st.reason || null : null, differs: files };
 }
 
 /**
@@ -90,7 +91,7 @@ export function createSyncStatus(o) {
   // the other tabs (they hear storage changes, and an equal value is none).
   function tell(st, answered) {
     o.tabs.post(STATUS_MESSAGE, {
-      state: st.state, pending: !!st.pending, lastSync: st.lastSync || 0, error: st.error || null,
+      state: st.state, pending: !!st.pending, lastSync: st.lastSync || 0, error: st.error || null, reason: st.reason || null,
       safe: !!st.safe, held: !!st.held, at: now(), answered: answered || null,
     });
   }

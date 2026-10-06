@@ -28,6 +28,7 @@ export const KIND_LABELS = {
   rename: 'Rename',
   hole: 'Fill hole',
   'proof-commit': 'Commit proof',
+  'case-arm': 'Accept filled case',
   'library-insert': 'Insert from library',
   'file-batch': 'Add files',
   'file-delete': 'Delete files',

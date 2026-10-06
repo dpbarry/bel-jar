@@ -614,6 +614,9 @@ export function isCtorLineSlot(tree, doc, pos) {
           return false;
         }
       }
+      const closer = [cur, cur.parent].map((n) => n && childNamed(n, ';')).find(Boolean);
+      if (closer && pos >= closer.to) return false;
+
       const last = lastNonErrorChild(cur);
       // Cursor immediately after a `|` that opens an arm — ctor name comes next.
       if (last && last.name === '|' && pos >= last.to) return false;

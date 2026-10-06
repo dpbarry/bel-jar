@@ -260,9 +260,133 @@
     }
   };
 
+  // js/frame/routes.mjs
+  var g = typeof window !== "undefined" ? window : globalThis;
+  var PROJECT_ID = /^p_[0-9a-hjkmnp-tv-z]{26}$/;
+  var EDIT_SHORT = /(?:^|\/)edit\/?$/;
+  var EDIT_ANY = /(?:^|\/)edit(?:\.html)?\/?$/;
+  var PRIVACY_ANY = /(?:^|\/)privacy(?:\.html)?\/?$/;
+  function short() {
+    if (g.BELJAR_DEPLOYED) return true;
+    const path = g.location && typeof g.location.pathname === "string" ? g.location.pathname : "";
+    return EDIT_SHORT.test(path);
+  }
+  function query(pairs) {
+    const parts = [];
+    for (const [k, v] of pairs) if (v) parts.push(k + "=" + encodeURIComponent(v));
+    return parts.length ? "?" + parts.join("&") : "";
+  }
+  function startsOnLast() {
+    const S = g.Settings;
+    try {
+      return !!S && typeof S.get === "function" && S.get("startPage") === "last";
+    } catch (_) {
+      return false;
+    }
+  }
+  function homeUrl(opts) {
+    const base = short() ? "/" : "index.html";
+    if (opts && opts.open) return base + query([["open", opts.open]]);
+    return base + (startsOnLast() ? "?home" : "");
+  }
+  function editUrl(pid) {
+    return (short() ? "/edit" : "edit.html") + query([["p", pid]]);
+  }
+  function privacyUrl() {
+    return short() ? "/privacy" : "privacy.html";
+  }
+  function signInUrl(loc) {
+    const l = loc || g.location;
+    const back = l ? String(l.pathname || "/") + String(l.search || "") : "/";
+    return "/api/auth/github/start" + query([["return", back]]);
+  }
+  function pageOf(loc) {
+    const p = String(loc && loc.pathname || "");
+    if (EDIT_ANY.test(p)) return "edit";
+    return PRIVACY_ANY.test(p) ? "privacy" : "home";
+  }
+  function projectParam(loc, name) {
+    const pairs = String(loc && loc.search || "").replace(/^\?/, "").split("&");
+    for (const pair of pairs) {
+      const eq = pair.indexOf("=");
+      if (eq === -1 || pair.slice(0, eq) !== name) continue;
+      let v = pair.slice(eq + 1);
+      try {
+        v = decodeURIComponent(v);
+      } catch (_) {
+        return null;
+      }
+      return PROJECT_ID.test(v) ? v : null;
+    }
+    return null;
+  }
+  function projectOf(loc) {
+    return pageOf(loc) === "edit" ? projectParam(loc, "p") : null;
+  }
+  function pendingOf(loc) {
+    return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
+  }
+  var ISSUES_URL = "https://github.com/dpbarry/bel-jar/issues";
+  function reportIssue() {
+    if (typeof g.open === "function") g.open(ISSUES_URL, "_blank", "noopener");
+  }
+  function go(url, opts) {
+    if (!g.location) return;
+    if (opts && opts.replace) g.location.replace(url);
+    else g.location.assign(url);
+  }
+  function settle(url) {
+    const h = g.history;
+    const l = g.location;
+    if (!h || !l || typeof h.replaceState !== "function") return false;
+    h.replaceState(h.state, "", url + String(l.hash || ""));
+    return true;
+  }
+  function nameProject(pid) {
+    const l = g.location;
+    if (!l || pageOf(l) !== "edit" || projectOf(l) === pid) return false;
+    return settle(editUrl(pid));
+  }
+  var Routes = {
+    PROJECT_ID,
+    ISSUES_URL,
+    homeUrl,
+    editUrl,
+    privacyUrl,
+    signInUrl,
+    pageOf,
+    projectOf,
+    pendingOf,
+    go,
+    settle,
+    nameProject,
+    reportIssue
+  };
+  g.Routes = Routes;
+
   // js/persist/store.mjs
   var SCHEMA = 4;
   var SCHEMA_KEY = "beljar/schema";
+  function migrateStorage(storage, schema, migrations) {
+    const raw = storage.getItem(SCHEMA_KEY);
+    if (raw === String(schema)) return { result: "current", from: schema };
+    if (raw == null) return { result: "fresh", from: null };
+    const n = Number(raw);
+    const from2 = raw !== "" && Number.isInteger(n) ? n : null;
+    if (from2 == null) return { result: "unreadable", from: null };
+    if (from2 > schema) return { result: "newer", from: from2 };
+    const steps = migrations || {};
+    for (let v = from2; v < schema; v++) if (typeof steps[v] !== "function") return { result: "missing", from: from2, at: v };
+    for (let v = from2; v < schema; v++) {
+      try {
+        steps[v](storage);
+      } catch (err) {
+        return { result: "threw", from: from2, at: v, error: String(err && err.message || err) };
+      }
+    }
+    storage.setItem(SCHEMA_KEY, String(schema));
+    return { result: "migrated", from: from2 };
+  }
   var CLASSES = [
     { pattern: /^beljar\/settings$/, cls: "settings" },
     { pattern: /^beljar\/device$/, cls: "device" },
@@ -374,47 +498,28 @@
       storage.setItem(SCHEMA_KEY, String(schema));
     }
     const storedRaw = storage.getItem(SCHEMA_KEY);
-    const storedVersion = versionOf(storedRaw);
-    if (storedRaw === String(schema)) {
-    } else if (storedVersion != null && storedVersion > schema) {
+    const up = migrateStorage(storage, schema, migrations);
+    if (up.result === "newer") {
       readOnly = true;
       resetReason = "newer";
-      onVersionAhead(storedVersion);
-    } else if (storedRaw == null) {
+      onVersionAhead(up.from);
+    } else if (up.result === "fresh") {
       resetReason = "fresh";
       wipeAndStamp();
-    } else {
-      let v = storedVersion;
-      let failure = v == null ? "unreadable" : null;
-      while (!failure && v < schema) {
-        const step2 = migrations[v];
-        if (typeof step2 !== "function") {
-          failure = "missing";
-          break;
-        }
-        try {
-          step2(storage);
-        } catch (err) {
-          failure = "threw";
-          readOnly = true;
-          resetReason = "refused";
-          onCannotUpgrade("migration from " + v + " failed: " + String(err && err.message || err));
-          break;
-        }
-        v += 1;
-      }
-      if (!failure) {
-        resetReason = "migrated";
-        storage.setItem(SCHEMA_KEY, String(schema));
-      } else if (failure !== "threw") {
-        if (missingPolicy === "wipe") {
-          resetReason = "schema-changed";
-          wipeAndStamp();
-        } else {
-          readOnly = true;
-          resetReason = "refused";
-          onCannotUpgrade("no migration from " + storedRaw + " to " + schema);
-        }
+    } else if (up.result === "migrated") {
+      resetReason = "migrated";
+    } else if (up.result === "threw") {
+      readOnly = true;
+      resetReason = "refused";
+      onCannotUpgrade("migration from " + up.at + " failed: " + up.error);
+    } else if (up.result === "missing" || up.result === "unreadable") {
+      if (missingPolicy === "wipe") {
+        resetReason = "schema-changed";
+        wipeAndStamp();
+      } else {
+        readOnly = true;
+        resetReason = "refused";
+        onCannotUpgrade("no migration from " + storedRaw + " to " + schema);
       }
     }
     const READ_ONLY = { ok: false, error: { code: "read-only" } };
@@ -573,6 +678,9 @@
     }
     return store3;
   }
+
+  // js/persist/migrations.mjs
+  var MIGRATIONS = {};
 
   // js/persist/table.mjs
   function typeOf(row) {
@@ -830,6 +938,8 @@
     { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
     { id: "autosolveFocusNext", section: "harpoon", default: ON },
     { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // Case completion: fill a proof's missing cases when typing pauses, or only on a command.
+    { id: "caseFill", section: "harpoon", default: "auto", values: ["auto", "ask"] },
     // ── REPL ────────────────────────────────────────────────────────────────
     { id: "replAutoscroll", section: "repl", default: ON },
     { id: "replWelcome", section: "repl", default: ON },
@@ -842,9 +952,17 @@
     // Where this browser keeps history: a shared computer is not your laptop.
     { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
     // ── Workspace ───────────────────────────────────────────────────────────
-    { id: "inspectorFollow", section: "workspace", default: ON },
+    // What a plain arrival at BelJar opens: home, or the project last opened, the
+    // way an IDE reopens its last window. Early boot decides, before first paint
+    // (js/boot/early-boot-core.mjs `startTarget`).
+    { id: "startPage", section: "workspace", default: "home", values: ["home", "last"] },
+    { id: "inspectorFollow", section: "workspace", default: OFF },
     { id: "restorePanels", section: "workspace", default: ON },
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Tips seen once on any computer stay seen on all of them (js/ui/hint-seen.mjs):
+    // one row per tip, so two computers that each saw a different one never disagree.
+    { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },
@@ -909,10 +1027,10 @@
       /** Back to defaults for one Settings category. */
       reset(section) {
         if (!SECTIONS.includes(section)) throw new Error(`settings: no section "${section}"`);
-        return table.reset((row) => row.section === section);
+        return table.reset((row) => row.section === section && row.reset !== false);
       },
       resetAll() {
-        return table.reset();
+        return table.reset((row) => row.reset !== false);
       },
       /** Exactly what the user changed, in a file they can keep. */
       exportBundle(now = Date.now()) {
@@ -972,6 +1090,7 @@
     if (!Array.isArray(raw)) return void 0;
     return [...new Set(raw.filter((id) => typeof id === "string" && id !== ""))];
   }
+  var idList = accountIds;
   var PANEL_W = { group: "layout", default: 250, min: 160, max: 512, integer: true, boot: true };
   var PANEL_H = { group: "layout", default: 190, min: 96, max: 384, integer: true, boot: true };
   var DEVICE = [
@@ -984,6 +1103,16 @@
     // here, usable signed out and never adopted by another account (work.mjs
     // `isVisible`). Each leaves the list when it signs in again.
     { id: "keptAccounts", type: "json", default: [], normalize: accountIds },
+    // Signed out with "Remove": the account whose projects are still to leave
+    // this browser ('' none). They go when the next page loads (work.mjs
+    // `finishSignOut`), never under the page that signed out, which is still live.
+    { id: "leftAccount", type: "string", default: "" },
+    // And the projects of it that stay, kept for it: a session that ended
+    // elsewhere leaves behind nothing the cloud lacks (account.mjs `sessionEnded`).
+    { id: "leftKeep", type: "json", default: [], normalize: idList },
+    // Why this browser was signed out without asking ('' none): 'elsewhere' or
+    // 'ended'. Said once, by the page that loads next (account.mjs).
+    { id: "signedOutNote", type: "string", default: "" },
     // Signing in again: the account whose work this browser should come back
     // to, and the project it had open when it signed out here ('' the newest).
     // Used once, by the first load that finds a blank placeholder open
@@ -1145,7 +1274,8 @@
   }
 
   // js/persist/work.mjs
-  var DEFAULT_PROJECT_NAME = "Untitled Project";
+  var DEFAULT_PROJECT_NAME = "Untitled project";
+  var DEFAULT_NAME_BEFORE = "Untitled Project";
   var FIRST_FILE_NAME = "main.bel";
   var CACHE_LIMIT = 1024;
   function cleanName(name) {
@@ -1255,6 +1385,8 @@
     const cache = /* @__PURE__ */ new Map();
     const PROJECTS = " projects";
     let pinned = null;
+    let pinnedOwner = null;
+    let closing = false;
     store3.subscribe((evt) => {
       if (evt.key == null) {
         cache.clear();
@@ -1262,8 +1394,15 @@
       }
       cache.delete(evt.key);
       const k = parseKey(evt.key);
-      if (k && k.kind === "meta") cache.delete(PROJECTS);
+      if (k && k.kind === "meta") {
+        cache.delete(PROJECTS);
+        if (k.pid === pinned) noteOwner();
+      }
     });
+    function noteOwner() {
+      const meta = pinned ? normalizeMeta(pinned, store3.get(metaKey(pinned))) : null;
+      if (meta) pinnedOwner = meta.owner;
+    }
     function remember2(key, value) {
       if (cache.size >= CACHE_LIMIT) cache.clear();
       cache.set(key, value);
@@ -1316,7 +1455,7 @@
     }
     function isBlankProject(pid) {
       const meta = normalizeMeta(pid, store3.get(metaKey(pid)));
-      if (!meta || meta.owner !== null || meta.name !== DEFAULT_PROJECT_NAME) return false;
+      if (!meta || meta.owner !== null || meta.name !== DEFAULT_PROJECT_NAME && meta.name !== DEFAULT_NAME_BEFORE) return false;
       const t = peekTree(pid);
       if (t.files.length !== 1 || t.files[0].name !== FIRST_FILE_NAME || t.folders.length) return false;
       if (t.suites && Object.keys(t.suites).length) return false;
@@ -1330,8 +1469,18 @@
       return Array.isArray(ids) ? ids : [];
     }
     function isVisible(p) {
-      if (p.owner === null || p.owner === account()) return true;
-      return !account() && kept().includes(p.owner);
+      return ownerShown(p.owner);
+    }
+    function ownerShown(owner) {
+      if (owner === null || owner === account()) return true;
+      return !account() && kept().includes(owner);
+    }
+    function ownerLeft() {
+      if (!pinned) return false;
+      noteOwner();
+      if (ownerShown(pinnedOwner)) return false;
+      closing = true;
+      return true;
     }
     function peekVisible() {
       return peekProjects().filter(isVisible);
@@ -1343,14 +1492,40 @@
       meta.owner = uid;
       return put(metaKey(pid), metaRecord(meta)).ok;
     }
-    function removeAccountProjects(uid) {
+    function leaveAccount(uid, keep) {
+      closing = true;
+      if (!uid) return false;
+      const stay = Array.isArray(keep) ? keep.filter((pid) => typeof pid === "string" && pid) : [];
+      if (stay.length) device.set("leftKeep", stay);
+      else device.reset((row) => row.id === "leftKeep");
+      return device.set("leftAccount", String(uid));
+    }
+    function noteSignedOut(reason) {
+      return device.set("signedOutNote", String(reason || ""));
+    }
+    function takeSignedOutNote() {
+      const note = device.get("signedOutNote");
+      if (note) device.reset((row) => row.id === "signedOutNote");
+      return note || "";
+    }
+    function finishSignOut() {
+      const uid = device.get("leftAccount");
+      if (!uid) return 0;
+      const keep = new Set(device.get("leftKeep"));
+      device.reset((row) => row.id === "leftAccount" || row.id === "leftKeep");
+      if (account() === uid) return 0;
+      const n = removeAccountProjects(uid, keep);
+      if (peekProjects().some((p) => p.owner === uid)) keepAccountProjects(uid);
+      return n;
+    }
+    function removeAccountProjects(uid, keep) {
       if (!uid) return 0;
       const open11 = pinned || device.get("activeProject");
       const wasTheirs = peekProjects().some((p) => p.id === open11 && p.owner === uid);
       setResume(String(uid), wasTheirs ? open11 : "");
       let n = 0;
       for (const p of peekProjects()) {
-        if (p.owner !== uid) continue;
+        if (p.owner !== uid || keep && keep.has(p.id)) continue;
         store3.remove(metaKey(p.id));
         store3.removeAll(projectPrefix(p.id));
         if (pinned === p.id) pinned = null;
@@ -1371,6 +1546,36 @@
       if (kept().includes(String(uid))) device.set("keptAccounts", kept().filter((id) => id !== String(uid)));
       return n;
     }
+    function releaseAccount(uid) {
+      if (!uid) return 0;
+      let n = 0;
+      for (const p of peekProjects()) {
+        if (p.owner !== uid) continue;
+        const meta = normalizeMeta(p.id, store3.get(metaKey(p.id)));
+        if (!meta) continue;
+        meta.owner = null;
+        if (!put(metaKey(p.id), metaRecord(meta)).ok) continue;
+        store3.remove(syncKey(p.id));
+        n += 1;
+      }
+      const tombs = readTombstones();
+      let dropped = false;
+      for (const pid of Object.keys(tombs)) {
+        if (tombs[pid].owner === uid) {
+          delete tombs[pid];
+          dropped = true;
+        }
+      }
+      if (dropped) writeTombstones(tombs);
+      const synced = store3.get(SETTINGS_SYNC_KEY);
+      if (synced && synced.account === uid) store3.remove(SETTINGS_SYNC_KEY);
+      const id = String(uid);
+      if (device.get("syncHeldFor") === id) device.reset((row) => row.id === "syncHeldFor");
+      if (device.get("resumeAccount") === id) clearResume();
+      if (device.get("leftAccount") === id) device.reset((row) => row.id === "leftAccount" || row.id === "leftKeep");
+      if (kept().includes(id)) device.set("keptAccounts", kept().filter((k) => k !== id));
+      return n;
+    }
     function readTombstones() {
       return normalizeTombstones(store3.get(TOMBSTONES_KEY));
     }
@@ -1389,7 +1594,7 @@
       return null;
     }
     function ensureProjects() {
-      if (!peekVisible().length) {
+      if (!peekVisible().length && !closing) {
         const pid = createProject(DEFAULT_PROJECT_NAME);
         if (!pid) throw new Error("BelJar could not create a project: storage refused the write (full, or owned by another version)");
         writeDevice2(pid);
@@ -1402,11 +1607,30 @@
     function pinnedProject() {
       return pinned;
     }
+    function projectInUse() {
+      if (pinned && device.get("activeProject") !== pinned && peekVisible().some((p) => p.id === pinned)) writeDevice2(pinned);
+    }
+    function visibleProjects() {
+      return peekVisible().map((p) => Object.assign({}, p));
+    }
+    function lastProject() {
+      const want = device.get("activeProject");
+      return want && peekVisible().some((p) => p.id === want) ? want : null;
+    }
+    function pinProject(pid) {
+      if (pinned) return pinned === pid;
+      if (!pid || !peekVisible().some((p) => p.id === pid)) return false;
+      pinned = pid;
+      noteOwner();
+      if (device.get("activeProject") !== pid) writeDevice2(pid);
+      return true;
+    }
     function projectId2() {
       if (pinned) return pinned;
       const list3 = ensureProjects();
       const want = device.get("activeProject");
       pinned = list3.some((p) => p.id === want) ? want : list3[0].id;
+      noteOwner();
       if (want !== pinned) writeDevice2(pinned);
       return pinned;
     }
@@ -1418,6 +1642,7 @@
       if (!ensureProjects().some((p) => p.id === pid)) return false;
       writeDevice2(pid);
       pinned = pid;
+      noteOwner();
       return true;
     }
     function renameProject(pid, name) {
@@ -1429,6 +1654,15 @@
     function deleteProject(pid) {
       const list3 = ensureProjects();
       if (list3.length <= 1) return null;
+      return dropProject(pid, list3);
+    }
+    function removeProject(pid) {
+      const list3 = peekVisible();
+      if (!list3.some((p) => p.id === pid)) return false;
+      const next = dropProject(pid, list3);
+      return next !== null || !peekVisible().some((p) => p.id === pid);
+    }
+    function dropProject(pid, list3) {
       const idx = list3.findIndex((p) => p.id === pid);
       if (idx === -1) return null;
       const others = list3.filter((p) => p.id !== pid);
@@ -1447,8 +1681,11 @@
       }
       store3.remove(metaKey(pid));
       store3.removeAll(projectPrefix(pid));
-      const next = others[Math.max(0, idx - 1)].id;
-      if (device.get("activeProject") === pid) writeDevice2(next);
+      const next = others.length ? others[Math.max(0, idx - 1)].id : null;
+      if (device.get("activeProject") === pid) {
+        if (next) writeDevice2(next);
+        else device.reset((row) => row.id === "activeProject");
+      }
       if (pinned === pid) pinned = next;
       return next;
     }
@@ -1659,6 +1896,11 @@
       hasProject,
       projectId: projectId2,
       pinnedProject,
+      pinProject,
+      projectInUse,
+      lastProject,
+      visibleProjects,
+      removeProject,
       setActiveProject,
       createProject,
       renameProject,
@@ -1697,6 +1939,12 @@
       isBlankProject,
       claimProject,
       removeAccountProjects,
+      leaveAccount,
+      finishSignOut,
+      releaseAccount,
+      noteSignedOut,
+      takeSignedOutNote,
+      ownerLeft,
       keepAccountProjects,
       // the online layer
       allProjects,
@@ -1720,9 +1968,9 @@
       return i === -1 ? "" : name.slice(0, i);
     }
     function notifyProjectTreeChanged(kind) {
-      var g18 = typeof window !== "undefined" ? window : null;
-      if (g18 && typeof g18.dispatchEvent === "function") {
-        g18.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
+      var g23 = typeof window !== "undefined" ? window : null;
+      if (g23 && typeof g23.dispatchEvent === "function") {
+        g23.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
       }
     }
     function listFiles2() {
@@ -2239,9 +2487,9 @@
       return t && t.charAt(0) !== "%" && isCfgEntryToken2(t);
     }
     function cfgTextForRewrite(fileId) {
-      var g18 = typeof window !== "undefined" ? window : null;
-      if (g18) {
-        var ed = g18.CurrentEditor;
+      var g23 = typeof window !== "undefined" ? window : null;
+      if (g23) {
+        var ed = g23.CurrentEditor;
         if (fileId === getActiveFileId() && ed && typeof ed.getValue === "function") {
           return String(ed.getValue() ?? "");
         }
@@ -2250,9 +2498,9 @@
     }
     function notifyCfgRewritten(fileIds) {
       if (!fileIds.length) return;
-      var g18 = typeof window !== "undefined" ? window : null;
-      if (g18 && typeof g18.dispatchEvent === "function") {
-        g18.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
+      var g23 = typeof window !== "undefined" ? window : null;
+      if (g23 && typeof g23.dispatchEvent === "function") {
+        g23.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
       }
     }
     function rewriteCfgBody(text, cfgDir, oldName, newName) {
@@ -2757,9 +3005,9 @@
         if (providers3 && typeof providers3.applyExternalText === "function") providers3.applyExternalText(text);
       }
       function announceConflict(source) {
-        var g18 = typeof window !== "undefined" ? window : null;
-        if (g18 && typeof g18.dispatchEvent === "function" && typeof CustomEvent === "function") {
-          g18.dispatchEvent(new CustomEvent("beljar:text-conflict", { detail: { fileId: documentId, source } }));
+        var g23 = typeof window !== "undefined" ? window : null;
+        if (g23 && typeof g23.dispatchEvent === "function" && typeof CustomEvent === "function") {
+          g23.dispatchEvent(new CustomEvent("beljar:text-conflict", { detail: { fileId: documentId, source } }));
         }
       }
       function reconcile() {
@@ -2940,7 +3188,7 @@
         work2.removeConflict(documentId);
         return { ok: true, copyId };
       }
-      var handle = { noteFileChange };
+      var handle = { noteFileChange, flushIfDirty: flushCheckpointIfDirty };
       open11.add(handle);
       return {
         getEditorText: function() {
@@ -2975,7 +3223,15 @@
         }
       };
     }
-    return { createPersist };
+    function flushPending() {
+      open11.forEach(function(doc2) {
+        try {
+          if (doc2.flushIfDirty) doc2.flushIfDirty();
+        } catch (_) {
+        }
+      });
+    }
+    return { createPersist, flushPending };
   }
 
   // js/persist/device-records.mjs
@@ -3162,6 +3418,7 @@
 
   // js/persist/sync/protocol.mjs
   var MANIFEST_VERSION = 1;
+  var QUOTA = { projects: 1e3, textBytes: 1024 * 1024 * 1024 };
   function canonicalJson(value) {
     if (value === null || typeof value !== "object") return JSON.stringify(value);
     if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
@@ -3177,6 +3434,120 @@
     for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, "0");
     return s;
   }
+  function sha256Sync(text) {
+    const bytes = new TextEncoder().encode(String(text));
+    const n = bytes.length;
+    const words = new Uint32Array(n + 9 + 63 >> 6 << 4);
+    for (let i = 0; i < n; i++) words[i >> 2] |= bytes[i] << 24 - (i & 3) * 8;
+    words[n >> 2] |= 128 << 24 - (n & 3) * 8;
+    words[words.length - 1] = n * 8;
+    words[words.length - 2] = Math.floor(n / 536870912);
+    const h = new Uint32Array(SHA_INIT);
+    const w = new Uint32Array(64);
+    for (let off = 0; off < words.length; off += 16) {
+      for (let t = 0; t < 16; t++) w[t] = words[off + t];
+      for (let t = 16; t < 64; t++) {
+        const x = w[t - 15];
+        const y = w[t - 2];
+        const s0 = (x >>> 7 | x << 25) ^ (x >>> 18 | x << 14) ^ x >>> 3;
+        const s1 = (y >>> 17 | y << 15) ^ (y >>> 19 | y << 13) ^ y >>> 10;
+        w[t] = w[t - 16] + s0 + w[t - 7] + s1 | 0;
+      }
+      let a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g23 = h[6], k = h[7];
+      for (let t = 0; t < 64; t++) {
+        const S1 = (e >>> 6 | e << 26) ^ (e >>> 11 | e << 21) ^ (e >>> 25 | e << 7);
+        const t1 = k + S1 + (e & f ^ ~e & g23) + SHA_K[t] + w[t] | 0;
+        const S0 = (a >>> 2 | a << 30) ^ (a >>> 13 | a << 19) ^ (a >>> 22 | a << 10);
+        const t2 = S0 + (a & b ^ a & c ^ b & c) | 0;
+        k = g23;
+        g23 = f;
+        f = e;
+        e = d + t1 | 0;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 + t2 | 0;
+      }
+      h[0] += a;
+      h[1] += b;
+      h[2] += c;
+      h[3] += d;
+      h[4] += e;
+      h[5] += f;
+      h[6] += g23;
+      h[7] += k;
+    }
+    let s = "";
+    for (let i = 0; i < 8; i++) s += h[i].toString(16).padStart(8, "0");
+    return s;
+  }
+  var SHA_INIT = [1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225];
+  var SHA_K = new Uint32Array([
+    1116352408,
+    1899447441,
+    3049323471,
+    3921009573,
+    961987163,
+    1508970993,
+    2453635748,
+    2870763221,
+    3624381080,
+    310598401,
+    607225278,
+    1426881987,
+    1925078388,
+    2162078206,
+    2614888103,
+    3248222580,
+    3835390401,
+    4022224774,
+    264347078,
+    604807628,
+    770255983,
+    1249150122,
+    1555081692,
+    1996064986,
+    2554220882,
+    2821834349,
+    2952996808,
+    3210313671,
+    3336571891,
+    3584528711,
+    113926993,
+    338241895,
+    666307205,
+    773529912,
+    1294757372,
+    1396182291,
+    1695183700,
+    1986661051,
+    2177026350,
+    2456956037,
+    2730485921,
+    2820302411,
+    3259730800,
+    3345764771,
+    3516065817,
+    3600352804,
+    4094571909,
+    275423344,
+    430227734,
+    506948616,
+    659060556,
+    883997877,
+    958139571,
+    1322822218,
+    1537002063,
+    1747873779,
+    1955562222,
+    2024104815,
+    2227730452,
+    2361852424,
+    2428436474,
+    2756734187,
+    3204031479,
+    3329325298
+  ]);
   async function sha256(text) {
     const subtle = globalThis.crypto && globalThis.crypto.subtle;
     if (!subtle) throw new Error("sync: Web Crypto is not available");
@@ -3287,7 +3658,7 @@
           const baseText = b ? need(b.hash) : "";
           const theirs = need(t.hash);
           if (baseText === void 0 || theirs === void 0) continue;
-          const r = merge3(baseText, mine, theirs);
+          const r = baseText === null ? { ok: false } : merge3(baseText, mine, theirs);
           if (r.ok && !a.askAll) {
             out.push({ id, path, text: r.text });
           } else {
@@ -3295,7 +3666,7 @@
             if (conflicted.has(id)) {
               copies.push({ of: id, text: mine });
             } else {
-              conflicts.push({ id, base: baseText, mine, theirs });
+              conflicts.push({ id, base: baseText === null ? "" : baseText, mine, theirs });
               notices2.push({ kind: "conflict", path });
             }
           }
@@ -3425,8 +3796,15 @@
       }
       return { version: raw.version, values: cleanSyncedValues(raw.values) };
     }
-    async function sync() {
+    async function sync(hint) {
       if (!o.settings.get("syncSettings")) return { status: "off" };
+      const told = hint && Number.isInteger(hint.head) ? hint.head : null;
+      if (told !== null) {
+        const rec = readRecord(store3, account);
+        const mine = local();
+        if (rec && !rec.pending && rec.version === told && sameValues(mine, rec.values)) return { status: "clean" };
+        if (!rec && told === 0 && !Object.keys(mine).length) return { status: "clean" };
+      }
       for (let i = 0; i < attempts; i++) {
         const rec = readRecord(store3, account);
         if (rec && rec.pending) {
@@ -3461,9 +3839,20 @@
 
   // js/persist/sync/engine.mjs
   var ATTEMPTS = 8;
+  var CARRY_TEXTS = 200;
+  var CARRY_BYTES = 512 * 1024;
+  var utf8Bytes2 = (text) => new TextEncoder().encode(String(text)).length;
   function unreachable(method, err) {
     const e = new Error("sync: " + method + " could not reach the server" + (err && err.message ? " (" + err.message + ")" : ""));
     e.offline = true;
+    e.stopsRound = true;
+    e.cause = err;
+    return e;
+  }
+  function refusedByServer(method, err) {
+    const e = new Error("sync: the server answered " + err.status + " to " + method);
+    e.status = err.status;
+    e.stopsRound = true;
     e.cause = err;
     return e;
   }
@@ -3485,7 +3874,13 @@
     if (raw.pending && typeof raw.pending === "object" && typeof raw.pending.id === "string" && raw.pending.id) {
       const m = normalizeManifest(raw.pending.manifest);
       const base = Number.isInteger(raw.pending.base) && raw.pending.base >= 0 ? raw.pending.base : -1;
-      if (m && base >= 0) pending = { id: raw.pending.id, base, manifest: m };
+      if (m && base >= 0) {
+        pending = { id: raw.pending.id, base, manifest: m };
+        const t = raw.pending.texts;
+        if (t && typeof t === "object" && !Array.isArray(t) && Object.entries(t).every(([h, x]) => isHash(h) && typeof x === "string") && Object.keys(t).length) {
+          pending.texts = Object.assign({}, t);
+        }
+      }
     }
     return { version: version2, manifest, pending };
   }
@@ -3496,6 +3891,11 @@
     const manifest = deleted ? null : normalizeManifest(raw.manifest);
     if (!deleted && !manifest) throw bad("the server sent a manifest this version cannot read");
     return { version: raw.version, deleted, manifest, commit: typeof raw.commit === "string" ? raw.commit : null };
+  }
+  function readList(raw) {
+    if (Array.isArray(raw)) return { heads: readHeads(raw), settings: null };
+    if (!raw || !Array.isArray(raw.projects)) throw bad("the server sent a project list this version cannot read");
+    return { heads: readHeads(raw.projects), settings: Number.isInteger(raw.settings) && raw.settings >= 0 ? raw.settings : null };
   }
   function readHeads(raw) {
     if (!Array.isArray(raw)) throw bad("the server sent a project list this version cannot read");
@@ -3510,11 +3910,17 @@
     const { store: store3, work: work2, transport, account } = opts;
     if (!account) throw new Error("sync: an engine syncs one account; none was given");
     const hash = opts.hash || sha256;
+    const hashSync = opts.hashSync || sha256Sync;
     const notify = opts.notify || (() => {
     });
     const commitId = opts.commitId || (() => newId("c"));
     const trace = opts.trace || (() => {
     });
+    const own = opts.own || ((fn) => fn());
+    const applyProject = (pid, next, o) => own(() => work2.applyProject(pid, next, o));
+    const forgetProject = (pid) => own(() => work2.forgetProject(pid));
+    const dropTombstone = (pid) => own(() => work2.dropTombstone(pid));
+    const removeConflict = (fid, pid) => own(() => work2.removeConflict(fid, pid));
     function moved(pid, at) {
       trace({ kind: "moved", pid, at });
       return null;
@@ -3524,7 +3930,7 @@
       try {
         return await transport[method](...args);
       } catch (err) {
-        throw unreachable(method, err);
+        throw err && Number.isInteger(err.status) ? refusedByServer(method, err) : unreachable(method, err);
       }
     }
     async function hashFile(pid, fid, text) {
@@ -3532,6 +3938,14 @@
       const known = hashed.get(key);
       if (known && known.text === text) return known.hash;
       const h = await hash(text);
+      hashed.set(key, { text, hash: h });
+      return h;
+    }
+    function hashFileSync(pid, fid, text) {
+      const key = pid + "/" + fid;
+      const known = hashed.get(key);
+      if (known && known.text === text) return known.hash;
+      const h = hashSync(text);
       hashed.set(key, { text, hash: h });
       return h;
     }
@@ -3550,6 +3964,15 @@
       snap.manifest = manifestOf(snap.meta, snap.tree, hashes);
       return snap;
     }
+    function localSideSync(pid) {
+      const snap = work2.snapshotProject(pid);
+      if (!snap) return null;
+      const hashes = {};
+      for (const f of snap.tree.files) hashes[f.id] = hashFileSync(pid, f.id, snap.texts[f.id]);
+      snap.hashes = hashes;
+      snap.manifest = manifestOf(snap.meta, snap.tree, hashes);
+      return snap;
+    }
     function unchangedSince(pid, snap) {
       const now = work2.snapshotProject(pid);
       if (!now) return false;
@@ -3559,6 +3982,18 @@
       if (now.conflicted.size !== snap.conflicted.size) return false;
       for (const id of now.conflicted) if (!snap.conflicted.has(id)) return false;
       return true;
+    }
+    async function fetchSome(pid, wanted) {
+      const got = /* @__PURE__ */ new Map();
+      if (!wanted.length) return got;
+      const res = await call("blobs", pid, wanted);
+      for (const h of wanted) {
+        const text = res && typeof res[h] === "string" ? res[h] : void 0;
+        if (text === void 0) continue;
+        if (await hash(text) !== h) throw bad("a file arrived damaged");
+        got.set(h, text);
+      }
+      return got;
     }
     async function fetchTexts(pid, wanted) {
       const got = /* @__PURE__ */ new Map();
@@ -3572,7 +4007,7 @@
       }
       return got;
     }
-    function settle(pid, kept, pending, res) {
+    function settle2(pid, kept, pending, res) {
       if (res && res.ok && Number.isInteger(res.version) && res.version > 0) {
         writeRecord(pid, { version: res.version, manifest: pending.manifest, pending: null });
         return true;
@@ -3581,25 +4016,107 @@
       writeRecord(pid, { version: kept.version, manifest: kept.manifest, pending: null });
       return false;
     }
+    function freshTexts(local, rec) {
+      const known = new Set(rec && rec.version && rec.manifest ? rec.manifest.files.map((f) => f.hash) : []);
+      const out = {};
+      for (const f of local.tree.files) {
+        const h = local.hashes[f.id];
+        if (!known.has(h)) out[h] = local.texts[f.id];
+      }
+      return out;
+    }
+    function tooMuchToCarry(texts) {
+      const all = Object.values(texts);
+      if (all.length > CARRY_TEXTS) return true;
+      let size = 0;
+      for (const t of all) if ((size += utf8Bytes2(t)) > CARRY_BYTES) return true;
+      return false;
+    }
+    async function upload(pid, texts) {
+      let batch = {};
+      let count = 0;
+      let size = 0;
+      const send = async () => {
+        if (!count) return;
+        const res = await call("putBlobs", pid, batch);
+        if (res && res.error) throw refused(res);
+        if (!res || !res.ok) throw bad("the server did not take the files");
+        batch = {};
+        count = 0;
+        size = 0;
+      };
+      for (const [h, t] of Object.entries(texts)) {
+        const b = utf8Bytes2(t);
+        if (count && (count >= CARRY_TEXTS || size + b > CARRY_BYTES)) await send();
+        batch[h] = t;
+        count += 1;
+        size += b;
+      }
+      await send();
+    }
     async function push2(pid, local, rec, base) {
       const texts = /* @__PURE__ */ new Map();
       for (const f of local.tree.files) texts.set(local.hashes[f.id], local.texts[f.id]);
-      const missing = await call("missing", pid, [...texts.keys()]);
-      if (!Array.isArray(missing)) throw bad("the server sent an answer this version cannot read");
-      if (missing.length) {
-        const up = {};
-        for (const h of missing) {
-          if (!texts.has(h)) throw bad("the server asked for a file this version never named");
-          up[h] = texts.get(h);
-        }
-        const res = await call("putBlobs", pid, up);
-        if (res && res.error) throw refused(res);
-        if (!res || !res.ok) throw bad("the server did not take the files");
+      let carried = freshTexts(local, rec);
+      if (tooMuchToCarry(carried)) {
+        await upload(pid, carried);
+        carried = {};
       }
+      const still = work2.getProject(pid);
+      if (!still || still.owner !== account) return moved(pid, "push") || false;
+      const now = readRecord2(pid);
+      if (now && now.pending || (now ? now.version : 0) !== (rec ? rec.version : 0)) return moved(pid, "pending") || false;
       const kept = { version: rec ? rec.version : 0, manifest: rec ? rec.manifest : null };
       const pending = { id: commitId(), base, manifest: local.manifest };
+      if (Object.keys(carried).length) pending.texts = carried;
       writeRecord(pid, { version: kept.version, manifest: kept.manifest, pending });
-      return settle(pid, kept, pending, await call("commit", pid, pending));
+      let res = await call("commit", pid, pending);
+      if (res && !res.ok && Array.isArray(res.missing) && res.missing.length) {
+        const more = {};
+        for (const h of res.missing) {
+          if (!texts.has(h)) throw bad("the server asked for a file this version never named");
+          more[h] = texts.get(h);
+        }
+        if (tooMuchToCarry(more)) {
+          await upload(pid, more);
+        } else {
+          pending.texts = Object.assign({}, pending.texts || {}, more);
+          writeRecord(pid, { version: kept.version, manifest: kept.manifest, pending });
+        }
+        res = await call("commit", pid, pending);
+      }
+      return settle2(pid, kept, pending, res);
+    }
+    function flush(send, budget) {
+      const sent = [];
+      let left = budget == null ? Infinity : budget;
+      const tombs = work2.readTombstones();
+      const open11 = typeof work2.pinnedProject === "function" ? work2.pinnedProject() : null;
+      const mine = work2.allProjects().filter((x) => x.owner === account && !tombs[x.id]);
+      mine.sort((a, b) => a.id === open11 ? -1 : b.id === open11 ? 1 : 0);
+      for (const { id: pid } of mine) {
+        try {
+          const rec = readRecord2(pid);
+          if (rec && rec.pending) continue;
+          const local = localSideSync(pid);
+          if (!local || !local.manifest) continue;
+          if (rec && rec.version && sameManifest(local.manifest, rec.manifest)) continue;
+          const kept = { version: rec ? rec.version : 0, manifest: rec ? rec.manifest : null };
+          const body = { id: commitId(), base: kept.version, manifest: local.manifest, texts: freshTexts(local, rec) };
+          const size = utf8Bytes2(JSON.stringify({ args: [pid, body] }));
+          if (size > left) continue;
+          writeRecord(pid, { version: kept.version, manifest: kept.manifest, pending: body });
+          left -= size;
+          sent.push(pid);
+          Promise.resolve(send(pid, body)).then((res) => {
+            const now = readRecord2(pid);
+            if (now && now.pending && now.pending.id === body.id) settle2(pid, kept, now.pending, res);
+          }).catch(() => {
+          });
+        } catch (_) {
+        }
+      }
+      return sent;
     }
     async function pull(pid, local, rec, head) {
       const theirs = head.manifest;
@@ -3620,12 +4137,18 @@
         });
         if (r.needs) {
           if (fetched) throw bad("a merge needed a file the server did not send");
-          for (const [h, t] of await fetchTexts(pid, r.needs)) texts.set(h, t);
+          const got = await fetchSome(pid, r.needs);
+          const named = new Set(theirs.files.map((f) => f.hash));
+          for (const h of r.needs) {
+            if (got.has(h)) texts.set(h, got.get(h));
+            else if (named.has(h)) throw bad("the server is missing a file its version lists");
+            else texts.set(h, null);
+          }
           fetched = true;
           continue;
         }
         if (!unchangedSince(pid, local)) return moved(pid, "merge");
-        if (!work2.applyProject(pid, r.project, { conflicts: r.conflicts })) throw storageFailure("a merged project");
+        if (!applyProject(pid, r.project, { conflicts: r.conflicts })) throw storageFailure("a merged project");
         writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
         for (const n of r.notices) notify(Object.assign({ pid, project: r.project.name }, n));
         return;
@@ -3642,7 +4165,7 @@
         folders: theirs.folders,
         suites: theirs.suites
       };
-      if (!work2.applyProject(pid, project, { owner: account })) throw storageFailure("a downloaded project");
+      if (!applyProject(pid, project, { owner: account })) throw storageFailure("a downloaded project");
       writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
       return { status: "downloaded" };
     }
@@ -3698,8 +4221,8 @@
       const head = readHead(await call("head", pid));
       if (!head) return false;
       if (head.deleted) {
-        if (work2.readTombstones()[pid]) work2.dropTombstone(pid);
-        if (work2.snapshotProject(pid)) work2.forgetProject(pid);
+        if (work2.readTombstones()[pid]) dropTombstone(pid);
+        if (work2.snapshotProject(pid)) forgetProject(pid);
         return true;
       }
       const theirs = head.manifest;
@@ -3712,27 +4235,27 @@
         suites: theirs.suites
       };
       const snap = work2.snapshotProject(pid);
-      if (snap) for (const fid of snap.conflicted) work2.removeConflict(fid, pid);
-      if (work2.readTombstones()[pid]) work2.dropTombstone(pid);
-      if (!work2.applyProject(pid, project, { owner: account })) throw storageFailure("the cloud\u2019s version of a project");
+      if (snap) for (const fid of snap.conflicted) removeConflict(fid, pid);
+      if (work2.readTombstones()[pid]) dropTombstone(pid);
+      if (!applyProject(pid, project, { owner: account })) throw storageFailure("the cloud\u2019s version of a project");
       writeRecord(pid, { version: head.version, manifest: theirs, pending: null });
       return true;
     }
     async function settleTombstone(pid, tomb, head) {
       if (!head || head.deleted) {
-        work2.dropTombstone(pid);
+        dropTombstone(pid);
         return { status: "deleted" };
       }
       if (head.version === tomb.version || tomb.pending && head.commit === tomb.pending) {
         const res = await call("remove", pid, { id: commitId(), base: head.version });
         if (res && res.ok) {
-          work2.dropTombstone(pid);
+          dropTombstone(pid);
           return { status: "deleted" };
         }
         if (res && res.error) throw refused(res);
         return null;
       }
-      work2.dropTombstone(pid);
+      dropTombstone(pid);
       notify({ kind: "project-restored", pid, project: head.manifest.name });
       return null;
     }
@@ -3740,15 +4263,16 @@
       const rec = readRecord2(pid);
       if (rec && rec.pending) {
         const res = await call("commit", pid, rec.pending);
-        settle(pid, rec, rec.pending, res);
+        settle2(pid, rec, rec.pending, res);
         return null;
       }
       const tomb = work2.readTombstones()[pid];
       const local = await localSide(pid);
       if (local && local.meta.owner !== account) return { status: "not-ours" };
       if (local && !local.manifest) return { status: "error", message: "two files share a path" };
-      if (hint && local && rec && rec.version && !tomb && !hint.deleted && hint.version === rec.version && sameManifest(local.manifest, rec.manifest)) {
-        return { status: "clean" };
+      if (hint && local && rec && rec.version && !tomb && !hint.deleted && hint.version === rec.version) {
+        if (sameManifest(local.manifest, rec.manifest)) return { status: "clean" };
+        return await push2(pid, local, rec, rec.version) ? { status: "pushed" } : null;
       }
       const head = readHead(await call("head", pid));
       if (!local) {
@@ -3763,7 +4287,7 @@
       if (head.deleted) {
         if (synced && sameManifest(local.manifest, synced.manifest) && !local.conflicted.size) {
           if (!unchangedSince(pid, local)) return moved(pid, "forget");
-          work2.forgetProject(pid);
+          forgetProject(pid);
           notify({ kind: "project-deleted", pid, project: local.meta.name });
           return { status: "forgot" };
         }
@@ -3793,7 +4317,8 @@
       call
     });
     async function syncAll() {
-      const heads = readHeads(await call("heads"));
+      const list3 = readList(await call("heads", { settings: true }));
+      const heads = list3.heads;
       const byId2 = new Map(heads.map((h) => [h.id, h]));
       const ids = /* @__PURE__ */ new Set();
       for (const p of work2.allProjects()) if (p.owner === account) ids.add(p.id);
@@ -3805,20 +4330,53 @@
         try {
           projects[pid] = await syncProject(pid, byId2.get(pid) || null);
         } catch (err) {
-          if (err && err.offline) throw err;
-          projects[pid] = { pid, status: "error", message: String(err && err.message || err) };
+          if (err && err.stopsRound) throw err;
+          projects[pid] = { pid, status: "error", message: String(err && err.message || err), code: err && err.code || null };
         }
       }
       let settings2;
       try {
-        settings2 = await settingsSync.sync();
+        settings2 = await settingsSync.sync({ head: list3.settings });
       } catch (err) {
-        if (err && err.offline) throw err;
-        settings2 = { status: "error", message: String(err && err.message || err) };
+        if (err && err.stopsRound) throw err;
+        settings2 = { status: "error", message: String(err && err.message || err), code: err && err.code || null };
       }
       return { projects, settings: settings2 };
     }
-    return { account, syncAll, syncProject, syncSettings: settingsSync.sync, localChanges, cloudSide, useCloud };
+    async function history4(pid, o) {
+      const list3 = await call("versions", pid, o || {});
+      return Array.isArray(list3) ? list3 : [];
+    }
+    async function readVersion(pid, n) {
+      const v = await call("version", pid, n);
+      if (!v) return null;
+      if (v.deleted) return { version: v.version, createdAt: v.createdAt, deleted: true, name: null, files: [], folders: [], suites: {} };
+      const m = normalizeManifest(v.manifest);
+      if (!m) throw bad("the server sent a version that is not one");
+      const got = await fetchTexts(pid, [...new Set(m.files.map((f) => f.hash))]);
+      return {
+        version: v.version,
+        createdAt: v.createdAt,
+        deleted: false,
+        name: m.name,
+        files: m.files.map((f) => ({ id: f.id, path: f.path, text: got.get(f.hash) })),
+        folders: m.folders,
+        suites: m.suites
+      };
+    }
+    async function restoreVersion2(pid, n) {
+      const v = await readVersion(pid, n);
+      if (!v || v.deleted) return { ok: false, error: "no-version" };
+      const local = await localSide(pid);
+      const rec = readRecord2(pid);
+      if (!local || !rec || !rec.version || rec.pending || !sameManifest(local.manifest, rec.manifest)) return { ok: false, error: "unsynced" };
+      if (local.conflicted && local.conflicted.size) return { ok: false, error: "review" };
+      if (!unchangedSince(pid, local)) return { ok: false, error: "unsynced" };
+      const next = { name: v.name, createdAt: local.meta.createdAt, files: v.files, folders: v.folders, suites: v.suites };
+      if (!work2.applyProject(pid, next, { owner: account })) throw storageFailure("a restored version");
+      return { ok: true };
+    }
+    return { account, syncAll, syncProject, syncSettings: settingsSync.sync, localChanges, cloudSide, useCloud, flush, history: history4, readVersion, restoreVersion: restoreVersion2 };
   }
 
   // js/persist/sync/runner.mjs
@@ -3838,8 +4396,9 @@
     const maxWaitMs = o.maxWaitMs != null ? o.maxWaitMs : 3e4;
     const pollMs = o.pollMs != null ? o.pollMs : 6e4;
     const backoff = o.backoff || [5e3, 15e3, 6e4, 3e5];
+    const visible2 = typeof o.visible === "function" ? o.visible : () => true;
     const listeners2 = /* @__PURE__ */ new Set();
-    let status = { state: "waiting", leader: false, lastSync: 0, error: null, pending: false, safe: false, held: false };
+    let status = { state: "waiting", leader: false, lastSync: 0, error: null, reason: null, pending: false, safe: false, held: false };
     let leader = false;
     let stopped = false;
     let running2 = null;
@@ -3848,8 +4407,9 @@
     let firstChange = 0;
     let failures = 0;
     let dirty = false;
+    let heard = false;
     let held = false;
-    let release = null;
+    let release2 = null;
     let abort = null;
     let unsubscribe = null;
     function update2(patch) {
@@ -3865,12 +4425,14 @@
       if (timer2 != null) timers.clear(timer2);
       timer2 = timers.set(() => {
         timer2 = null;
+        if (!dirty && !failures && !visible2()) return;
         round();
       }, Math.max(0, ms));
     }
     function changed() {
       if (!leader || stopped) return;
       dirty = true;
+      if (running2) heard = true;
       if (!status.pending) update2({ pending: true });
       const t = now();
       if (!firstChange) firstChange = t;
@@ -3878,8 +4440,8 @@
     }
     function problems(res) {
       const out = [];
-      for (const r of Object.values(res.projects || {})) if (r.status === "error") out.push(r.message);
-      if (res.settings && res.settings.status === "error") out.push(res.settings.message);
+      for (const r of Object.values(res.projects || {})) if (r.status === "error") out.push(r);
+      if (res.settings && res.settings.status === "error") out.push(res.settings);
       return out;
     }
     function round() {
@@ -3900,20 +4462,36 @@
         failures = 0;
         const errs = problems(res);
         if (errs.length && carried) dirty = true;
-        update2({ state: errs.length ? "error" : "idle", lastSync: now(), error: errs[0] || null, result: res, pending: dirty, safe: roundIsSafe(res) });
+        update2({
+          state: errs.length ? "error" : "idle",
+          lastSync: now(),
+          error: errs.length ? errs[0].message : null,
+          reason: errs.length && errs[0].code ? "refused-" + errs[0].code : null,
+          result: res,
+          pending: dirty,
+          safe: roundIsSafe(res)
+        });
         return res;
       }, (err) => {
         failures += 1;
         if (carried) dirty = true;
-        update2({ state: err && err.offline ? "offline" : "error", error: String(err && err.message || err), pending: dirty, safe: false });
+        update2({
+          state: err && err.offline ? "offline" : "error",
+          error: String(err && err.message || err),
+          reason: err && Number.isInteger(err.status) ? "status-" + err.status : null,
+          pending: dirty,
+          safe: false
+        });
         return null;
       }).then((res) => {
         running2 = null;
+        const timed = heard && !failures && timer2 != null;
+        heard = false;
         if (stopped) return res;
         if (again) {
           again = false;
           round();
-        } else {
+        } else if (!timed) {
           wakeIn(failures ? backoff[Math.min(failures, backoff.length) - 1] : pollMs);
         }
         return res;
@@ -3927,6 +4505,7 @@
         if (unsubscribe) return;
         unsubscribe = o.store.subscribe((e) => {
           if (e.origin === "remote") return;
+          if (o.ignore && o.ignore(e)) return;
           if (e.cls === "work" || e.cls === "settings" || e.key === TOMBSTONES_KEY) changed();
         });
         const locks = o.locks;
@@ -3941,7 +4520,7 @@
           update2({ state: "idle", leader: true });
           round();
           return new Promise((resolve2) => {
-            release = resolve2;
+            release2 = resolve2;
           });
         })).catch(() => {
         });
@@ -3958,6 +4537,17 @@
           if (running2) return running2;
         }
         return round();
+      },
+      /**
+       * The page is going out of sight, and may be closing: what waits for the
+       * quiet spell goes now, each project in one request `send` makes outlive
+       * the page (engine.mjs `flush`). Only the tab that syncs, and never while
+       * rounds are held for the person ("Back online: Ask me first"): what waits
+       * then is theirs to look at first. Returns the projects sent.
+       */
+      flush(send, budget) {
+        if (!leader || stopped || held || typeof engine.flush !== "function") return [];
+        return engine.flush(send, budget);
       },
       status() {
         return status;
@@ -3995,8 +4585,14 @@
       /**
        * Stop, and resolve once a round in flight has finished: nothing sync does
        * lands after this resolves (signing out removes projects right after).
+       *
+       * `hold`: stop, but keep the lock until stop() is called again or the page
+       * goes. Signing out stops this way: letting go at once handed the lock to
+       * another tab, which began a round for an account whose session was ending
+       * (every request of it refused). Held, no tab syncs until this one has
+       * said, to all of them, that nobody is signed in.
        */
-      stop() {
+      stop(opts) {
         stopped = true;
         if (timer2 != null) {
           timers.clear(timer2);
@@ -4006,8 +4602,13 @@
           unsubscribe();
           unsubscribe = null;
         }
-        if (abort) abort.abort();
-        if (release) release();
+        if (!(opts && opts.hold)) {
+          if (abort) abort.abort();
+          if (release2) {
+            release2();
+            release2 = null;
+          }
+        }
         leader = false;
         update2({ state: "stopped", leader: false });
         return Promise.resolve(running2).then(() => void 0);
@@ -4020,7 +4621,7 @@
   var ASK_MESSAGE = "sync-ask";
   function summarize({ account, runner, online, differs }) {
     const files2 = differs || [];
-    if (!account) return { signedIn: false, state: files2.length ? "differs" : "off", lastSync: 0, error: null, differs: files2 };
+    if (!account) return { signedIn: false, state: files2.length ? "differs" : "off", lastSync: 0, error: null, reason: null, differs: files2 };
     const st = runner || {};
     let state2;
     if (files2.length) state2 = "differs";
@@ -4032,7 +4633,8 @@
     else if (st.pending) state2 = "pending";
     else if (st.lastSync) state2 = "synced";
     else state2 = "syncing";
-    return { signedIn: true, state: state2, lastSync: st.lastSync || 0, error: st.state === "error" ? st.error || null : null, differs: files2 };
+    const failing2 = state2 === "error";
+    return { signedIn: true, state: state2, lastSync: st.lastSync || 0, error: failing2 ? st.error || null : null, reason: failing2 ? st.reason || null : null, differs: files2 };
   }
   function createSyncStatus(o) {
     const now = o.now || (() => Date.now());
@@ -4070,6 +4672,7 @@
         pending: !!st.pending,
         lastSync: st.lastSync || 0,
         error: st.error || null,
+        reason: st.reason || null,
         safe: !!st.safe,
         held: !!st.held,
         at: now(),
@@ -4182,7 +4785,7 @@
       o.device.set(HELD_ROW, String(o.account));
       o.runner.hold();
     }
-    function waiting() {
+    function waiting2() {
       if (!checking) {
         checking = Promise.resolve().then(() => o.engine.localChanges()).then((list3) => list3.length > 0, () => true).finally(() => {
           checking = null;
@@ -4201,7 +4804,7 @@
           return;
         }
         if (offline(st)) return;
-        waiting().then((any) => {
+        waiting2().then((any) => {
           const now = o.runner.status();
           if (!stopped && !any && now.held && !offline(now)) o.runner.release();
         });
@@ -4216,7 +4819,7 @@
         hold();
         return;
       }
-      waiting().then((any) => {
+      waiting2().then((any) => {
         const now = o.runner.status();
         if (!stopped && any && now.leader && !now.held && asking() && offline(now) && !heldHere()) hold();
       });
@@ -4267,7 +4870,7 @@
       state2.warned = true;
       o.warn();
     }
-    function settle(granted) {
+    function settle2(granted) {
       state2.persisted = !!granted;
       if (!state2.persisted) warnIfAtRisk();
     }
@@ -4285,7 +4888,7 @@
         } catch (err) {
           answer = Promise.reject(err);
         }
-        Promise.resolve(answer).then(settle, () => settle(false));
+        Promise.resolve(answer).then(settle2, () => settle2(false));
       };
       o.events.addEventListener("pointerdown", onClick2, true);
     }
@@ -4328,8 +4931,13 @@
         });
       },
       /** { persisted: true | false | null (not known yet), workToLose, asked, warned } */
+      /**
+       * `atRisk`: Safari may delete what is here (its 7-day rule applies, there
+       * is work to lose, and the browser has not agreed to keep the storage).
+       * That is state, not news: home shows it for as long as it holds.
+       */
       status() {
-        return Object.assign({}, state2);
+        return Object.assign({ atRisk: !!o.sevenDayRule && state2.workToLose && !state2.persisted }, state2);
       },
       dispose() {
         disposed = true;
@@ -4414,33 +5022,66 @@
     return null;
   }
   var sessionArea = browserArea("sessionStorage");
-  var store = createStore({
-    storage: browserArea("localStorage") || createMemoryStorage(),
-    alsoWipe: [sessionArea].filter(Boolean),
-    onCapacity: function(state2, detail2) {
-      if (state2 === "blocked") reportCapacityFailure(detail2);
-      else clearCapacityFailure();
-    },
-    onVersionAhead: function() {
-      announceReadOnly("BelJar was updated in another tab. Reload to keep editing: changes here are not being saved.");
-    },
-    onCannotUpgrade: function() {
-      announceReadOnly("This BelJar can\u2019t open what an older one saved, so it changed nothing. Changes here are not being saved.");
-    }
-  });
+  function openStore(storage, alsoWipe) {
+    return createStore({
+      storage,
+      alsoWipe,
+      migrations: MIGRATIONS,
+      onMissingMigration: "refuse",
+      onCapacity: function(state2, detail2) {
+        if (state2 === "blocked") reportCapacityFailure(detail2);
+        else clearCapacityFailure();
+      },
+      onVersionAhead: function() {
+        announceReadOnly("BelJar was updated in another tab. Reload to keep editing: changes here are not being saved.");
+      },
+      onCannotUpgrade: function() {
+        announceReadOnly("This BelJar can\u2019t open what an older one saved, so it changed nothing. Changes here are not being saved.");
+      }
+    });
+  }
+  var store = openStore(browserArea("localStorage") || createMemoryStorage(), [sessionArea].filter(Boolean));
+  if (store.resetReason === "refused") {
+    store.dispose();
+    store = openStore(createMemoryStorage(), []);
+  }
   var tabStore = createStore({ storage: sessionArea || createMemoryStorage() });
-  var Settings2 = createSettings(store);
-  var Device2 = createTable(store, {
-    key: DEVICE_KEY,
-    rows: DEVICE,
-    unknown: function(id) {
-      return 'device: no row "' + id + '" (declare it in device-schema.mjs)';
-    }
-  });
-  var work = createWork({ store, device: Device2 });
-  var files = create({ work, settings: Settings2 });
-  var documents = createDocuments({ work, settings: Settings2, files });
-  var records = create2({ store, tabStore, work, settings: Settings2 });
+  var Settings2;
+  var Device2;
+  var work;
+  var files;
+  var documents;
+  var records;
+  function compose() {
+    Settings2 = createSettings(store);
+    Device2 = createTable(store, {
+      key: DEVICE_KEY,
+      rows: DEVICE,
+      unknown: function(id) {
+        return 'device: no row "' + id + '" (declare it in device-schema.mjs)';
+      }
+    });
+    work = createWork({ store, device: Device2 });
+    files = create({ work, settings: Settings2 });
+    documents = createDocuments({ work, settings: Settings2, files });
+    records = create2({ store, tabStore, work, settings: Settings2 });
+  }
+  compose();
+  work.finishSignOut();
+  var leaving = null;
+  (function pinToAddress() {
+    var loc = globalThis.location;
+    if (!loc || Routes.pageOf(loc) !== "edit") return;
+    var named = Routes.projectOf(loc);
+    if (!named || work.pinProject(named)) return;
+    leaving = named;
+    store.dispose();
+    tabStore.dispose();
+    store = openStore(createMemoryStorage(), []);
+    tabStore = createStore({ storage: createMemoryStorage() });
+    compose();
+    Routes.go(Routes.homeUrl({ open: named }), { replace: true });
+  })();
   var treeNoticeQueued = false;
   var projectGoneShown = false;
   function noteTreeChanged() {
@@ -4448,15 +5089,19 @@
     treeNoticeQueued = true;
     Promise.resolve().then(function() {
       treeNoticeQueued = false;
-      var g18 = typeof window !== "undefined" ? window : null;
-      if (g18 && typeof g18.dispatchEvent === "function" && typeof CustomEvent === "function") {
-        g18.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
+      var g23 = typeof window !== "undefined" ? window : null;
+      if (g23 && typeof g23.dispatchEvent === "function" && typeof CustomEvent === "function") {
+        g23.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
       }
     });
   }
   function announceProjectGone() {
     if (projectGoneShown) return;
     projectGoneShown = true;
+    if (work.ownerLeft()) {
+      Routes.go(Routes.homeUrl(), { replace: true });
+      return;
+    }
     var message2 = "This project was deleted in another tab or on another device. Changes here can\u2019t be saved.";
     whenPageReady(function() {
       var C2 = globalThis.ConfirmDialog;
@@ -4483,6 +5128,15 @@
     if (k.kind === "meta" && !work.hasProject(pid)) announceProjectGone();
     else if (k.kind === "tree" || k.kind === "meta") noteTreeChanged();
   });
+  if (typeof globalThis.addEventListener === "function") {
+    globalThis.addEventListener("pageshow", function(e) {
+      if (e && e.persisted && globalThis.location && typeof globalThis.location.reload === "function") globalThis.location.reload();
+    });
+    globalThis.addEventListener("pagehide", function() {
+      sendOnHide();
+      stopSync();
+    });
+  }
   var SYNC_NOTICES = {
     copied: function(n) {
       return { kind: "warn", title: "Saved this device\u2019s " + n.from + " as " + n.path, body: "Another device changed the same lines while a conflict here was still open." };
@@ -4528,7 +5182,8 @@
     return !app;
   }
   function announceSevenDays() {
-    if (globalThis.Toasts && typeof globalThis.Toasts.warn === "function") {
+    var onHome = !!globalThis.location && Routes.pageOf(globalThis.location) === "home";
+    if (!onHome && globalThis.Toasts && typeof globalThis.Toasts.warn === "function") {
       globalThis.Toasts.warn(
         "Safari deletes this site\u2019s data after 7 days without a visit. To keep a copy, download your projects from the Project menu.",
         { duration: 0, closable: true, notify: false }
@@ -4567,7 +5222,9 @@
   });
   var syncRunner = null;
   var syncEngine = null;
+  var syncTransport = null;
   var holdPolicy = null;
+  var CLOSING_PAGE_BYTES = 60 * 1024;
   var syncStatus = createSyncStatus({
     account: work.account,
     conflicts: work.listConflicts,
@@ -4587,17 +5244,35 @@
     if (!opts || !opts.transport) throw new Error("Persist.startSync needs a transport (js/persist/sync/protocol.mjs)");
     stopSync();
     var nav = globalThis.navigator;
+    var engineWrites = 0;
     var engine = createSyncEngine({
       store,
       work,
       settings: Settings2,
       transport: opts.transport,
       account,
-      notify: announceSync
+      notify: announceSync,
+      own: function(fn) {
+        engineWrites += 1;
+        try {
+          return fn();
+        } finally {
+          engineWrites -= 1;
+        }
+      }
     });
     syncRunner = createSyncRunner({
       engine,
       store,
+      // A tab nobody can see does not poll (plan v6 c8): a phone in a pocket, a tab behind others.
+      visible: function() {
+        return typeof document === "undefined" || document.visibilityState !== "hidden";
+      },
+      // Not a change waiting to sync: what the engine wrote settling a round (a
+      // project forgotten, a deletion settled).
+      ignore: function() {
+        return engineWrites > 0;
+      },
       locks: opts.locks !== void 0 ? opts.locks : nav && nav.locks || null
     });
     syncEngine = engine;
@@ -4612,18 +5287,49 @@
         return !n || n.onLine !== false;
       }
     });
+    syncTransport = opts.transport;
     syncRunner.start();
     syncStatus.attach(syncRunner);
+    startPollAsk();
     return syncRunner;
   }
-  function stopSync() {
+  var heldRunner = null;
+  function stopSync(opts) {
+    stopPollAsk();
     const r = syncRunner;
     syncRunner = null;
     syncEngine = null;
+    syncTransport = null;
     if (holdPolicy) holdPolicy.stop();
     holdPolicy = null;
     syncStatus.detach();
+    if (opts && opts.hold && r) {
+      heldRunner = r;
+      return r.stop({ hold: true });
+    }
+    if (heldRunner) {
+      heldRunner.stop();
+      heldRunner = null;
+    }
     return r ? r.stop() : Promise.resolve();
+  }
+  function unsyncedProjects(uid) {
+    if (!uid) return Promise.resolve([]);
+    var engine = createSyncEngine({ store, work, settings: Settings2, transport: {}, account: uid });
+    return engine.localChanges().then(function(list3) {
+      return list3.filter(function(c) {
+        return !c.deleted;
+      }).map(function(c) {
+        return c.pid;
+      });
+    });
+  }
+  function restoreVersion(pid, n) {
+    if (!syncEngine) return Promise.resolve({ ok: false, error: "signed-out" });
+    return syncEngine.restoreVersion(pid, n).then(function(res) {
+      if (res && res.ok) syncStatus.confirm();
+      return res;
+    });
   }
   function syncNow() {
     return syncRunner ? syncRunner.syncNow() : Promise.resolve(null);
@@ -4644,7 +5350,44 @@
   });
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
     document.addEventListener("visibilitychange", function() {
-      if (document.visibilityState === "visible") syncNow();
+      if (document.visibilityState === "visible") seenAgain();
+    });
+  }
+  function seenAgain() {
+    if (!syncRunner) return;
+    if (syncRunner.status().leader) syncNow();
+    else syncStatus.confirm();
+  }
+  var POLL_ASK_MS = 6e4;
+  var pollAsk = null;
+  function startPollAsk() {
+    stopPollAsk();
+    if (typeof globalThis.setInterval !== "function" || typeof document === "undefined") return;
+    pollAsk = globalThis.setInterval(function() {
+      if (!syncRunner || document.visibilityState === "hidden" || syncRunner.status().leader) return;
+      syncStatus.confirm();
+    }, POLL_ASK_MS);
+  }
+  function stopPollAsk() {
+    if (pollAsk != null && typeof globalThis.clearInterval === "function") globalThis.clearInterval(pollAsk);
+    pollAsk = null;
+  }
+  function sendOnHide() {
+    if (!syncRunner || !syncTransport) return;
+    var nav = globalThis.navigator;
+    if (nav && nav.onLine === false) return;
+    documents.flushPending();
+    var t = syncTransport;
+    var send = typeof t.commitOnHide === "function" ? function(pid, req) {
+      return t.commitOnHide(pid, req);
+    } : function(pid, req) {
+      return t.commit(pid, req);
+    };
+    syncRunner.flush(send, CLOSING_PAGE_BYTES);
+  }
+  if (typeof globalThis.addEventListener === "function" && typeof document !== "undefined") {
+    globalThis.addEventListener("visibilitychange", function() {
+      if (document.visibilityState === "hidden") sendOnHide();
     });
   }
   var Persist2 = {
@@ -4653,14 +5396,43 @@
     normalizeViewportAnchor,
     isSaveBlocked: store.isBlocked,
     isReadOnly: store.isReadOnly,
+    // The project the address named and this browser cannot show: the page is on its way home.
+    leaving: function() {
+      return leaving;
+    },
     // accounts and sync (docs/PERSIST.md §5)
     getAccount: work.account,
     setAccount: work.setAccount,
     claimProject: work.claimProject,
     projectStats: work.projectStats,
     onFileChange: work.onFileChange,
+    // home's list: fn() whenever a project, its files, a file's text, a file to
+    // review or this browser's device state changes, from this tab or anywhere
+    onProjectsChange: function(fn) {
+      return store.subscribe(function(e) {
+        var k = e && e.key ? parseKey(e.key) : null;
+        if (!e || e.key == null || e.key === DEVICE_KEY || k && (k.kind === "meta" || k.kind === "tree" || k.kind === "f" || k.kind === "conflict")) fn();
+      });
+    },
+    // fn(account) when another tab signs in or out: this tab follows (account.mjs)
+    onAccountElsewhere: function(fn) {
+      var seen2 = work.account();
+      return store.subscribe(function(e) {
+        if (!e || e.key != null && e.key !== DEVICE_KEY) return;
+        var now = work.account();
+        if (now === seen2) return;
+        seen2 = now;
+        if (e.origin !== "local") fn(now);
+      });
+    },
+    ownerLeft: work.ownerLeft,
     removeAccountProjects: work.removeAccountProjects,
+    leaveAccount: work.leaveAccount,
     keepAccountProjects: work.keepAccountProjects,
+    releaseAccount: work.releaseAccount,
+    unsyncedProjects,
+    noteSignedOut: work.noteSignedOut,
+    takeSignedOutNote: work.takeSignedOutNote,
     // signing in again: back to the account's work, not a blank placeholder
     resumeFor: work.resumeFor,
     clearResume: work.clearResume,
@@ -4685,6 +5457,14 @@
     cloudSide: function(pid, fids) {
       return syncEngine ? syncEngine.cloudSide(pid, fids) : Promise.resolve({ state: "unknown", name: null, texts: {} });
     },
+    // Version history (plan v6 c6, js/ui/version-history.mjs): signed in only.
+    projectHistory: function(pid, o) {
+      return syncEngine ? syncEngine.history(pid, o) : Promise.resolve(null);
+    },
+    readVersion: function(pid, n) {
+      return syncEngine ? syncEngine.readVersion(pid, n) : Promise.resolve(null);
+    },
+    restoreVersion,
     useCloud: function(pid) {
       return syncEngine ? syncEngine.useCloud(pid) : Promise.resolve(false);
     },
@@ -4699,6 +5479,23 @@
     createPersist: documents.createPersist,
     // projects
     listProjects: work.listProjects,
+    // home: what there is, without making one; the last one opened; a delete that may empty the list
+    projects: work.visibleProjects,
+    lastProjectId: work.lastProject,
+    projectInUse: work.projectInUse,
+    removeProject: work.removeProject,
+    // a project as files, for its zip: { name, files: [{ path, text }], folders }, or null
+    projectFiles: function(pid) {
+      var snap = work.snapshotProject(pid);
+      if (!snap) return null;
+      return {
+        name: snap.meta.name,
+        files: snap.tree.files.map(function(f) {
+          return { path: f.name, text: snap.texts[f.id] };
+        }),
+        folders: snap.tree.folders.slice()
+      };
+    },
     getActiveProjectId: work.projectId,
     setActiveProjectId: work.setActiveProject,
     createProject: work.createProject,
@@ -4769,11 +5566,11 @@
     postTabMessage: records.postTabMessage,
     onTabMessage: records.onTabMessage
   };
-  var g = typeof window !== "undefined" ? window : globalThis;
-  g.Persist = Persist2;
-  g.Settings = Settings2;
-  g.Device = Device2;
-  g.BelJarPersist = g.Persist;
+  var g2 = typeof window !== "undefined" ? window : globalThis;
+  g2.Persist = Persist2;
+  g2.Settings = Settings2;
+  g2.Device = Device2;
+  g2.BelJarPersist = g2.Persist;
 
   // js/persist/install-edit-history.mjs
   var global2 = globalThis;
@@ -5272,8 +6069,75 @@
       slug: "hover-sticky",
       title: "Sticky hover",
       setting: "hoverSticky"
+    },
+    // ── the two pages ─────────────────────────────────────────────────────────
+    {
+      slug: "start-page",
+      title: "Start page",
+      pages: "both",
+      labels: { home: "Home", last: "Last project" },
+      setting: "startPage"
+    },
+    // ── the account (Settings > Account; the labels are that panel's) ─────────
+    {
+      slug: "sync-settings",
+      title: "Sync settings",
+      verb: "settings sync",
+      pages: "both",
+      needs: "server",
+      setting: "syncSettings"
+    },
+    {
+      slug: "sync-both-changed",
+      title: "Changed in two places",
+      verb: "files changed in two places",
+      pages: "both",
+      needs: "server",
+      labels: { merge: "Merge them", ask: "Ask me" },
+      setting: "syncBothChanged"
+    },
+    {
+      slug: "sync-overlap",
+      title: "Where edits overlap",
+      pages: "both",
+      needs: "server",
+      labels: { ask: "Ask me", mine: "Keep mine", cloud: "Keep the cloud\u2019s" },
+      setting: "syncOverlap"
+    },
+    {
+      slug: "sync-reconnect",
+      title: "Back online",
+      verb: "edits made offline",
+      pages: "both",
+      needs: "server",
+      labels: { upload: "Upload them", ask: "Ask me first" },
+      setting: "syncReconnect"
+    },
+    {
+      slug: "sync-notices",
+      title: "Say when you go offline",
+      verb: "offline notices",
+      pages: "both",
+      needs: "server",
+      setting: "syncNotices"
+    },
+    {
+      slug: "sign-out-keep",
+      title: "Projects in this browser",
+      verb: "projects kept on sign-out",
+      pages: "both",
+      needs: "server",
+      labels: { remove: "Remove them", keep: "Keep them" },
+      setting: "signOutKeep"
     }
   ];
+  function serverAnswers() {
+    const A = globalThis.Account;
+    return !!(A && typeof A.available === "function" && A.available());
+  }
+  function offered(s) {
+    return s.needs !== "server" || serverAnswers();
+  }
   var SETTINGS2 = ROWS.map((r) => {
     const row = settingRow(r.setting);
     if (!row) throw new Error(`command-settings: "${r.slug}" names no setting "${r.setting}"`);
@@ -5293,12 +6157,13 @@
       section: "Settings",
       scope: "global",
       keybindable: true,
-      palette: true
+      palette: true,
+      pages: s.pages || "editor"
     }));
   }
   function optionNames() {
     const out = [];
-    for (const s of SETTINGS2) {
+    for (const s of SETTINGS2.filter(offered)) {
       out.push(s.slug);
       for (const a of s.aliases || []) out.push(a);
     }
@@ -5306,11 +6171,11 @@
   }
   function optionCandidates() {
     const out = [];
-    for (const s of SETTINGS2) {
+    for (const s of SETTINGS2.filter(offered)) {
       out.push({ value: s.slug, label: s.title });
       for (const a of s.aliases || []) out.push({ value: a, label: s.title });
     }
-    for (const s of SETTINGS2) {
+    for (const s of SETTINGS2.filter(offered)) {
       if (s.kind !== "bool" && s.off === void 0) continue;
       out.push({ value: "no" + s.slug, label: s.title + " (off)" });
       for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " (off)" });
@@ -5329,7 +6194,8 @@
     const key = String(name == null ? "" : name).toLowerCase();
     if (!key) return null;
     const bare = key.startsWith("set.") ? key.slice(4) : key;
-    return SETTINGS2.find((s) => s.slug === bare) || SETTINGS2.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
+    const here = SETTINGS2.filter(offered);
+    return here.find((s) => s.slug === bare) || here.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
   }
   function nextValue(spec, current, requested) {
     if (!spec) return null;
@@ -5445,16 +6311,18 @@
   }
 
   // js/commands/command-catalog.mjs
-  var CATALOG = [
+  var ROWS2 = [
     // ── File ───────────────────────────────────────────────────────────────────
     { id: "project.new", title: "New Project\u2026", section: "File", scope: "global", palette: true },
-    { id: "file.new", title: "New file\u2026", section: "File", scope: "global", palette: true },
+    { id: "file.new", title: "New File\u2026", section: "File", scope: "global", palette: true },
     { id: "file.upload", title: "Upload File", section: "File", scope: "global", palette: true },
     { id: "file.upload-folder", title: "Upload Folder", section: "File", scope: "global", palette: true },
     { id: "file.import-folder", title: "Import Folder as New Project", section: "File", scope: "global", palette: true },
     { id: "file.download", title: "Download Current File", section: "File", scope: "global", palette: true },
     // The whole project as a zip: how work outlives a browser that clears its storage.
     { id: "project.download", title: "Download Project", section: "File", scope: "global", palette: true },
+    // Every version the cloud keeps, and Restore (js/ui/version-history.mjs): signed in only.
+    { id: "project.history", title: "Version History", section: "File", scope: "global", palette: true },
     { id: "tab.next", title: "Next Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bn"] },
     { id: "tab.prev", title: "Previous Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bp"] },
     { id: "tab.close", title: "Close Tab", section: "File", scope: "global", palette: true, keybindable: true },
@@ -5912,6 +6780,37 @@
       ex: ["harpoon"],
       styles: { vim: "always" }
     },
+    // Case completion (docs/case-completion.md). The missing cases of a proof are filled
+    // in the background and drawn as faint arms; these act on the one whose ghost hangs
+    // from the caret's line, else on every one of the proof under the caret. Gated on
+    // there being something to act on, so the palette stays quiet otherwise.
+    {
+      id: "prover.case-accept",
+      title: "Accept Filled Case",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "prover.case-fill",
+      title: "Fill This Case",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "prover.case-dismiss",
+      title: "Dismiss Filled Case",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
     // Reading the proof state, from the editor. Not gated on standing IN a hole:
     // "how many are left" is a question you ask from anywhere in the file.
     {
@@ -6101,6 +7000,10 @@
      * flush every buffer to storage, so a reload loses nothing.
      */
     { id: "app.reload", title: "Reload BelJar", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["reload", "refresh"] },
+    // Home: your projects and the account (index.html). The brand in the header
+    // is the same link; this is its name, for the palette and the command line.
+    { id: "app.home", title: "Go Home", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["home"] },
+    { id: "app.report-issue", title: "Report an Issue", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "cmdline.repeat", title: "Repeat Last Command", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "cmdline.open", title: "Command Line", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "tools.palette", title: "Open Command Palette", section: "Tools", scope: "global", palette: true, shortcut: "Mod+K" },
@@ -6125,6 +7028,22 @@
       styles: { emacs: "off" }
     }
   ];
+  var HOME_TOO = [
+    "project.new",
+    "file.import-folder",
+    "nav.anywhere",
+    "view.theme",
+    "account.sign-in",
+    "account.sign-out",
+    "sync.now",
+    "sync.review",
+    "sync.review-offline",
+    "app.reload",
+    "app.report-issue",
+    "tools.palette",
+    "tools.commands"
+  ];
+  var CATALOG = ROWS2.map((row) => Object.assign({ pages: HOME_TOO.includes(row.id) ? "both" : "editor" }, row));
 
   // js/commands/command-shadows.mjs
   var STYLE_TAKES = {
@@ -6292,10 +7211,10 @@
     const d = doc(given);
     return d && d.activeElement ? d.activeElement : null;
   }
-  function closestFrom(el8, selector) {
-    if (!el8 || typeof el8.closest !== "function") return null;
+  function closestFrom(el9, selector) {
+    if (!el9 || typeof el9.closest !== "function") return null;
     try {
-      return el8.closest(selector);
+      return el9.closest(selector);
     } catch (_) {
       return null;
     }
@@ -6351,6 +7270,14 @@
   var order = [];
   var byId = /* @__PURE__ */ Object.create(null);
   var version = 0;
+  function currentPage() {
+    const routes = global4.Routes;
+    if (!routes || typeof routes.pageOf !== "function" || !global4.location) return null;
+    return routes.pageOf(global4.location) === "edit" ? "editor" : "home";
+  }
+  function runsOn(cmd, page) {
+    return !page || cmd.pages === "both" || cmd.pages === page;
+  }
   function normalize(record) {
     const id = String(record.id);
     return Object.assign({}, record, {
@@ -6358,6 +7285,7 @@
       title: titleFor(id, record.title),
       section: record.section || "",
       scope: record.scope || "global",
+      pages: record.pages === "home" || record.pages === "both" ? record.pages : "editor",
       keybindable: !!record.keybindable,
       palette: !!record.palette,
       cmdline: record.cmdline === false ? false : true,
@@ -6372,7 +7300,13 @@
     if (!id) return false;
     const prev = byId[id];
     if (!prev) order.push(id);
-    byId[id] = normalize(Object.assign({}, prev || {}, desc, { id }));
+    const next = normalize(Object.assign({}, prev || {}, desc, { id }));
+    if (!runsOn(next, currentPage())) {
+      delete next.run;
+      delete next.when;
+      delete next.preview;
+    }
+    byId[id] = next;
     version += 1;
     return true;
   }
@@ -6424,6 +7358,7 @@
       if (f.cmdline === true && !cmd.cmdline) continue;
       if (f.runnable === true && typeof cmd.run !== "function") continue;
       if (f.scope && cmd.scope !== f.scope) continue;
+      if (f.page && !runsOn(cmd, f.page)) continue;
       if (f.section && cmd.section !== f.section) continue;
       if (f.available === true && !isAvailable(cmd, f.ctx)) continue;
       out.push(cmd);
@@ -6531,6 +7466,13 @@
     run,
     styleFor,
     idsWithStyle,
+    /** 'home' | 'editor', or null with no page (tests). */
+    page: currentPage,
+    /** Whether `id` runs on this page (its `pages` in the catalogue). */
+    runsHere(id) {
+      const cmd = get(id);
+      return !!cmd && runsOn(cmd, currentPage());
+    },
     // The preference table, so the editor's `:set` resolves through the same
     // source as the palette rows without importing across the bundle seam.
     settings: {
@@ -6627,6 +7569,15 @@
     return names.slice(0, max).join(", ") + " and " + (names.length - max) + " more";
   }
   var runVisible = (s) => !!(s.run && s.run.elapsedMs >= RUN_QUIET_MS);
+  function suiteHoles(here, elsewhere) {
+    if (!elsewhere) return "";
+    const total = here + elsewhere.reduce((n, x) => n + x.holes, 0);
+    if (!total) return "No holes in the suite";
+    const head = plural(total, "hole", "holes") + " in the suite";
+    if (!elsewhere.length) return head + ", all here";
+    const parts = (here ? [here + " here"] : []).concat(elsewhere.map((x) => x.holes + " in " + x.name));
+    return head + ": " + nameList(parts);
+  }
   function plural(n, one, many) {
     return n + " " + (n === 1 ? one : many);
   }
@@ -6797,9 +7748,10 @@
       const n = s.holes || 0;
       if (!n) return null;
       const rest = s.inHole ? n - 1 : n;
+      if (!rest) return null;
       return {
         key: "holes",
-        text: s.inHole ? rest > 0 ? "+" + rest + " more" : "last hole" : plural(n, "hole", "holes"),
+        text: s.inHole ? "+" + rest + " more" : plural(n, "hole", "holes"),
         title: "Go to the next hole",
         tone: "holes",
         action: "next-hole"
@@ -6918,6 +7870,7 @@
       const lines = [
         placed ? "File " + (x.index + 1) + " of " + x.count + " in suite " + x.name : "Suite " + x.name,
         upstream.length ? (upstream.length === 1 ? "An earlier file has errors: " : "Earlier files have errors: ") + nameList(upstream) : "",
+        suiteHoles(s.holes || 0, x.elsewhere),
         "Reveal in Explorer"
       ];
       return {
@@ -6945,8 +7898,8 @@
       return { key: "redo", icon: "redo", title: "Redo", command: "edit.redo", action: "redo", disabled: !s.redoDepth };
     },
     /**
-     * The way into the edit-history panel. A waiting redo branch is a tone
-     * change, spelled out in the panel — not a number beside the icon.
+     * The way into the edit-history panel. A waiting redo branch is spelled out
+     * in the panel — not a tone change or a number beside the icon.
      */
     history(s) {
       const undo = s.undoDepth || 0;
@@ -6959,7 +7912,7 @@
         // bright pink, which read as an error badge sitting next to the checker.
         icon: "history",
         title: "Edit history",
-        tone: redo ? "branched" : "plain",
+        tone: "plain",
         action: "edit-history",
         pressed: !!s.historyOpen
       };
@@ -7053,8 +8006,8 @@
   }
 
   // js/status-strip/status-strip-complete.mjs
-  function score(query2, text) {
-    const q = String(query2 || "").toLowerCase();
+  function score(query3, text) {
+    const q = String(query3 || "").toLowerCase();
     const t = String(text || "");
     const tl = t.toLowerCase();
     if (!q) return 0;
@@ -7076,21 +8029,21 @@
     if (tl.startsWith(q)) s += 8;
     return s;
   }
-  function labelScore(query2, label) {
+  function labelScore(query3, label) {
     const t = String(label || "").toLowerCase();
-    const at = t.indexOf(String(query2 || "").toLowerCase());
+    const at = t.indexOf(String(query3 || "").toLowerCase());
     if (at < 0) return -1;
     const before = at > 0 ? t[at - 1] : "";
     return at === 0 ? 6 : before === " " || before === "-" ? 4 : 1;
   }
-  function rank(query2, entries, limit) {
-    if (!query2) return entries.slice(0, limit || 30);
+  function rank(query3, entries, limit) {
+    if (!query3) return entries.slice(0, limit || 30);
     const scored = [];
     for (let i = 0; i < entries.length; i += 1) {
       const e = entries[i];
-      let best = score(query2, e.value);
-      for (const alias of e.aliases || []) best = Math.max(best, score(query2, alias));
-      best = Math.max(best, labelScore(query2, e.label));
+      let best = score(query3, e.value);
+      for (const alias of e.aliases || []) best = Math.max(best, score(query3, alias));
+      best = Math.max(best, labelScore(query3, e.label));
       if (best >= 0) scored.push({ e, best, i });
     }
     scored.sort((a, b) => b.best - a.best || a.i - b.i);
@@ -7171,10 +8124,7 @@
     return { text: next, caret: span.from + String(value).length };
   }
 
-  // js/status-strip/status-strip-line-ui.mjs
-  var global5 = globalThis;
-  var HISTORY_CAP = 50;
-  var LIST_CAP = 30;
+  // js/ui/list-step.mjs
   var LIST_STEP = { n: 1, m: 1, p: -1 };
   var LIST_PAGE = 8;
   function stepLetter(e) {
@@ -7202,6 +8152,11 @@
     }
     return 0;
   }
+
+  // js/status-strip/status-strip-line-ui.mjs
+  var global5 = globalThis;
+  var HISTORY_CAP = 50;
+  var LIST_CAP = 30;
   var host = null;
   var input = null;
   var ghostEl = null;
@@ -7210,7 +8165,7 @@
   var items = [];
   var active = -1;
   var chosen = false;
-  var query = "";
+  var query2 = "";
   var lastToken = null;
   var lastKind = "";
   var lastKnown = null;
@@ -7409,11 +8364,11 @@
     savedScroll = null;
     if (!view || !view.scrollDOM) return;
     view.scrollDOM.scrollTop = target;
-    const settle = () => {
+    const settle2 = () => {
       if (view.dom.isConnected) view.scrollDOM.scrollTop = target;
     };
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(settle);
-    setTimeout(settle, 40);
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(settle2);
+    setTimeout(settle2, 40);
   }
   function fitWholeRows(cap) {
     const first = listEl && listEl.firstElementChild;
@@ -7441,13 +8396,13 @@
     return exInput || input;
   }
   function syncActiveDescendant() {
-    const el8 = activeInput();
-    if (!el8 || !listEl) return;
+    const el9 = activeInput();
+    if (!el9 || !listEl) return;
     if (active < 0 || listEl.hidden) {
-      el8.removeAttribute("aria-activedescendant");
+      el9.removeAttribute("aria-activedescendant");
       return;
     }
-    el8.setAttribute("aria-activedescendant", "jar-cmdline-opt-" + active);
+    el9.setAttribute("aria-activedescendant", "jar-cmdline-opt-" + active);
   }
   function bindListListeners() {
     if (listListeners || typeof window === "undefined") return;
@@ -7499,7 +8454,7 @@
   };
   function renderList() {
     if (!listEl) return;
-    if (searchDir || !query.trim() && !forced && !hinting) {
+    if (searchDir || !query2.trim() && !forced && !hinting) {
       hideList();
       return;
     }
@@ -7564,10 +8519,10 @@
     if (!view) return;
     view.dispatch({ selection: { anchor: hit.from, head: hit.to }, scrollIntoView: true });
   }
-  function completeInto(el8) {
-    const caret = el8.selectionStart == null ? el8.value.length : el8.selectionStart;
-    const res = complete(el8.value, caret, commandSources(el8 === exInput ? "vim" : "own"));
-    query = el8.value;
+  function completeInto(el9) {
+    const caret = el9.selectionStart == null ? el9.value.length : el9.selectionStart;
+    const res = complete(el9.value, caret, commandSources(el9 === exInput ? "vim" : "own"));
+    query2 = el9.value;
     items = res.items.slice(0, LIST_CAP);
     lastToken = res.token || null;
     lastKnown = res.parsed && res.parsed.slot > 0 ? !!res.known : null;
@@ -7578,7 +8533,7 @@
   }
   function markUnknown() {
     if (!input) return;
-    const typed2 = query.trim();
+    const typed2 = query2.trim();
     if (!typed2 || /^\d/.test(typed2)) {
       input.classList.remove("is-unknown");
       return;
@@ -7587,11 +8542,11 @@
     input.classList.toggle("is-unknown", unknown);
   }
   function forceList() {
-    const el8 = activeInput();
-    if (!el8 || searchDir) return false;
+    const el9 = activeInput();
+    if (!el9 || searchDir) return false;
     forced = true;
     hinting = false;
-    if (el8 === exInput) refreshEx();
+    if (el9 === exInput) refreshEx();
     else refresh();
     return true;
   }
@@ -7604,7 +8559,7 @@
     if (!open) return;
     if (searchDir) {
       searchStep(searchDir === "/" ? searchAnchor - 1 : searchAnchor, searchDir === "/");
-      query = "";
+      query2 = "";
       items = [];
       active = -1;
       hideList();
@@ -7617,15 +8572,15 @@
     renderList();
   }
   function accept(index) {
-    const el8 = activeInput();
+    const el9 = activeInput();
     const it = items[index == null ? Math.max(active, 0) : index];
-    if (!it || !el8) return false;
-    const caret = el8.selectionStart == null ? el8.value.length : el8.selectionStart;
-    const next = applyCompletion(el8.value, caret, it.value, lastToken);
-    el8.value = next.text;
-    el8.setSelectionRange(next.caret, next.caret);
+    if (!it || !el9) return false;
+    const caret = el9.selectionStart == null ? el9.value.length : el9.selectionStart;
+    const next = applyCompletion(el9.value, caret, it.value, lastToken);
+    el9.value = next.text;
+    el9.setSelectionRange(next.caret, next.caret);
     resetCycle();
-    if (el8 === exInput) refreshEx();
+    if (el9 === exInput) refreshEx();
     else refresh();
     return true;
   }
@@ -7638,12 +8593,12 @@
     wildItems = [];
   }
   function tabCycle(back) {
-    const el8 = activeInput();
-    if (!el8) return false;
+    const el9 = activeInput();
+    if (!el9) return false;
     if (wildStem == null) {
       if (!items.length) return false;
-      const caret = el8.selectionStart == null ? el8.value.length : el8.selectionStart;
-      const token = tokenAtCaret(parseCommandLine(el8.value, caret));
+      const caret = el9.selectionStart == null ? el9.value.length : el9.selectionStart;
+      const token = tokenAtCaret(parseCommandLine(el9.value, caret));
       wildStem = { from: token.from, to: token.to };
       wildItems = items.slice();
       wildAt = back ? wildItems.length - 1 : 0;
@@ -7656,13 +8611,13 @@
       return false;
     }
     const caretAt = wildStem.from + it.value.length;
-    el8.value = el8.value.slice(0, wildStem.from) + it.value + el8.value.slice(wildStem.to);
-    el8.setSelectionRange(caretAt, caretAt);
+    el9.value = el9.value.slice(0, wildStem.from) + it.value + el9.value.slice(wildStem.to);
+    el9.setSelectionRange(caretAt, caretAt);
     wildStem = { from: wildStem.from, to: caretAt };
     lastToken = { text: it.value, from: wildStem.from, to: caretAt };
     active = items.indexOf(it);
     chosen = true;
-    if (ghostEl && el8 === input) ghostEl.textContent = "";
+    if (ghostEl && el9 === input) ghostEl.textContent = "";
     paintActive();
     return true;
   }
@@ -7688,14 +8643,14 @@
     completeInto(exInput);
     renderList();
   }
-  function attachExCompletion(el8) {
-    if (!el8) return false;
-    if (exInput === el8) {
+  function attachExCompletion(el9) {
+    if (!el9) return false;
+    if (exInput === el9) {
       refreshEx();
       return true;
     }
     detachExCompletion();
-    exInput = el8;
+    exInput = el9;
     exOnInput = () => {
       resetCycle();
       refreshEx();
@@ -7724,19 +8679,19 @@
       if (e.key === "Enter" && chosen && active >= 0) {
         accept();
         hideList();
-        remember(el8.value);
+        remember(el9.value);
         return;
       }
-      if (e.key === "Enter") remember(el8.value);
+      if (e.key === "Enter") remember(el9.value);
       if (e.key === "Escape") {
         hideList();
         return;
       }
     };
     exOnBlur = () => hideList();
-    el8.addEventListener("input", exOnInput);
-    el8.addEventListener("keydown", exOnKeydown, true);
-    el8.addEventListener("blur", exOnBlur);
+    el9.addEventListener("input", exOnInput);
+    el9.addEventListener("keydown", exOnKeydown, true);
+    el9.addEventListener("blur", exOnBlur);
     refreshEx();
     return true;
   }
@@ -7751,7 +8706,7 @@
     exOnBlur = null;
     items = [];
     active = -1;
-    query = "";
+    query2 = "";
     chosen = false;
     resetCycle();
     hideList();
@@ -7880,7 +8835,7 @@
     countEl.textContent = "";
     items = [];
     active = -1;
-    query = "";
+    query2 = "";
     hideList();
     const ed = global5.CurrentEditor;
     const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
@@ -7922,7 +8877,7 @@
     items = [];
     active = -1;
     chosen = false;
-    query = "";
+    query2 = "";
     resetCycle();
     hideList();
     if (countEl) countEl.textContent = "";
@@ -7962,7 +8917,7 @@
       return false;
     }
     hinting = true;
-    query = "";
+    query2 = "";
     items = rows2.map((r) => ({ value: r.key, label: r.title }));
     active = -1;
     chosen = false;
@@ -7974,7 +8929,7 @@
     hinting = false;
     items = [];
     active = -1;
-    query = "";
+    query2 = "";
     hideList();
     return true;
   }
@@ -7987,6 +8942,7 @@
     rename: "Rename",
     hole: "Fill hole",
     "proof-commit": "Commit proof",
+    "case-arm": "Accept filled case",
     "library-insert": "Insert from library",
     "file-batch": "Add files",
     "file-delete": "Delete files"
@@ -8215,14 +9171,14 @@
       marker.appendChild(text);
       return marker;
     }
-    const el8 = document.createElement("button");
-    el8.type = "button";
-    el8.className = "jar-hist__row" + (row.ahead ? " is-ahead" : "");
-    el8.setAttribute("role", "option");
-    el8.setAttribute("aria-selected", "false");
-    el8.dataset.index = String(index);
-    el8.dataset.direction = row.direction;
-    el8.dataset.distance = String(row.distance);
+    const el9 = document.createElement("button");
+    el9.type = "button";
+    el9.className = "jar-hist__row" + (row.ahead ? " is-ahead" : "");
+    el9.setAttribute("role", "option");
+    el9.setAttribute("aria-selected", "false");
+    el9.dataset.index = String(index);
+    el9.dataset.direction = row.direction;
+    el9.dataset.distance = String(row.distance);
     const label = document.createElement("span");
     label.className = "jar-hist__label";
     if (row.preview) {
@@ -8238,23 +9194,23 @@
     } else {
       label.textContent = row.label;
     }
-    el8.appendChild(label);
+    el9.appendChild(label);
     if (row.where) {
       const where = document.createElement("span");
       where.className = "jar-hist__where";
       where.textContent = row.where;
-      el8.appendChild(where);
+      el9.appendChild(where);
     }
     const when = document.createElement("span");
     when.className = "jar-hist__when";
     when.textContent = row.when || "";
-    el8.appendChild(when);
+    el9.appendChild(when);
     const tipLines = [row.label];
     if (row.files && row.files.length > 1) tipLines.push("", ...row.files);
-    el8.setAttribute("data-tooltip", tipLines.join("\n"));
-    el8.setAttribute("aria-label", row.label + (row.where ? ", " + row.where : ""));
-    global6.Tooltips?.bind?.(el8);
-    return el8;
+    el9.setAttribute("data-tooltip", tipLines.join("\n"));
+    el9.setAttribute("aria-label", row.label + (row.where ? ", " + row.where : ""));
+    global6.Tooltips?.bind?.(el9);
+    return el9;
   }
   function render() {
     const H = history3();
@@ -8281,8 +9237,8 @@
       nodes[i].classList.toggle("is-active", on);
       nodes[i].setAttribute("aria-selected", on ? "true" : "false");
     }
-    const el8 = nodes[active2];
-    if (el8 && typeof el8.scrollIntoView === "function") el8.scrollIntoView({ block: "nearest" });
+    const el9 = nodes[active2];
+    if (el9 && typeof el9.scrollIntoView === "function") el9.scrollIntoView({ block: "nearest" });
   }
   function travelTo(index) {
     const row = rows[index];
@@ -8437,17 +9393,17 @@
   var onChanged2 = null;
   var anchor2 = () => anchorAbove(panelEl2, ".jar-strip__seg--keymap", "left", ".jar-style__name");
   function rowEl2(style, index, current) {
-    const el8 = document.createElement("button");
-    el8.type = "button";
-    el8.className = "jar-style__row" + (current ? " is-current" : "");
-    el8.setAttribute("role", "option");
-    el8.setAttribute("aria-selected", current ? "true" : "false");
-    el8.dataset.index = String(index);
+    const el9 = document.createElement("button");
+    el9.type = "button";
+    el9.className = "jar-style__row" + (current ? " is-current" : "");
+    el9.setAttribute("role", "option");
+    el9.setAttribute("aria-selected", current ? "true" : "false");
+    el9.dataset.index = String(index);
     const name = document.createElement("span");
     name.className = "jar-style__name";
     name.textContent = style.name;
-    el8.appendChild(name);
-    return el8;
+    el9.appendChild(name);
+    return el9;
   }
   function build2() {
     panelEl2 = document.createElement("div");
@@ -8605,7 +9561,7 @@
     sync: null,
     /** `{ total, done, unfinished }` — the engine's `proofProgress()`. */
     proofs: null,
-    /** `{ name, index, count, upstreamErrors }` while the file is a suite member. */
+    /** `{ name, index, count, elsewhere, upstreamErrors }` while the file is a suite member. */
     suite: null,
     /** `{ label, elapsedMs }` while an explicit Run can be stopped. */
     run: null
@@ -8738,45 +9694,45 @@
       gap.className = "jar-strip__spacer";
       return gap;
     }
-    const el8 = document.createElement(seg.action ? "button" : "span");
-    el8.className = "jar-strip__seg jar-strip__seg--" + seg.key + (seg.tone ? " is-" + seg.tone : "") + (seg.mono ? " is-mono" : "") + (seg.dot ? " is-dot" : "") + (seg.grow ? " is-grow" : "") + (seg.hint ? " is-hint" : "") + (seg.text || seg.render ? "" : " is-icon");
+    const el9 = document.createElement(seg.action ? "button" : "span");
+    el9.className = "jar-strip__seg jar-strip__seg--" + seg.key + (seg.tone ? " is-" + seg.tone : "") + (seg.mono ? " is-mono" : "") + (seg.dot ? " is-dot" : "") + (seg.grow ? " is-grow" : "") + (seg.hint ? " is-hint" : "") + (seg.text || seg.render ? "" : " is-icon");
     if (seg.action) {
-      el8.type = "button";
-      el8.dataset.action = seg.action;
+      el9.type = "button";
+      el9.dataset.action = seg.action;
     }
-    if (seg.disabled) el8.setAttribute("aria-disabled", "true");
+    if (seg.disabled) el9.setAttribute("aria-disabled", "true");
     if (seg.title) {
-      el8.setAttribute("data-tooltip", seg.title);
-      el8.setAttribute("aria-label", seg.title);
-      global9.Tooltips?.bind?.(el8);
+      el9.setAttribute("data-tooltip", seg.title);
+      el9.setAttribute("aria-label", seg.title);
+      global9.Tooltips?.bind?.(el9);
     }
-    if (seg.pressed != null) el8.setAttribute("aria-expanded", seg.pressed ? "true" : "false");
-    if (seg.pressed) el8.classList.add("is-open");
-    if (seg.dot) el8.appendChild(statusDot());
-    if (seg.meter != null) el8.appendChild(meterEl(seg.meter));
+    if (seg.pressed != null) el9.setAttribute("aria-expanded", seg.pressed ? "true" : "false");
+    if (seg.pressed) el9.classList.add("is-open");
+    if (seg.dot) el9.appendChild(statusDot());
+    if (seg.meter != null) el9.appendChild(meterEl(seg.meter));
     if (seg.icon) {
       const glyph = iconEl(seg.icon);
-      if (glyph) el8.appendChild(glyph);
+      if (glyph) el9.appendChild(glyph);
     }
     if (seg.mark) {
       const mark = document.createElement("span");
       mark.className = "jar-strip__mark";
       mark.textContent = seg.mark;
-      el8.appendChild(mark);
+      el9.appendChild(mark);
     }
-    if (!seg.text && !seg.render) return el8;
+    if (!seg.text && !seg.render) return el9;
     const label = document.createElement("span");
     label.className = "jar-strip__label";
     if (seg.render === "type") renderType(label, seg.text);
     else label.textContent = seg.text || "";
-    el8.appendChild(label);
+    el9.appendChild(label);
     if (seg.sub) {
       const sub = document.createElement("span");
       sub.className = "jar-strip__sub";
       sub.textContent = seg.sub;
-      el8.appendChild(sub);
+      el9.appendChild(sub);
     }
-    return el8;
+    return el9;
   }
   function withKeys(seg) {
     const keys = seg.command ? liveKeyLabel(seg.command) : "";
@@ -9080,11 +10036,11 @@
   function suiteState() {
     if (!suiteBase) return null;
     const prev = state.suite;
-    const same = prev && prev.name === suiteBase.name && prev.index === suiteBase.index && prev.count === suiteBase.count && prev.upstreamErrors.join("\n") === upstreamErrors.join("\n");
-    return same ? prev : { ...suiteBase, upstreamErrors: upstreamErrors.slice() };
+    const next = { ...suiteBase, upstreamErrors: upstreamErrors.slice() };
+    return prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
   }
   function setSuite(next) {
-    suiteBase = next && next.name ? { name: next.name, index: next.index, count: next.count } : null;
+    suiteBase = next && next.name ? { name: next.name, index: next.index, count: next.count, elsewhere: next.elsewhere || null } : null;
     if (!suiteBase) upstreamErrors = [];
     setEditorState({ suite: suiteState() });
   }
@@ -9159,11 +10115,19 @@
     closeCommandLine: close,
     setOrca,
     /**
+     * Whether Orca is searching, as the lab last said. Read by the case-completion
+     * scheduler, which waits rather than search beside it; the lab stays the authority.
+     */
+    isOrcaRunning: () => !!state.orca,
+    /**
      * A second tab has this project open. The tab guard raises it when that tab
      * answers, and lowers it when the tab says goodbye.
      */
     setTabConflict: (on) => setEditorState({ tabConflict: !!on }),
-    /** `{ name, index, count }` while the active file is a member of a suite, else null. */
+    /**
+     * `{ name, index, count, elsewhere }` while the active file is a member of a
+     * suite, else null. `elsewhere` is `[{ name, holes }]` for the OTHER members.
+     */
     setSuite,
     /** `{ label }` while an explicit Run can be stopped, else null. */
     setRun,
@@ -10006,8 +10970,8 @@
   }
   function defaultActiveCfgForDir(dir) {
     const d = dir != null ? String(dir) : "";
-    const g18 = typeof globalThis !== "undefined" ? globalThis : {};
-    const P3 = g18.Persist;
+    const g23 = typeof globalThis !== "undefined" ? globalThis : {};
+    const P3 = g23.Persist;
     if (P3 && typeof P3.getActiveCfgForDir === "function") {
       const path = P3.getActiveCfgForDir(d);
       if (path) {
@@ -10032,8 +10996,8 @@
   }
   function defaultActiveCfgsForDir(dir) {
     const d = dir != null ? String(dir) : "";
-    const g18 = typeof globalThis !== "undefined" ? globalThis : {};
-    const P3 = g18.Persist;
+    const g23 = typeof globalThis !== "undefined" ? globalThis : {};
+    const P3 = g23.Persist;
     if (P3 && typeof P3.getActiveCfgsForDir === "function") {
       const list3 = P3.getActiveCfgsForDir(d);
       if (list3?.length) {
@@ -10229,12 +11193,12 @@
     );
     out = out.replace(
       /([^\s:"]+)\.bel:(\d+)\.(\d+)(?:-(\d+)\.(\d+))?:/g,
-      (whole, _fname, sl, sc, el8, ec) => {
+      (whole, _fname, sl, sc, el9, ec) => {
         const start = mapLine(spans, +sl);
         if (!start) return whole;
         let token = `${start.name}:${start.line}.${sc}`;
-        if (el8 != null) {
-          const end = mapLine(spans, +el8);
+        if (el9 != null) {
+          const end = mapLine(spans, +el9);
           if (!end || end.id !== start.id) return whole;
           token += `-${end.line}.${ec}`;
         }
@@ -10572,12 +11536,12 @@
     });
     out = out.replace(
       /([^\s:"]+)\.bel:(\d+)\.(\d+)(?:-(\d+)\.(\d+))?:/g,
-      (whole, fname, sl, sc, el8, ec, idx, src) => {
+      (whole, fname, sl, sc, el9, ec, idx, src) => {
         const SL = +sl;
         if (SL > offset) {
-          const EL = el8 != null ? +el8 - offset : null;
-          if (el8 != null && EL < 1) return whole;
-          return `${fname}.bel:${SL - offset}.${sc}${el8 != null ? `-${EL}.${ec}` : ""}:`;
+          const EL = el9 != null ? +el9 - offset : null;
+          if (el9 != null && EL < 1) return whole;
+          return `${fname}.bel:${SL - offset}.${sc}${el9 != null ? `-${EL}.${ec}` : ""}:`;
         }
         const hit = preludeFileAt(prelude.spans, SL);
         if (hit) noteIssue(hit, src, idx + whole.length);
@@ -10596,9 +11560,9 @@
     );
     return { text: out, preludeIssues: issues };
   }
-  function scanProjectText(files2, query2, limit) {
+  function scanProjectText(files2, query3, limit) {
     const cap = limit || 60;
-    const q = String(query2 || "").toLowerCase();
+    const q = String(query3 || "").toLowerCase();
     if (!q) return [];
     const out = [];
     for (const f of files2) {
@@ -10685,9 +11649,9 @@
     shiftCheckerOutput,
     scanProjectText
   };
-  var g2 = typeof window !== "undefined" ? window : globalThis;
-  g2.ProjectSource = ProjectSource2;
-  g2.BelJarProjectSource = g2.ProjectSource;
+  var g3 = typeof window !== "undefined" ? window : globalThis;
+  g3.ProjectSource = ProjectSource2;
+  g3.BelJarProjectSource = g3.ProjectSource;
 
   // js/workspace/workspace-state.mjs
   var SCHEMA_VERSION = 1;
@@ -10939,9 +11903,9 @@
     mergeFloatingSnapshots,
     clampGeom
   };
-  var g3 = typeof window !== "undefined" ? window : globalThis;
-  g3.WorkspaceState = WorkspaceState2;
-  g3.BelJarWorkspaceState = g3.WorkspaceState;
+  var g4 = typeof window !== "undefined" ? window : globalThis;
+  g4.WorkspaceState = WorkspaceState2;
+  g4.BelJarWorkspaceState = g4.WorkspaceState;
 
   // js/workspace/workspace-split.mjs
   var STACK_MQ = "(max-width: 48rem)";
@@ -11103,9 +12067,9 @@
     }, dispose };
   }
   var WorkspaceSplit2 = { init: init3, dispose };
-  var g4 = typeof window !== "undefined" ? window : globalThis;
-  g4.WorkspaceSplit = WorkspaceSplit2;
-  g4.BelJarWorkspaceSplit = g4.WorkspaceSplit;
+  var g5 = typeof window !== "undefined" ? window : globalThis;
+  g5.WorkspaceSplit = WorkspaceSplit2;
+  g5.BelJarWorkspaceSplit = g5.WorkspaceSplit;
 
   // js/workspace/side-panel-resize.mjs
   var STACK_MQ2 = "(max-width: 48rem)";
@@ -11307,9 +12271,9 @@
     return { refresh: refreshAll, dispose: dispose2 };
   }
   var SidePanelResize2 = { init: init4, dispose: dispose2 };
-  var g5 = typeof window !== "undefined" ? window : globalThis;
-  g5.SidePanelResize = SidePanelResize2;
-  g5.BelJarSidePanelResize = g5.SidePanelResize;
+  var g6 = typeof window !== "undefined" ? window : globalThis;
+  g6.SidePanelResize = SidePanelResize2;
+  g6.BelJarSidePanelResize = g6.SidePanelResize;
 
   // js/explorer/explorer-suite-layout.mjs
   var SUITE_HUES = [156, 217, 280, 32];
@@ -11454,9 +12418,9 @@
     findCfgIntersection,
     cfgHasDanglingEntry
   };
-  var g6 = typeof window !== "undefined" ? window : globalThis;
-  g6.ExplorerSuiteLayout = ExplorerSuiteLayout2;
-  g6.BelJarExplorerSuiteLayout = g6.ExplorerSuiteLayout;
+  var g7 = typeof window !== "undefined" ? window : globalThis;
+  g7.ExplorerSuiteLayout = ExplorerSuiteLayout2;
+  g7.BelJarExplorerSuiteLayout = g7.ExplorerSuiteLayout;
 
   // js/workspace/float-placement.mjs
   var DEFAULT_MARGIN = 8;
@@ -11485,8 +12449,8 @@
   }
   function separatedFromAnchor(x, y, w, h, anchor3, gap) {
     const tr = anchor3;
-    const g18 = gap;
-    return x + w <= tr.left - g18 || x >= tr.right + g18 || y + h <= tr.top - g18 || y >= tr.bottom + g18;
+    const g23 = gap;
+    return x + w <= tr.left - g23 || x >= tr.right + g23 || y + h <= tr.top - g23 || y >= tr.bottom + g23;
   }
   function overlapAreaWithAnchor(x, y, w, h, anchor3) {
     const tr = anchor3;
@@ -11502,15 +12466,15 @@
     const y2 = Math.min(vh - m, y + h) - Math.max(m, y);
     return Math.max(0, x2) * Math.max(0, y2);
   }
-  function computePointMenuPlacement(tw, th, vw, vh, m, g18, tr) {
-    let x = tr.left + g18;
-    let y = tr.top + g18;
-    if (x + tw > vw - m) x = tr.left - g18 - tw;
-    if (y + th > vh - m) y = tr.top - g18 - th;
+  function computePointMenuPlacement(tw, th, vw, vh, m, g23, tr) {
+    let x = tr.left + g23;
+    let y = tr.top + g23;
+    if (x + tw > vw - m) x = tr.left - g23 - tw;
+    if (y + th > vh - m) y = tr.top - g23 - th;
     const c = clampToViewport(x, y, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "menu" };
   }
-  function computeSideMenuPlacement(tw, th, vw, vh, m, g18, tr, side, align) {
+  function computeSideMenuPlacement(tw, th, vw, vh, m, g23, tr, side, align) {
     const ah = tr.bottom - tr.top;
     const aw = tr.right - tr.left;
     const alignY = () => {
@@ -11526,34 +12490,34 @@
     let x;
     let y;
     if (side === "right") {
-      x = tr.right + g18;
-      if (x + tw > vw - m) x = tr.left - g18 - tw;
+      x = tr.right + g23;
+      if (x + tw > vw - m) x = tr.left - g23 - tw;
       y = alignY();
       y = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
     } else if (side === "left") {
-      x = tr.left - g18 - tw;
-      if (x < m) x = tr.right + g18;
+      x = tr.left - g23 - tw;
+      if (x < m) x = tr.right + g23;
       y = alignY();
       y = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
     } else if (side === "bottom") {
-      y = tr.bottom + g18;
-      if (y + th > vh - m) y = tr.top - g18 - th;
+      y = tr.bottom + g23;
+      if (y + th > vh - m) y = tr.top - g23 - th;
       x = alignX();
       x = Math.min(Math.max(m, x), Math.max(m, vw - m - tw));
     } else {
-      y = tr.top - g18 - th;
-      if (y < m) y = tr.bottom + g18;
+      y = tr.top - g23 - th;
+      if (y < m) y = tr.bottom + g23;
       x = alignX();
       x = Math.min(Math.max(m, x), Math.max(m, vw - m - tw));
     }
     const c = clampToViewport(x, y, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "menu" };
   }
-  function computeMenuPlacementFull(opts, tw, th, vw, vh, m, g18, tr) {
+  function computeMenuPlacementFull(opts, tw, th, vw, vh, m, g23, tr) {
     const side = opts.side;
     const align = opts.align ?? "start";
-    if (!side) return computePointMenuPlacement(tw, th, vw, vh, m, g18, tr);
-    return computeSideMenuPlacement(tw, th, vw, vh, m, g18, tr, side, align);
+    if (!side) return computePointMenuPlacement(tw, th, vw, vh, m, g23, tr);
+    return computeSideMenuPlacement(tw, th, vw, vh, m, g23, tr, side, align);
   }
   function computePosition(opts) {
     const tw = opts.width;
@@ -11564,14 +12528,14 @@
     const gap = opts.gap ?? DEFAULT_GAP;
     const tr = normalizeAnchor(opts.anchor);
     const m = margin;
-    const g18 = gap;
+    const g23 = gap;
     if (opts.mode === "menu") {
-      return computeMenuPlacementFull(opts, tw, th, vw, vh, m, g18, tr);
+      return computeMenuPlacementFull(opts, tw, th, vw, vh, m, g23, tr);
     }
     const preferPlacement = opts.preferPlacement ?? PREFERENCE_TOOLTIP;
     const requireSeparation = opts.requireSeparation !== false;
     const fits = (x, y) => fitsViewport(x, y, tw, th, vw, vh, m);
-    const sep = (x, y) => !requireSeparation || separatedFromAnchor(x, y, tw, th, tr, g18);
+    const sep = (x, y) => !requireSeparation || separatedFromAnchor(x, y, tw, th, tr, g23);
     const clampY = (x, y) => {
       const iy = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
       return { x, y: iy };
@@ -11583,28 +12547,28 @@
     function tryPlacement(side) {
       switch (side) {
         case "right": {
-          const x = tr.right + g18;
+          const x = tr.right + g23;
           if (x + tw > vw - m) return null;
           const { y } = clampY(x, tr.top + (tr.bottom - tr.top) / 2 - th / 2);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "left": {
-          const x = tr.left - g18 - tw;
+          const x = tr.left - g23 - tw;
           if (x < m) return null;
           const { y } = clampY(x, tr.top + (tr.bottom - tr.top) / 2 - th / 2);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "bottom": {
-          const y = tr.bottom + g18;
+          const y = tr.bottom + g23;
           if (y + th > vh - m) return null;
           const { x } = clampX(tr.left + (tr.right - tr.left) / 2 - tw / 2, y);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "top": {
-          const y = tr.top - g18 - th;
+          const y = tr.top - g23 - th;
           if (y < m) return null;
           const { x } = clampX(tr.left + (tr.right - tr.left) / 2 - tw / 2, y);
           if (!fits(x, y) || !sep(x, y)) return null;
@@ -11619,10 +12583,10 @@
       if (pos) return pos;
     }
     const emergency = [
-      () => ({ x: m, y: tr.bottom + g18 }),
-      () => ({ x: vw - m - tw, y: tr.bottom + g18 }),
-      () => ({ x: tr.left - g18 - tw, y: vh - m - th }),
-      () => ({ x: tr.right + g18, y: vh - m - th }),
+      () => ({ x: m, y: tr.bottom + g23 }),
+      () => ({ x: vw - m - tw, y: tr.bottom + g23 }),
+      () => ({ x: tr.left - g23 - tw, y: vh - m - th }),
+      () => ({ x: tr.right + g23, y: vh - m - th }),
       () => ({ x: m, y: m })
     ];
     let best = null;
@@ -11643,7 +12607,7 @@
       }
     }
     if (best) return best;
-    const c = clampToViewport(tr.right + g18, tr.bottom + g18, tw, th, vw, vh, m);
+    const c = clampToViewport(tr.right + g23, tr.bottom + g23, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "fallback" };
   }
   var FloatingRectPlacement2 = {
@@ -11655,8 +12619,8 @@
     normalizeAnchor,
     computePosition
   };
-  var g7 = typeof window !== "undefined" ? window : globalThis;
-  g7.FloatingRectPlacement = FloatingRectPlacement2;
+  var g8 = typeof window !== "undefined" ? window : globalThis;
+  g8.FloatingRectPlacement = FloatingRectPlacement2;
 
   // js/ui/tooltips.mjs
   function frp() {
@@ -11734,12 +12698,12 @@
   var tooltipAnchor = null;
   var touchShowTimer = null;
   var tooltipSuppressLeaveUntilPointerUp = null;
-  function prepareOverflow(el8) {
-    if (!el8._belOverflowTipBound) return;
-    const getText = el8._belOverflowGetText;
-    const text = el8.scrollWidth > el8.clientWidth ? getText ? getText() : (el8.textContent || "").trim() : "";
-    if (text) el8.setAttribute("data-tooltip", text);
-    else el8.removeAttribute("data-tooltip");
+  function prepareOverflow(el9) {
+    if (!el9._belOverflowTipBound) return;
+    const getText = el9._belOverflowGetText;
+    const text = el9.scrollWidth > el9.clientWidth ? getText ? getText() : (el9.textContent || "").trim() : "";
+    if (text) el9.setAttribute("data-tooltip", text);
+    else el9.removeAttribute("data-tooltip");
   }
   function tooltipIsShowing() {
     return !!(tooltipRoot && !tooltipRoot.hidden && !tooltipRoot.classList.contains("is-leaving"));
@@ -11889,8 +12853,8 @@
   function tooltipRectEl(anchor3) {
     const fn = anchor3._belTooltipRectEl;
     if (typeof fn === "function") {
-      const el8 = fn(anchor3);
-      if (el8 && el8.nodeType === 1 && el8.isConnected) return el8;
+      const el9 = fn(anchor3);
+      if (el9 && el9.nodeType === 1 && el9.isConnected) return el9;
     }
     return anchor3;
   }
@@ -12106,55 +13070,55 @@
     tooltipRoot.style.left = "";
     tooltipRoot.style.top = "";
   }
-  function bindTooltipEl(el8) {
-    if (!el8 || el8.nodeType !== 1 || el8._belTooltipBound) return;
-    el8._belTooltipBound = true;
-    el8.addEventListener("mouseenter", (ev) => {
+  function bindTooltipEl(el9) {
+    if (!el9 || el9.nodeType !== 1 || el9._belTooltipBound) return;
+    el9._belTooltipBound = true;
+    el9.addEventListener("mouseenter", (ev) => {
       if (!frp().prefersFineHover()) return;
       syncTooltipToPointer(ev.clientX, ev.clientY);
     });
-    el8.addEventListener("mouseleave", (ev) => {
+    el9.addEventListener("mouseleave", (ev) => {
       if (!frp().prefersFineHover()) return;
-      if (tooltipSuppressLeaveUntilPointerUp === el8) return;
+      if (tooltipSuppressLeaveUntilPointerUp === el9) return;
       syncTooltipToPointer(ev.clientX, ev.clientY);
     });
-    el8.addEventListener("focusin", () => {
-      if (!el8.matches(":focus-visible")) return;
-      if (tooltipAnchor === el8 && !tooltipRoot.hidden && !tooltipRoot.classList.contains("is-leaving")) {
+    el9.addEventListener("focusin", () => {
+      if (!el9.matches(":focus-visible")) return;
+      if (tooltipAnchor === el9 && !tooltipRoot.hidden && !tooltipRoot.classList.contains("is-leaving")) {
         return;
       }
-      showTooltip(el8);
+      showTooltip(el9);
     });
-    el8.addEventListener("focusout", () => {
-      if (tooltipAnchor === el8) hideTooltip();
+    el9.addEventListener("focusout", () => {
+      if (tooltipAnchor === el9) hideTooltip();
     });
-    el8.addEventListener(
+    el9.addEventListener(
       "pointerdown",
       (e) => {
         if (!frp().prefersFineHover() || !e.isPrimary || e.button !== 0) return;
         if (e.pointerType === "touch") return;
-        tooltipSuppressLeaveUntilPointerUp = el8;
+        tooltipSuppressLeaveUntilPointerUp = el9;
       },
       true
     );
-    el8.addEventListener(
+    el9.addEventListener(
       "touchstart",
       () => {
         if (frp().prefersFineHover()) return;
         clearTimeout(touchShowTimer);
-        touchShowTimer = setTimeout(() => showTooltip(el8), TOUCH_SHOW_DELAY_MS);
+        touchShowTimer = setTimeout(() => showTooltip(el9), TOUCH_SHOW_DELAY_MS);
       },
       { passive: true }
     );
-    el8.addEventListener("touchend", () => {
+    el9.addEventListener("touchend", () => {
       if (frp().prefersFineHover()) return;
       clearTimeout(touchShowTimer);
-      if (tooltipAnchor === el8) hideTooltip();
+      if (tooltipAnchor === el9) hideTooltip();
     });
-    el8.addEventListener("touchcancel", () => {
+    el9.addEventListener("touchcancel", () => {
       if (frp().prefersFineHover()) return;
       clearTimeout(touchShowTimer);
-      if (tooltipAnchor === el8) hideTooltip();
+      if (tooltipAnchor === el9) hideTooltip();
     });
   }
   function bindTooltips() {
@@ -12196,10 +13160,10 @@
       for (let i = 0; i < records2.length; i++) {
         const r = records2[i];
         if (r.type !== "attributes" || r.attributeName !== "data-tooltip" && r.attributeName !== "data-tooltip-errors" && r.attributeName !== "data-tooltip-tone" && r.attributeName !== "data-tooltip-head") continue;
-        const el8 = r.target;
-        if (!el8 || el8.nodeType !== 1) continue;
-        if (r.oldValue === el8.getAttribute(r.attributeName)) continue;
-        refreshTooltipIfAnchored(el8);
+        const el9 = r.target;
+        if (!el9 || el9.nodeType !== 1) continue;
+        if (r.oldValue === el9.getAttribute(r.attributeName)) continue;
+        refreshTooltipIfAnchored(el9);
       }
     });
     tooltipAttrObserver.observe(document.documentElement, {
@@ -12209,46 +13173,46 @@
       attributeFilter: ["data-tooltip", "data-tooltip-errors", "data-tooltip-tone", "data-tooltip-head"]
     });
   }
-  function setTooltip(el8, text, opts) {
-    if (!el8 || el8.nodeType !== 1) return;
+  function setTooltip(el9, text, opts) {
+    if (!el9 || el9.nodeType !== 1) return;
     opts = opts || {};
-    el8.removeAttribute("title");
+    el9.removeAttribute("title");
     const tip = text != null ? String(text).trim() : "";
     if (!tip) {
-      el8.removeAttribute("data-tooltip");
-      if (opts.ariaLabel !== false) el8.removeAttribute("aria-label");
+      el9.removeAttribute("data-tooltip");
+      if (opts.ariaLabel !== false) el9.removeAttribute("aria-label");
       return;
     }
-    const prev = el8.getAttribute("data-tooltip");
-    if (prev !== tip) el8.setAttribute("data-tooltip", tip);
-    if (opts.ariaLabel !== false) el8.setAttribute("aria-label", tip);
-    bindTooltipEl(el8);
+    const prev = el9.getAttribute("data-tooltip");
+    if (prev !== tip) el9.setAttribute("data-tooltip", tip);
+    if (opts.ariaLabel !== false) el9.setAttribute("aria-label", tip);
+    bindTooltipEl(el9);
   }
-  function setRichTooltip(el8, buildFragment, ariaText) {
-    if (!el8 || el8.nodeType !== 1) return;
-    el8.removeAttribute("title");
+  function setRichTooltip(el9, buildFragment, ariaText) {
+    if (!el9 || el9.nodeType !== 1) return;
+    el9.removeAttribute("title");
     if (typeof buildFragment !== "function") {
-      el8._belTooltipRich = null;
-      el8.removeAttribute("data-tooltip-rich");
+      el9._belTooltipRich = null;
+      el9.removeAttribute("data-tooltip-rich");
       return;
     }
-    el8._belTooltipRich = buildFragment;
-    el8.setAttribute("data-tooltip-rich", "");
+    el9._belTooltipRich = buildFragment;
+    el9.setAttribute("data-tooltip-rich", "");
     const aria = ariaText != null ? String(ariaText).trim() : "";
-    if (aria) el8.setAttribute("aria-label", aria);
-    bindTooltipEl(el8);
+    if (aria) el9.setAttribute("aria-label", aria);
+    bindTooltipEl(el9);
   }
-  function bindOverflowTip(el8, getText) {
-    if (!el8 || el8.nodeType !== 1 || el8._belOverflowTipBound) return;
-    el8._belOverflowTipBound = true;
-    el8._belOverflowGetText = getText || null;
-    el8.addEventListener("mouseenter", function() {
+  function bindOverflowTip(el9, getText) {
+    if (!el9 || el9.nodeType !== 1 || el9._belOverflowTipBound) return;
+    el9._belOverflowTipBound = true;
+    el9._belOverflowGetText = getText || null;
+    el9.addEventListener("mouseenter", function() {
       if (!frp().prefersFineHover()) return;
-      const text = el8.scrollWidth > el8.clientWidth ? getText ? getText() : (el8.textContent || "").trim() : "";
-      if (text) el8.setAttribute("data-tooltip", text);
-      else el8.removeAttribute("data-tooltip");
+      const text = el9.scrollWidth > el9.clientWidth ? getText ? getText() : (el9.textContent || "").trim() : "";
+      if (text) el9.setAttribute("data-tooltip", text);
+      else el9.removeAttribute("data-tooltip");
     });
-    bindTooltipEl(el8);
+    bindTooltipEl(el9);
   }
   var Tooltips2 = {
     hide: hideTooltip,
@@ -12262,19 +13226,19 @@
     bindOverflow: bindOverflowTip,
     // Position the tooltip against another element's rect (resolved lazily on
     // each show) while hover behaviour stays on `el`. Falsy result → own rect.
-    setRectEl(el8, fn) {
-      if (el8 && el8.nodeType === 1) el8._belTooltipRectEl = typeof fn === "function" ? fn : null;
+    setRectEl(el9, fn) {
+      if (el9 && el9.nodeType === 1) el9._belTooltipRectEl = typeof fn === "function" ? fn : null;
     },
     // The element the visible tooltip is anchored to (null when hidden). Lets
     // external hover controllers hide only tooltips they own.
     activeAnchor() {
       return tooltipAnchor;
     },
-    suppressAnchor(el8) {
-      suppressedTooltipAnchors.add(el8);
+    suppressAnchor(el9) {
+      suppressedTooltipAnchors.add(el9);
     },
-    releaseAnchor(el8) {
-      suppressedTooltipAnchors.delete(el8);
+    releaseAnchor(el9) {
+      suppressedTooltipAnchors.delete(el9);
     }
   };
   function installTooltips() {
@@ -12285,6 +13249,27 @@
   if (typeof document !== "undefined") {
     installTooltips();
     globalThis.Tooltips = Tooltips2;
+  }
+
+  // js/ui/hint-seen.mjs
+  var SEEN_SETTING = {
+    library: "hintSeenLibrary",
+    "inspector-cursor": "hintSeenInspectorCursor"
+  };
+  function seenSetting(id) {
+    return Object.prototype.hasOwnProperty.call(SEEN_SETTING, id) ? SEEN_SETTING[id] : null;
+  }
+  function wasSeen(id, o) {
+    const row = seenSetting(id);
+    if (row && o.setting(row) === true) return true;
+    return (o.deviceList || []).indexOf(id) !== -1;
+  }
+  function carryForward(deviceList, setting2) {
+    return (deviceList || []).map(seenSetting).filter((row) => row && setting2(row) !== true);
+  }
+  function settingsKnown(summary2, syncSettingsOn) {
+    if (!summary2 || !summary2.signedIn || !syncSettingsOn) return true;
+    return summary2.lastSync > 0;
   }
 
   // js/ui/hint.mjs
@@ -12305,12 +13290,21 @@
   var dismissing = false;
   var resizeBound = false;
   var actionFn = null;
+  function setting(row) {
+    return typeof Settings !== "undefined" && Settings.get ? Settings.get(row) : void 0;
+  }
   function wasDismissed(id) {
-    if (!id || typeof Device === "undefined") return false;
-    return Device.get("dismissedHints").indexOf(id) !== -1;
+    if (!id) return false;
+    return wasSeen(id, { setting, deviceList: typeof Device !== "undefined" ? Device.get("dismissedHints") : [] });
   }
   function persistDismissed(id) {
-    if (!id || typeof Device === "undefined") return;
+    if (!id) return;
+    var row = seenSetting(id);
+    if (row && typeof Settings !== "undefined") {
+      if (Settings.get(row) !== true) Settings.set(row, true);
+      return;
+    }
+    if (typeof Device === "undefined") return;
     var list3 = Device.get("dismissedHints");
     if (list3.indexOf(id) !== -1) return;
     list3.push(id);
@@ -12492,6 +13486,36 @@
     rootEl.addEventListener("transitionend", onEnd);
     leaveTimer = setTimeout(finish, LEAVE_MS + 40);
   }
+  function accountAnswered() {
+    var P3 = global12.Persist;
+    var summary2 = P3 && typeof P3.syncSummary === "function" ? P3.syncSummary() : null;
+    return settingsKnown(summary2, setting("syncSettings") !== false);
+  }
+  var waiting = /* @__PURE__ */ new Map();
+  var waitUnsub = null;
+  function release() {
+    if (waitUnsub) {
+      waitUnsub();
+      waitUnsub = null;
+    }
+    var queued = Array.from(waiting.values());
+    waiting.clear();
+    for (var i = 0; i < queued.length; i++) {
+      var a = queued[i].anchor;
+      var box = a && a.isConnected ? a.getBoundingClientRect() : null;
+      if (box && box.width > 0 && box.height > 0 && show(Object.assign({}, queued[i], { waited: true }))) return;
+    }
+  }
+  function waitForAccount(o) {
+    waiting.set(String(o.id), o);
+    if (waitUnsub) return;
+    var P3 = global12.Persist;
+    if (P3 && typeof P3.onSyncSummary === "function") {
+      waitUnsub = P3.onSyncSummary(function() {
+        if (accountAnswered()) release();
+      });
+    }
+  }
   function show(opts) {
     const o = opts && typeof opts === "object" ? opts : {};
     const id = o.id != null ? String(o.id) : null;
@@ -12501,6 +13525,10 @@
     const once = o.once !== false;
     if (!anchor3 || !text) return false;
     if (once && id && wasDismissed(id)) return false;
+    if (once && id && seenSetting(id) && !o.waited && !accountAnswered()) {
+      waitForAccount(o);
+      return false;
+    }
     if (!ensureDom()) return false;
     if (visible || dismissing) {
       clearTimers();
@@ -12541,6 +13569,18 @@
   function onResize() {
     if (!visible || dismissing) return;
     place();
+  }
+  if (typeof Settings !== "undefined" && typeof Settings.subscribe === "function") {
+    Settings.subscribe(function(e) {
+      if (!visible || dismissing || !activeId) return;
+      var row = seenSetting(activeId);
+      if (row && e && Array.isArray(e.ids) && e.ids.indexOf(row) !== -1 && setting(row) === true) dismiss();
+    });
+  }
+  if (typeof Settings !== "undefined" && typeof Device !== "undefined") {
+    carryForward(Device.get("dismissedHints"), setting).forEach(function(row) {
+      Settings.set(row, true);
+    });
   }
   global12.Hint = {
     show,
@@ -12748,8 +13788,8 @@
     }
     function relayoutAll() {
       for (let i = 0; i < openMenus.length; i++) {
-        const { el: el8, anchorRef, side, align, isSubmenu } = openMenus[i];
-        layoutMenuEl(el8, anchorRef, side, align, isSubmenu);
+        const { el: el9, anchorRef, side, align, isSubmenu } = openMenus[i];
+        layoutMenuEl(el9, anchorRef, side, align, isSubmenu);
       }
     }
     function rovingTabIndexForPanel(menuEl) {
@@ -12760,7 +13800,7 @@
     }
     function focusableMenuItems(menuEl) {
       return Array.from(menuEl.querySelectorAll(":scope > .menu-item")).filter(
-        (el8) => !el8.disabled && !el8.hasAttribute("data-menu-skip-focus")
+        (el9) => !el9.disabled && !el9.hasAttribute("data-menu-skip-focus")
       );
     }
     function focusMenuItem(menuEl, index) {
@@ -13310,12 +14350,62 @@
     registerRowType
   };
 
+  // js/ui/menu-trigger.mjs
+  var g9 = typeof window !== "undefined" ? window : globalThis;
+  function wireMenuTrigger(btn, menuOpts) {
+    if (!btn) return;
+    let suppressNextClick = false;
+    function setOpen2(open11) {
+      btn.classList.toggle("is-active", open11);
+      btn.setAttribute("aria-expanded", open11 ? "true" : "false");
+    }
+    function quietTooltip() {
+      if (!g9.Tooltips) return;
+      g9.Tooltips.suppressAnchor(btn);
+      g9.Tooltips.hide();
+    }
+    function runMenuInteraction() {
+      const Menu2 = g9.Menu;
+      if (!Menu2) return;
+      if (Menu2.isOpen() && Menu2.rootAnchor() === btn) {
+        Menu2.closeAll();
+        return;
+      }
+      const items3 = typeof menuOpts.items === "function" ? menuOpts.items() : menuOpts.items;
+      Menu2.open({
+        anchor: btn,
+        side: menuOpts.side,
+        align: menuOpts.align,
+        items: items3,
+        onClose: () => setOpen2(false)
+      });
+      setOpen2(true);
+    }
+    btn.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      suppressNextClick = true;
+      quietTooltip();
+      runMenuInteraction();
+    });
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (suppressNextClick) {
+        suppressNextClick = false;
+        return;
+      }
+      quietTooltip();
+      runMenuInteraction();
+    });
+  }
+  g9.MenuTrigger = { wire: wireMenuTrigger };
+
   // js/ui/command-palette.mjs
   var global14 = globalThis;
-  function fuzzyScore(query2, text) {
-    if (!query2) return { score: 0, positions: [] };
+  function fuzzyScore(query3, text) {
+    if (!query3) return { score: 0, positions: [] };
     const t = String(text || "");
-    const q = query2.toLowerCase();
+    const q = query3.toLowerCase();
     const tl = t.toLowerCase();
     if (q.length > tl.length) return null;
     let score2 = 0;
@@ -13341,10 +14431,10 @@
     if (positions[0] === 0) score2 += 3;
     return { score: score2, positions };
   }
-  function substringPositions(query2, text) {
-    if (!query2) return null;
+  function substringPositions(query3, text) {
+    if (!query3) return null;
     const t = String(text || "");
-    const q = String(query2);
+    const q = String(query3);
     const idx = t.toLowerCase().indexOf(q.toLowerCase());
     if (idx < 0) return null;
     const positions = [];
@@ -13365,21 +14455,21 @@
     if (s.startsWith("?")) return { mode: "help", query: s.slice(1).trim() };
     return { mode: "anywhere", query: s.trim() };
   }
-  function rankItems(items3, query2, limit) {
+  function rankItems(items3, query3, limit) {
     const cap = limit || 50;
-    if (!query2) {
+    if (!query3) {
       return items3.slice(0, cap).map((item) => ({ ...item, _match: null }));
     }
     const scored = [];
     for (let i = 0; i < items3.length; i++) {
       const item = items3[i];
-      const onTitle = fuzzyScore(query2, item.title);
+      const onTitle = fuzzyScore(query3, item.title);
       if (onTitle) {
         scored.push({ item, score: onTitle.score, positions: onTitle.positions, index: i });
         continue;
       }
       if (item.detail) {
-        const onDetail = fuzzyScore(query2, item.detail);
+        const onDetail = fuzzyScore(query3, item.detail);
         if (onDetail) scored.push({ item, score: onDetail.score * 0.5, positions: null, index: i });
       }
     }
@@ -13401,8 +14491,8 @@
     const parts = shortcutParts2(spec, isMac);
     return parts.join(isMac ? "" : "+");
   }
-  function parseLineQuery(query2) {
-    const m = String(query2 || "").match(/^(\d+)(?::(\d+))?$/);
+  function parseLineQuery(query3) {
+    const m = String(query3 || "").match(/^(\d+)(?::(\d+))?$/);
     if (!m) return null;
     const line = parseInt(m[1], 10);
     const col = m[2] != null ? parseInt(m[2], 10) : 1;
@@ -13410,14 +14500,14 @@
     return { line, col: Number.isFinite(col) && col >= 1 ? col : 1 };
   }
   var HELP_CATALOG = [
-    { title: "Anywhere", detail: "Go to files & symbols", prefix: "", commandId: "nav.anywhere" },
-    { title: "Commands", detail: "Run a command", prefix: ">", commandId: "tools.commands" },
-    { title: "Symbols", detail: "Go to symbol", prefix: "@", commandId: "nav.symbol" },
-    { title: "Search project", detail: "Find text across files", prefix: "%", commandId: "edit.search-project" },
-    { title: "Go to line", detail: "Jump to line[:column]", prefix: ":" },
-    { title: "Problems", detail: "Errors & warnings", prefix: "!" },
-    { title: "Library", detail: "Browse library samples", prefix: "/" },
-    { title: "Help", detail: "This mode list", prefix: "?" }
+    { mode: "anywhere", title: "Anywhere", detail: "Go to files & symbols", prefix: "", commandId: "nav.anywhere" },
+    { mode: "commands", title: "Commands", detail: "Run a command", prefix: ">", commandId: "tools.commands" },
+    { mode: "symbols", title: "Symbols", detail: "Go to symbol", prefix: "@", commandId: "nav.symbol" },
+    { mode: "search", title: "Search project", detail: "Find text across files", prefix: "%", commandId: "edit.search-project" },
+    { mode: "line", title: "Go to line", detail: "Jump to line[:column]", prefix: ":" },
+    { mode: "problems", title: "Problems", detail: "Errors & warnings", prefix: "!" },
+    { mode: "library", title: "Library", detail: "Browse library samples", prefix: "/" },
+    { mode: "help", title: "Help", detail: "This mode list", prefix: "?" }
   ];
   var MODE_META = {
     anywhere: { label: "Anywhere", placeholder: "Go to file/symbol or change mode\u2026" },
@@ -13452,6 +14542,19 @@
   function setProvider(kind, fn) {
     if (PROVIDER_KINDS.indexOf(kind) < 0) return;
     providers2[kind] = fn;
+  }
+  function modeAvailable(mode) {
+    if (mode === "anywhere" || mode === "commands" || mode === "help") return true;
+    if (mode === "line") return !!global14.CurrentEditor;
+    return typeof providers2[mode] === "function";
+  }
+  function parseHere(raw) {
+    const parsed = parseInput(raw);
+    return modeAvailable(parsed.mode) ? parsed : { mode: "anywhere", query: String(raw || "").trim() };
+  }
+  function setModeMeta(mode, meta) {
+    if (!MODE_META[mode] || !meta) return;
+    MODE_META[mode] = Object.assign({}, MODE_META[mode], meta);
   }
   function activeCommands() {
     return Commands2.list({ palette: true, runnable: true, available: true });
@@ -13561,31 +14664,32 @@
     return commandItemsCache;
   }
   function helpItems() {
-    return HELP_CATALOG.map((h) => {
+    return HELP_CATALOG.filter((h) => modeAvailable(h.mode)).map((h) => {
       let shortcut = h.prefix || "bare";
       if (h.commandId) {
         const live2 = Commands2.liveChord ? Commands2.liveChord(h.commandId) : "";
         if (live2) shortcut = live2;
       }
+      const meta = MODE_META[h.mode] || {};
       return {
-        title: (h.prefix ? h.prefix + "  " : "") + h.title,
-        detail: h.detail,
+        title: (h.prefix ? h.prefix + "  " : "") + (meta.helpTitle || h.title),
+        detail: meta.helpDetail || h.detail,
         shortcut,
         section: "Modes",
         run: () => {
-          open3({ mode: h.prefix === "" ? "anywhere" : h.prefix === ">" ? "commands" : h.prefix === "@" ? "symbols" : h.prefix === "%" ? "search" : h.prefix === ":" ? "line" : h.prefix === "!" ? "problems" : h.prefix === "/" ? "library" : "help" });
+          open3({ mode: h.mode });
         }
       };
     });
   }
-  function lineJumpItems(query2) {
-    const parsed = parseLineQuery(query2);
+  function lineJumpItems(query3) {
+    const parsed = parseLineQuery(query3);
     if (!parsed) {
-      if (!query2) return [];
+      if (!query3) return [];
       return [];
     }
     return [{
-      title: "Go to line " + parsed.line + (query2.indexOf(":") >= 0 ? ", column " + parsed.col : ""),
+      title: "Go to line " + parsed.line + (query3.indexOf(":") >= 0 ? ", column " + parsed.col : ""),
       detail: "Current file",
       mono: false,
       run: () => {
@@ -13631,7 +14735,7 @@
     if (parsed.mode === "help") {
       return rankItems(helpItems(), parsed.query, 20);
     }
-    const files2 = providerItems("files").map((f) => ({ ...f, section: "Files" }));
+    const files2 = providerItems("files").map((f) => ({ section: "Files", ...f }));
     const symbols = providerItems("symbols").map((s) => ({ ...s, section: "Symbols" }));
     return rankItems(files2.concat(symbols), parsed.query, 50);
   }
@@ -13658,7 +14762,7 @@
   }
   function renderResults() {
     if (!ui) return;
-    const parsed = parseInput(ui.input.value);
+    const parsed = parseHere(ui.input.value);
     syncModeChrome(parsed);
     flatItems = gatherItems(parsed);
     const grouped = !parsed.query && (parsed.mode === "commands" || parsed.mode === "anywhere" || parsed.mode === "help" || parsed.mode === "problems");
@@ -13667,7 +14771,9 @@
     ui.empty.textContent = emptyMessage(parsed);
     const showHint = parsed.mode === "anywhere" && !parsed.query;
     ui.hint.hidden = !showHint;
-    if (showHint) ui.hint.textContent = "> for commands \xB7 % to search project \xB7 ? to see modes";
+    if (showHint) {
+      ui.hint.textContent = ["> for commands", modeAvailable("search") ? "% to search project" : "", "? to see modes"].filter(Boolean).join(" \xB7 ");
+    }
     let lastSection = null;
     flatItems.forEach((item, i) => {
       if (grouped && item.section && item.section !== lastSection) {
@@ -13708,9 +14814,9 @@
     });
     setActive(0, { scroll: true });
   }
-  function appendHighlighted(el8, text, positions) {
+  function appendHighlighted(el9, text, positions) {
     if (!positions || !positions.length) {
-      el8.textContent = text;
+      el9.textContent = text;
       return;
     }
     const set = new Set(positions);
@@ -13730,9 +14836,9 @@
       if (runHit) {
         const b = document.createElement("b");
         b.textContent = run3;
-        el8.appendChild(b);
+        el9.appendChild(b);
       } else {
-        el8.appendChild(document.createTextNode(run3));
+        el9.appendChild(document.createTextNode(run3));
       }
       run3 = "";
     }
@@ -13773,7 +14879,7 @@
   }
   function open3(opts) {
     let mode = "anywhere";
-    if (opts && opts.mode && MODE_PREFIX[opts.mode] != null) mode = opts.mode;
+    if (opts && opts.mode && MODE_PREFIX[opts.mode] != null && modeAvailable(opts.mode)) mode = opts.mode;
     if (!ui) buildUi();
     sessionId += 1;
     commandItemsCache = null;
@@ -13781,7 +14887,7 @@
     isOpen4 = true;
     ui.backdrop.classList.add("is-open");
     ui.panel.classList.add("is-open");
-    ui.input.value = MODE_PREFIX[mode];
+    ui.input.value = MODE_PREFIX[mode] + (opts && typeof opts.query === "string" ? opts.query : "");
     renderResults();
     ui.input.focus();
     const len = ui.input.value.length;
@@ -13874,6 +14980,8 @@
     dispose: dispose3,
     unregister: unregister2,
     setProvider,
+    setModeMeta,
+    modeAvailable,
     open: open3,
     close: close4,
     toggle: toggle3,
@@ -14134,8 +15242,8 @@
     return frag;
   }
   var FILTER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
-  function rowMatches(row, query2) {
-    const q = String(query2 || "").trim().toLowerCase();
+  function rowMatches(row, query3) {
+    const q = String(query3 || "").trim().toLowerCase();
     if (!q) return true;
     const hay = [row.title, liveChord(row), row.search || ""].concat(row.ex || []).join(" ").toLowerCase();
     return hay.indexOf(q.replace(/^:/, "")) >= 0;
@@ -14246,8 +15354,8 @@
       }
       if (row.id && !keys[had].id) keys[had] = row;
     };
-    for (const g18 of styleGroups3 || []) {
-      for (const r of g18.rows) {
+    for (const g23 of styleGroups3 || []) {
+      for (const r of g23.rows) {
         push2({
           id: r.id,
           title: r.title,
@@ -14276,10 +15384,10 @@
       prefix: access.prefix,
       rows: rows2.filter((r) => (r.ex || []).length)
     }] : [];
-    const live2 = groups.filter((g18) => g18.rows.length);
+    const live2 = groups.filter((g23) => g23.rows.length);
     if (note && live2.length) live2[live2.length - 1].closing = note;
     const tail = reserved ? [reserved] : [];
-    return live2.concat(line.filter((g18) => g18.rows.length)).concat(tail.filter((g18) => g18 && (g18.rows.length || (g18.meta || []).length)));
+    return live2.concat(line.filter((g23) => g23.rows.length)).concat(tail.filter((g23) => g23 && (g23.rows.length || (g23.meta || []).length)));
   }
   function commandLineAccess(style, chord) {
     if (style === "vim") return { prefix: ":", open: "Press : in Normal mode." };
@@ -14288,7 +15396,7 @@
     return null;
   }
   function countRows(groups) {
-    return (groups || []).reduce((n, g18) => n + g18.rows.length, 0);
+    return (groups || []).reduce((n, g23) => n + g23.rows.length, 0);
   }
   function el(tag, cls, text) {
     const node = document.createElement(tag);
@@ -14372,12 +15480,12 @@
     empty.hidden = true;
     wrap.appendChild(empty);
     const total = countRows(groups);
-    const paint3 = (query2) => {
+    const paint3 = (query3) => {
       list3.textContent = "";
       let shown = 0;
-      const quiet = !query2.trim();
+      const quiet = !query3.trim();
       for (const group of groups) {
-        const hits = group.rows.filter((r) => rowMatches(r, query2));
+        const hits = group.rows.filter((r) => rowMatches(r, query3));
         if (!hits.length && !(quiet && (group.meta || []).length)) continue;
         list3.appendChild(el("div", "jar-macros__group", group.name));
         if (quiet && group.lead) list3.appendChild(el("p", "jar-macros__aside", group.lead));
@@ -14389,7 +15497,7 @@
         shown += hits.length;
       }
       empty.hidden = shown > 0;
-      count.textContent = query2.trim() ? shown + " of " + total : "";
+      count.textContent = query3.trim() ? shown + " of " + total : "";
     };
     paint3("");
     input2.addEventListener("input", () => paint3(input2.value));
@@ -14409,9 +15517,9 @@
       return [];
     }
     if (!C2 || typeof C2.chordShadowFor !== "function") return groups;
-    return groups.map((g18) => ({
-      name: g18.name,
-      rows: g18.rows.map((r) => Object.assign({}, r, {
+    return groups.map((g23) => ({
+      name: g23.name,
+      rows: g23.rows.map((r) => Object.assign({}, r, {
         shadow: C2.chordShadowFor({ style, keys: r.keys, commandId: r.id })
       }))
     }));
@@ -14523,14 +15631,14 @@
       say("This browser has no Keyboard Lock, so the reserved chords stay reserved.");
       return false;
     }
-    const el8 = global17.document && global17.document.documentElement;
-    if (!el8 || typeof el8.requestFullscreen !== "function") {
+    const el9 = global17.document && global17.document.documentElement;
+    if (!el9 || typeof el9.requestFullscreen !== "function") {
       say("Full keyboard needs fullscreen, which this browser will not give.");
       return false;
     }
     watchFullscreen();
     try {
-      if (!global17.document.fullscreenElement) await el8.requestFullscreen();
+      if (!global17.document.fullscreenElement) await el9.requestFullscreen();
       await global17.navigator.keyboard.lock();
     } catch (err) {
       if (global17.document.fullscreenElement && global17.document.exitFullscreen) {
@@ -14545,7 +15653,7 @@
       return false;
     }
     active4 = true;
-    say("Full keyboard on \u2014 Ctrl+N, Ctrl+T, Ctrl+W and the rest are yours. Hold Esc to leave.");
+    say("Full keyboard on. Ctrl+N, Ctrl+T, Ctrl+W and the rest are yours. Hold Esc to leave.");
     return true;
   }
   async function exit() {
@@ -14736,17 +15844,17 @@
     var end = endFades ? "#000 calc(100% - " + size + "px), transparent 100%" : "#000 100%";
     return "linear-gradient(" + dir + ", " + start + ", " + end + ")";
   }
-  function applyMask(el8, sides, size) {
+  function applyMask(el9, sides, size) {
     var masks = [];
     var mx = axisMask("to right", sides.left, sides.right, size);
     var my = axisMask("to bottom", sides.top, sides.bottom, size);
     if (mx) masks.push(mx);
     if (my) masks.push(my);
     var value = masks.length ? masks.join(", ") : "";
-    el8.style.webkitMaskImage = value;
-    el8.style.maskImage = value;
+    el9.style.webkitMaskImage = value;
+    el9.style.maskImage = value;
     if (value) {
-      el8.setAttribute(
+      el9.setAttribute(
         "data-scroll-fade",
         [
           sides.top && "top",
@@ -14756,11 +15864,11 @@
         ].filter(Boolean).join(" ")
       );
     } else {
-      el8.removeAttribute("data-scroll-fade");
+      el9.removeAttribute("data-scroll-fade");
     }
   }
-  function attach2(el8, opts) {
-    if (!el8) return { update: function() {
+  function attach2(el9, opts) {
+    if (!el9) return { update: function() {
     }, destroy: function() {
     } };
     opts = opts || {};
@@ -14768,37 +15876,37 @@
     var axis = opts.axis || "both";
     function update2() {
       var sides = computeSides({
-        scrollTop: el8.scrollTop,
-        scrollLeft: el8.scrollLeft,
-        scrollWidth: el8.scrollWidth,
-        scrollHeight: el8.scrollHeight,
-        clientWidth: el8.clientWidth,
-        clientHeight: el8.clientHeight,
+        scrollTop: el9.scrollTop,
+        scrollLeft: el9.scrollLeft,
+        scrollWidth: el9.scrollWidth,
+        scrollHeight: el9.scrollHeight,
+        clientWidth: el9.clientWidth,
+        clientHeight: el9.clientHeight,
         axis
       });
-      applyMask(el8, sides, size);
+      applyMask(el9, sides, size);
     }
     var onScroll = function() {
       update2();
     };
-    el8.addEventListener("scroll", onScroll, { passive: true });
+    el9.addEventListener("scroll", onScroll, { passive: true });
     var ro = null;
     if (typeof ResizeObserver !== "undefined") {
       ro = new ResizeObserver(function() {
         update2();
       });
-      ro.observe(el8);
+      ro.observe(el9);
     }
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(update2);
     else update2();
     return {
       update: update2,
       destroy: function() {
-        el8.removeEventListener("scroll", onScroll);
+        el9.removeEventListener("scroll", onScroll);
         if (ro) ro.disconnect();
-        el8.style.webkitMaskImage = "";
-        el8.style.maskImage = "";
-        el8.removeAttribute("data-scroll-fade");
+        el9.style.webkitMaskImage = "";
+        el9.style.maskImage = "";
+        el9.removeAttribute("data-scroll-fade");
       }
     };
   }
@@ -14813,26 +15921,26 @@
   function prefersFineHover2() {
     return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   }
-  function bind2(el8, opts) {
-    if (!el8 || el8.nodeType !== 1 || el8._textSlideBound) return;
-    el8._textSlideBound = true;
+  function bind2(el9, opts) {
+    if (!el9 || el9.nodeType !== 1 || el9._textSlideBound) return;
+    el9._textSlideBound = true;
     opts = opts || {};
-    var triggerEl = opts.triggerEl && opts.triggerEl.nodeType === 1 ? opts.triggerEl : el8;
-    var inner = el8.querySelector(".text-slide-inner");
+    var triggerEl = opts.triggerEl && opts.triggerEl.nodeType === 1 ? opts.triggerEl : el9;
+    var inner = el9.querySelector(".text-slide-inner");
     if (!inner) {
       inner = document.createElement("span");
       inner.className = "text-slide-inner";
-      while (el8.firstChild) inner.appendChild(el8.firstChild);
-      el8.appendChild(inner);
+      while (el9.firstChild) inner.appendChild(el9.firstChild);
+      el9.appendChild(inner);
     }
     var active5 = false;
     var returnHandler = null;
     function measure2() {
-      var overflow = inner.scrollWidth - el8.clientWidth;
+      var overflow = inner.scrollWidth - el9.clientWidth;
       if (overflow <= 1) return 0;
       var slideS = Math.max(MIN_SLIDE_S, overflow / SPEED_PX_PER_S);
-      el8.style.setProperty("--text-slide-offset", "-" + overflow + "px");
-      el8.style.setProperty("--text-slide-duration", (slideS / SLIDE_FRAC).toFixed(3) + "s");
+      el9.style.setProperty("--text-slide-offset", "-" + overflow + "px");
+      el9.style.setProperty("--text-slide-duration", (slideS / SLIDE_FRAC).toFixed(3) + "s");
       return overflow;
     }
     function cancelReturn() {
@@ -14846,13 +15954,13 @@
       cancelReturn();
       inner.style.transition = "";
       inner.style.transform = "";
-      if (measure2() > 1) el8.classList.add("text-slide--playing");
+      if (measure2() > 1) el9.classList.add("text-slide--playing");
     }
     function stop2() {
       active5 = false;
-      if (!el8.classList.contains("text-slide--playing")) return;
+      if (!el9.classList.contains("text-slide--playing")) return;
       var cur = window.getComputedStyle(inner).transform;
-      el8.classList.remove("text-slide--playing");
+      el9.classList.remove("text-slide--playing");
       inner.style.transform = cur;
       void inner.offsetWidth;
       inner.style.transition = "transform " + RETURN_MS + "ms ease-out";
@@ -14873,7 +15981,7 @@
       var ro = new ResizeObserver(function() {
         if (active5) measure2();
       });
-      ro.observe(el8);
+      ro.observe(el9);
     }
   }
   function bindAll() {
@@ -14904,9 +16012,9 @@
   }
   function findSurfaceSearchInput(root2) {
     if (!root2 || typeof root2.querySelector !== "function") return null;
-    const el8 = root2.querySelector(SURFACE_SEARCH_SELECTOR);
-    if (!el8 || el8.disabled) return null;
-    return el8;
+    const el9 = root2.querySelector(SURFACE_SEARCH_SELECTOR);
+    if (!el9 || el9.disabled) return null;
+    return el9;
   }
   function capturingSearchInput() {
     if (typeof document === "undefined") return null;
@@ -15126,9 +16234,9 @@
     findSurfaceSearchInput,
     focusSurfaceSearch
   };
-  var g8 = typeof window !== "undefined" ? window : globalThis;
-  g8.Dialog = Dialog2;
-  g8.BelJarDialog = g8.Dialog;
+  var g10 = typeof window !== "undefined" ? window : globalThis;
+  g10.Dialog = Dialog2;
+  g10.BelJarDialog = g10.Dialog;
 
   // js/ui/prompt-dialog.mjs
   var CARD_CLASS = "jar-dialog__card jar-prompt-dialog__card";
@@ -15254,9 +16362,9 @@
     appendBody,
     open: open5
   };
-  var g9 = typeof window !== "undefined" ? window : globalThis;
-  g9.PromptDialog = PromptDialog;
-  g9.BelJarPromptDialog = g9.PromptDialog;
+  var g11 = typeof window !== "undefined" ? window : globalThis;
+  g11.PromptDialog = PromptDialog;
+  g11.BelJarPromptDialog = g11.PromptDialog;
 
   // js/ui/confirm-dialog.mjs
   function normalizeOpts(messageOrOpts, maybeOpts) {
@@ -15287,9 +16395,9 @@
     }).then((action) => action === "yes");
   }
   var ConfirmDialog2 = { confirm };
-  var g10 = typeof window !== "undefined" ? window : globalThis;
-  g10.ConfirmDialog = ConfirmDialog2;
-  g10.BelJarConfirmDialog = g10.ConfirmDialog;
+  var g12 = typeof window !== "undefined" ? window : globalThis;
+  g12.ConfirmDialog = ConfirmDialog2;
+  g12.BelJarConfirmDialog = g12.ConfirmDialog;
 
   // js/ui/name-prompt.mjs
   function defaultNormalize(raw) {
@@ -15316,28 +16424,29 @@
   }
   function open6(opts) {
     opts = opts || {};
-    const { el: el8, buildRowActions: buildRowActions2, CARD_CLASS: CARD_CLASS2 } = PromptDialog;
+    const { el: el9, buildRowActions: buildRowActions2, CARD_CLASS: CARD_CLASS2 } = PromptDialog;
     const normalize2 = typeof opts.normalize === "function" ? opts.normalize : defaultNormalize;
     const validate = typeof opts.validate === "function" ? opts.validate : defaultValidate;
     const initialValue = opts.value != null ? String(opts.value) : "";
     const sel = selectionForValue(initialValue, opts.selection);
     let settled = false;
     return new Promise((resolve2) => {
-      const wrap = el8("div", "jar-name-prompt");
-      const leadEl = opts.message ? el8("p", "jar-name-prompt__message", opts.message) : null;
-      const input2 = el8("input", "jar-name-prompt__input");
+      const wrap = el9("div", "jar-name-prompt");
+      const leadEl = opts.message ? el9("p", "jar-name-prompt__message", opts.message) : null;
+      const input2 = el9("input", "jar-name-prompt__input");
       input2.type = "text";
       input2.value = initialValue;
+      input2.autofocus = true;
       input2.spellcheck = false;
       input2.autocomplete = "off";
       if (opts.mono) input2.classList.add("is-mono");
       if (opts.placeholder) input2.placeholder = opts.placeholder;
       wrap.appendChild(input2);
-      const errorEl = el8("p", "jar-name-prompt__error");
+      const errorEl = el9("p", "jar-name-prompt__error");
       errorEl.hidden = true;
       wrap.appendChild(errorEl);
       if (opts.hint) {
-        const hint = el8("p", "jar-name-prompt__hint");
+        const hint = el9("p", "jar-name-prompt__hint");
         hint.textContent = opts.hint;
         wrap.appendChild(hint);
       }
@@ -15411,11 +16520,9 @@
         if (!settled) finish(null);
       });
       openDialog(dialogEl);
-      requestAnimationFrame(() => {
-        input2.focus();
-        input2.setSelectionRange(sel.start, sel.end);
-        showError(validate(currentNormalized()));
-      });
+      if (document.activeElement !== input2) input2.focus();
+      input2.setSelectionRange(sel.start, sel.end);
+      showError(validate(currentNormalized()));
     });
   }
   var NamePrompt2 = {
@@ -15425,9 +16532,9 @@
     defaultValidate,
     selectionForValue
   };
-  var g11 = typeof window !== "undefined" ? window : globalThis;
-  g11.NamePrompt = NamePrompt2;
-  g11.BelJarNamePrompt = g11.NamePrompt;
+  var g13 = typeof window !== "undefined" ? window : globalThis;
+  g13.NamePrompt = NamePrompt2;
+  g13.BelJarNamePrompt = g13.NamePrompt;
 
   // js/ui/conflict-dialog.mjs
   function suggestedBase(conflict) {
@@ -15440,15 +16547,15 @@
     return slash === -1 ? path : path.slice(slash + 1);
   }
   function buildConflictBody(conflict, total, index) {
-    const { el: el8, markMono: markMono2 } = PromptDialog;
-    const wrap = el8("div", "jar-conflict-dialog__panel");
+    const { el: el9, markMono: markMono2 } = PromptDialog;
+    const wrap = el9("div", "jar-conflict-dialog__panel");
     if (total > 1) {
-      wrap.appendChild(el8("p", "jar-prompt-dialog__step", `${index + 1} of ${total}`));
+      wrap.appendChild(el9("p", "jar-prompt-dialog__step", `${index + 1} of ${total}`));
     }
-    const subject = el8("p", "jar-prompt-dialog__subject");
+    const subject = el9("p", "jar-prompt-dialog__subject");
     subject.appendChild(markMono2(conflict.label));
     wrap.appendChild(subject);
-    const message2 = el8("p", "jar-prompt-dialog__message");
+    const message2 = el9("p", "jar-prompt-dialog__message");
     message2.textContent = conflict.kind === "folder" ? "A folder with this name is already in the project." : "A file with this name is already in the project.";
     wrap.appendChild(message2);
     return wrap;
@@ -15478,12 +16585,12 @@
   function resolveConflicts(conflicts, options) {
     options = options || {};
     if (!conflicts || !conflicts.length) return Promise.resolve([]);
-    const { el: el8, WRAP_CLASS: WRAP_CLASS2, CARD_CLASS: CARD_CLASS2 } = PromptDialog;
+    const { el: el9, WRAP_CLASS: WRAP_CLASS2, CARD_CLASS: CARD_CLASS2 } = PromptDialog;
     return new Promise((resolve2) => {
       let index = 0;
       const resolutions = [];
       let settled = false;
-      const shell = el8("div", "jar-prompt-dialog");
+      const shell = el9("div", "jar-prompt-dialog");
       const dialogEl = createDialog({
         ariaLabel: "Name conflict",
         content: shell,
@@ -15535,9 +16642,9 @@
   var ConflictDialog2 = {
     resolveConflicts
   };
-  var g12 = typeof window !== "undefined" ? window : globalThis;
-  g12.ConflictDialog = ConflictDialog2;
-  g12.BelJarConflictDialog = g12.ConflictDialog;
+  var g14 = typeof window !== "undefined" ? window : globalThis;
+  g14.ConflictDialog = ConflictDialog2;
+  g14.BelJarConflictDialog = g14.ConflictDialog;
 
   // js/ui/name-conflicts.mjs
   var global21 = globalThis;
@@ -16180,9 +17287,9 @@
     for (var rf = 0; rf < replaceFolders.length; rf++) {
       var folder = replaceFolders[rf];
       var deleteIds = [];
-      for (var g18 = 0; g18 < existingFiles.length; g18++) {
-        var nm = existingFiles[g18].name;
-        if (nm === folder.prefix || nm.indexOf(folder.prefix + "/") === 0) deleteIds.push(existingFiles[g18].id);
+      for (var g23 = 0; g23 < existingFiles.length; g23++) {
+        var nm = existingFiles[g23].name;
+        if (nm === folder.prefix || nm.indexOf(folder.prefix + "/") === 0) deleteIds.push(existingFiles[g23].id);
       }
       plan.replaceFolder.push({
         prefix: folder.prefix,
@@ -17007,8 +18114,8 @@
     for (var f = 0; f < fps.length; f++) {
       var fp = fps[f];
       var nested = false;
-      for (var g18 = 0; g18 < fps.length; g18++) {
-        if (fps[g18] !== fp && isPathUnderFolder(fp, fps[g18])) {
+      for (var g23 = 0; g23 < fps.length; g23++) {
+        if (fps[g23] !== fp && isPathUnderFolder(fp, fps[g23])) {
           nested = true;
           break;
         }
@@ -17765,19 +18872,19 @@
         }
       });
     }
-    function applyFileDiagTip(el8, fileId, fileName, diag) {
-      if (!el8 || !diag) return;
+    function applyFileDiagTip(el9, fileId, fileName, diag) {
+      if (!el9 || !diag) return;
       if (typeof opts.bindFileDiagTip === "function") {
-        opts.bindFileDiagTip(el8, fileId, fileName, diag);
+        opts.bindFileDiagTip(el9, fileId, fileName, diag);
       } else if (typeof opts.applyTip === "function") {
-        opts.applyTip(el8, diag === "error" ? "Has errors" : "Has warnings");
+        opts.applyTip(el9, diag === "error" ? "Has errors" : "Has warnings");
       }
     }
-    function clearFileDiagTip(el8) {
-      if (!el8) return;
-      el8.removeAttribute("data-tooltip-errors");
-      el8.removeAttribute("data-tooltip-head");
-      el8.removeAttribute("data-tooltip");
+    function clearFileDiagTip(el9) {
+      if (!el9) return;
+      el9.removeAttribute("data-tooltip-errors");
+      el9.removeAttribute("data-tooltip-head");
+      el9.removeAttribute("data-tooltip");
     }
     function applyRowDiag(row, fid, fname, diag) {
       var dot = row.querySelector(".explorer-file-diag");
@@ -17973,8 +19080,8 @@
       entry.sectionLabel || ""
     ].join(" ").toLowerCase();
   }
-  function snippetFromContent(text, query2) {
-    var q = normalizeQuery(query2);
+  function snippetFromContent(text, query3) {
+    var q = normalizeQuery(query3);
     if (!q || text == null) return null;
     var src = String(text);
     var lower = src.toLowerCase();
@@ -18003,9 +19110,9 @@
     if (hit.metaMatch) return 2;
     return 3;
   }
-  function searchEntries(entries, query2, fetchContent, opts) {
+  function searchEntries(entries, query3, fetchContent, opts) {
     opts = opts || {};
-    var q = normalizeQuery(query2);
+    var q = normalizeQuery(query3);
     if (!q) return Promise.resolve([]);
     var limit = opts.limit;
     if (limit == null) limit = 24;
@@ -18294,8 +19401,8 @@
       host: wrap,
       input: input2,
       header: opts.header || wrap.closest(".panel-header"),
-      keepOpenFor: function(el8) {
-        return ac.contains(el8);
+      keepOpenFor: function(el9) {
+        return ac.contains(el9);
       },
       onInput: schedule2,
       onClose: clearAc,
@@ -18409,32 +19516,62 @@
     if (meta.role === "mid" || meta.role === "tail") return " library-preview-tree-file--suite";
     return "";
   }
-  function suiteByFileForFolderChildren(children, cfgTextByLabel) {
-    var SL = global30.ExplorerSuiteLayout;
-    if (!SL || typeof SL.computeDirLayout !== "function") return {};
-    var fileChildren = [];
-    var activeCfgs = [];
-    for (var i = 0; i < children.length; i++) {
-      var c = children[i];
-      if (c.type !== "file") continue;
-      fileChildren.push({ id: c.id, name: c.label, baseName: c.label });
-      if (String(c.ext || "").toLowerCase() === "cfg") activeCfgs.push(c.label);
+  function layoutPreviewFolder(children, cfgTextByLabel) {
+    var folders = [];
+    var files2 = [];
+    var list3 = children || [];
+    for (var i = 0; i < list3.length; i++) {
+      var child = list3[i];
+      if (!child) continue;
+      if (child.type === "folder") folders.push(child);
+      else if (child.type === "file") files2.push(child);
     }
-    if (!activeCfgs.length) return {};
-    activeCfgs.sort(function(a, b) {
-      return a.localeCompare(b);
-    });
-    var textById = /* @__PURE__ */ Object.create(null);
-    for (var j = 0; j < fileChildren.length; j++) {
-      var fc = fileChildren[j];
-      if (String(fc.name).toLowerCase().endsWith(".cfg")) {
-        textById[fc.id] = cfgTextByLabel[fc.name] || "";
-      }
+    var SL = global30.ExplorerSuiteLayout;
+    if (!SL || typeof SL.computeDirLayout !== "function" || !files2.length) {
+      return { folders, files: files2, suiteByFile: {} };
+    }
+    var records2 = [];
+    for (var r = 0; r < files2.length; r++) {
+      var file = files2[r];
+      records2.push({ id: file.id, name: file.label, baseName: file.label, item: file });
     }
     var getText = function(id) {
-      return textById[id] || "";
+      for (var t = 0; t < records2.length; t++) {
+        if (records2[t].id !== id) continue;
+        var name = records2[t].name;
+        if (!String(name).toLowerCase().endsWith(".cfg")) return "";
+        return cfgTextByLabel && cfgTextByLabel[name] || "";
+      }
+      return "";
     };
-    return SL.computeDirLayout(fileChildren, activeCfgs, null, fileChildren, getText).suiteByFile;
+    var active5 = [];
+    var PS = global30.ProjectSource;
+    if (PS && typeof PS.inferActiveCfgForDir === "function") {
+      var synth = [];
+      for (var s = 0; s < records2.length; s++) {
+        synth.push({ id: records2[s].id, name: records2[s].name });
+      }
+      var best = PS.inferActiveCfgForDir(synth, getText, "");
+      if (best) active5.push(best);
+    }
+    var layout = SL.computeDirLayout(records2, active5, null, records2, getText);
+    var ordered = [];
+    var seen2 = /* @__PURE__ */ Object.create(null);
+    var orderedFiles = layout && layout.orderedFiles ? layout.orderedFiles : [];
+    for (var n = 0; n < orderedFiles.length; n++) {
+      var item = orderedFiles[n] && orderedFiles[n].item;
+      if (!item || seen2[item.id]) continue;
+      seen2[item.id] = true;
+      ordered.push(item);
+    }
+    for (var m = 0; m < files2.length; m++) {
+      if (!seen2[files2[m].id]) ordered.push(files2[m]);
+    }
+    return {
+      folders,
+      files: ordered,
+      suiteByFile: layout && layout.suiteByFile ? layout.suiteByFile : {}
+    };
   }
   function open7(opts) {
     opts = opts || {};
@@ -18460,13 +19597,12 @@
     var selectedId = null;
     var loadToken = 0;
     var cfgTextCache = /* @__PURE__ */ Object.create(null);
+    if (scopeFolder.id) expanded.add(scopeFolder.id);
     if (opts.focusFolder && folderContainsFolder(scopeFolder, opts.focusFolder)) {
       ancestorFolderIds(scopeFolder, opts.focusFolder).forEach(function(id) {
         expanded.add(id);
       });
       if (opts.focusFolder.id) expanded.add(opts.focusFolder.id);
-    } else {
-      expanded.add(scopeFolder.id);
     }
     function indexFolder(folder, pathLabel) {
       if (!folder || !folder.children) return;
@@ -18736,12 +19872,28 @@
         setHeaderFile(item.label);
       });
     }
+    function focusFolderToggle(id) {
+      var rows2 = treePane.querySelectorAll(".library-preview-tree-folder");
+      for (var i = 0; i < rows2.length; i++) {
+        if (rows2[i].dataset.folderId !== id) continue;
+        var btn = rows2[i].querySelector(".library-preview-tree-toggle");
+        if (btn) btn.focus();
+        return;
+      }
+    }
+    function setFolderOpen(id, open11) {
+      if (!id) return;
+      if (open11) expanded.add(id);
+      else expanded.delete(id);
+      renderTree();
+      focusFolderToggle(id);
+    }
     function renderTreeFolder(folder, depth, pathLabel) {
       if (!folder || folder.type !== "folder") return;
       var hasNamedRoot = !!scopeFolder.name;
       var displayRoot = folder === scopeFolder && hasNamedRoot;
       if (displayRoot || folder.name && folder !== scopeFolder) {
-        var isCollapsed = folder !== scopeFolder && !expanded.has(folder.id);
+        var isCollapsed = !expanded.has(folder.id);
         var foldRow = document.createElement("div");
         foldRow.className = "library-preview-tree-folder" + (isCollapsed ? " is-collapsed" : "");
         foldRow.setAttribute("role", "treeitem");
@@ -18764,9 +19916,7 @@
         toggleBtn.appendChild(label);
         if (folder.description) applyTip(toggleBtn, folder.description);
         toggleBtn.addEventListener("click", function() {
-          if (expanded.has(folder.id)) expanded.delete(folder.id);
-          else expanded.add(folder.id);
-          renderTree();
+          setFolderOpen(folder.id, !expanded.has(folder.id));
         });
         foldRow.appendChild(toggleBtn);
         if (onInsertFolder) {
@@ -18784,51 +19934,51 @@
         depth += 1;
       }
       if (!folder.children) return;
-      var suiteByFile = suiteByFileForFolderChildren(folder.children, cfgTextCache);
-      for (var i = 0; i < folder.children.length; i++) {
-        var child = folder.children[i];
-        if (child.type === "folder") {
-          renderTreeFolder(child, depth, pathLabel ? pathLabel + "/" + child.name : child.name);
-        } else {
-          var childExt = String(child.ext || "bel").toLowerCase();
-          var suiteMeta = suiteByFile[child.label];
-          var fileRow = document.createElement("div");
-          fileRow.className = "library-preview-tree-file" + (childExt === "cfg" ? " library-preview-tree-file--cfg" : "") + (childExt === "elf" ? " library-preview-tree-file--elf" : "") + suiteClassesForMeta(suiteMeta) + (suiteMeta && suiteMeta.suiteIndex > 0 && suiteMeta.role === "head" ? " library-preview-tree-file--suite-block-sep" : "");
-          if (child.id === selectedId) fileRow.classList.add("is-selected");
-          fileRow.setAttribute("role", "treeitem");
-          fileRow.setAttribute("aria-label", child.label);
-          fileRow.style.setProperty("--library-depth", String(depth));
-          fileRow.dataset.fileId = child.id;
-          fileRow.tabIndex = 0;
-          var fileLabel = document.createElement("span");
-          fileLabel.className = "library-preview-tree-label";
-          fileLabel.textContent = child.label;
-          fileRow.appendChild(fileLabel);
-          if (onCopyFile || onInsertFile) {
-            var fileActions = document.createElement("div");
-            fileActions.className = "library-actions";
-            if (onCopyFile) {
-              fileActions.appendChild(actionBtn(applyTip, "", "Copy to clipboard", ICON_COPY, function() {
-                onCopyFile(child);
-              }));
-            }
-            if (onInsertFile) {
-              fileActions.appendChild(actionBtn(applyTip, "", "Insert", ICON_INSERT, function(btn) {
-                onInsertFile(btn, child);
-              }));
-            }
-            fileRow.appendChild(fileActions);
+      var laid = layoutPreviewFolder(folder.children, cfgTextCache);
+      for (var f = 0; f < laid.folders.length; f++) {
+        var sub = laid.folders[f];
+        renderTreeFolder(sub, depth, pathLabel ? pathLabel + "/" + sub.name : sub.name);
+      }
+      for (var i = 0; i < laid.files.length; i++) {
+        var child = laid.files[i];
+        var childExt = String(child.ext || "bel").toLowerCase();
+        var suiteMeta = laid.suiteByFile[child.label];
+        var fileRow = document.createElement("div");
+        fileRow.className = "library-preview-tree-file" + (childExt === "cfg" ? " library-preview-tree-file--cfg" : "") + (childExt === "elf" ? " library-preview-tree-file--elf" : "") + suiteClassesForMeta(suiteMeta) + (suiteMeta && suiteMeta.suiteIndex > 0 && suiteMeta.role === "head" ? " library-preview-tree-file--suite-block-sep" : "");
+        if (child.id === selectedId) fileRow.classList.add("is-selected");
+        fileRow.setAttribute("role", "treeitem");
+        fileRow.setAttribute("aria-label", child.label);
+        fileRow.style.setProperty("--library-depth", String(depth));
+        fileRow.dataset.fileId = child.id;
+        fileRow.tabIndex = 0;
+        var fileLabel = document.createElement("span");
+        fileLabel.className = "library-preview-tree-label";
+        fileLabel.textContent = child.label;
+        fileRow.appendChild(fileLabel);
+        if (onCopyFile || onInsertFile) {
+          var fileActions = document.createElement("div");
+          fileActions.className = "library-actions";
+          if (onCopyFile) {
+            fileActions.appendChild(actionBtn(applyTip, "", "Copy to clipboard", ICON_COPY, function() {
+              onCopyFile(child);
+            }));
           }
-          if (child.description) applyTip(fileRow, child.description);
-          fileRow.addEventListener("click", /* @__PURE__ */ (function(it) {
-            return function(e) {
-              if (e.target.closest(".library-actions")) return;
-              selectFile(it);
-            };
-          })(child));
-          treePane.appendChild(fileRow);
-          treeRows.push(fileRow);
+          if (onInsertFile) {
+            fileActions.appendChild(actionBtn(applyTip, "", "Insert", ICON_INSERT, function(btn) {
+              onInsertFile(btn, child);
+            }));
+          }
+          fileRow.appendChild(fileActions);
         }
+        if (child.description) applyTip(fileRow, child.description);
+        fileRow.addEventListener("click", /* @__PURE__ */ (function(it) {
+          return function(e) {
+            if (e.target.closest(".library-actions")) return;
+            selectFile(it);
+          };
+        })(child));
+        treePane.appendChild(fileRow);
+        treeRows.push(fileRow);
       }
     }
     function ensureCfgTextsLoaded() {
@@ -18879,20 +20029,14 @@
         if (folderEl && folderEl.classList.contains("is-collapsed")) {
           e.preventDefault();
           var fid2 = folderEl.dataset.folderId;
-          if (fid2) {
-            expanded.add(fid2);
-            renderTree();
-          }
+          if (fid2) setFolderOpen(fid2, true);
         }
       } else if (e.key === "ArrowLeft") {
         var folderEl2 = row.closest(".library-preview-tree-folder");
         if (folderEl2 && !folderEl2.classList.contains("is-collapsed")) {
           e.preventDefault();
           var fid3 = folderEl2.dataset.folderId;
-          if (fid3) {
-            expanded.delete(fid3);
-            renderTree();
-          }
+          if (fid3) setFolderOpen(fid3, false);
         }
       }
     }
@@ -18988,8 +20132,8 @@
       }
       render8();
     }
-    function applyTip(el8, tip) {
-      if (typeof opts.applyTip === "function") opts.applyTip(el8, tip);
+    function applyTip(el9, tip) {
+      if (typeof opts.applyTip === "function") opts.applyTip(el9, tip);
     }
     function toast4(msg, kind) {
       if (typeof opts.showToast === "function") opts.showToast(msg, { kind: kind || "info" });
@@ -19075,11 +20219,10 @@
     }
     function prepareLibraryInsert(code, ref) {
       var path = libraryInsertPath(ref);
-      if (!/\.(bel|elf)$/i.test(path)) return code;
-      if (typeof BelEditor !== "undefined" && typeof BelEditor.maybeExpandBelAliases === "function") {
-        return BelEditor.maybeExpandBelAliases(code);
-      }
-      return code;
+      if (!/\.(bel|elf)$/i.test(path) || typeof BelEditor === "undefined") return code;
+      var expanded2 = typeof BelEditor.maybeExpandBelAliases === "function" ? BelEditor.maybeExpandBelAliases(code) : code;
+      if (typeof BelEditor.formatSource !== "function") return expanded2;
+      return BelEditor.formatSource(expanded2, { quiet: true }) ?? expanded2;
     }
     function isLibraryProjectFile(item) {
       if (!item || item.type !== "file") return false;
@@ -20132,21 +21275,21 @@
     if (!entry || entry.leaving || entry.dismissed) return;
     entry.leaving = true;
     clearTimers2(entry);
-    const el8 = entry.el;
-    el8.classList.remove("is-visible");
-    el8.classList.add("is-leaving");
+    const el9 = entry.el;
+    el9.classList.remove("is-visible");
+    el9.classList.add("is-leaving");
     let done = false;
     const finish = () => {
       if (done) return;
       done = true;
-      el8.removeEventListener("transitionend", onEnd);
+      el9.removeEventListener("transitionend", onEnd);
       finishDismiss(id, entry);
     };
     const onEnd = (e) => {
-      if (e.target !== el8) return;
+      if (e.target !== el9) return;
       finish();
     };
-    el8.addEventListener("transitionend", onEnd);
+    el9.addEventListener("transitionend", onEnd);
     setTimeout(finish, LEAVE_MS2 + 40);
   }
   function wireUntil(id, entry, untilFn) {
@@ -20173,14 +21316,14 @@
       pushNotification(parsed.message, parsed);
     }
     const id = nextId();
-    const el8 = document.createElement("div");
-    el8.className = "toast " + kindClass(parsed.kind);
-    el8.setAttribute("role", parsed.kind === "error" ? "alert" : "status");
-    el8.dataset.toastId = id;
+    const el9 = document.createElement("div");
+    el9.className = "toast " + kindClass(parsed.kind);
+    el9.setAttribute("role", parsed.kind === "error" ? "alert" : "status");
+    el9.dataset.toastId = id;
     const body = document.createElement("div");
     body.className = "toast-body";
     body.textContent = parsed.message;
-    el8.appendChild(body);
+    el9.appendChild(body);
     if (parsed.closable) {
       const closeBtn2 = document.createElement("button");
       closeBtn2.type = "button";
@@ -20191,11 +21334,11 @@
         e.stopPropagation();
         animateOut(id, entry);
       });
-      el8.appendChild(closeBtn2);
+      el9.appendChild(closeBtn2);
     }
     const entry = {
       id,
-      el: el8,
+      el: el9,
       dismissed: false,
       leaving: false,
       onDismiss: parsed.onDismiss,
@@ -20205,9 +21348,9 @@
     };
     live.set(id, entry);
     showToastLayer();
-    stackEl.appendChild(el8);
+    stackEl.appendChild(el9);
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => el8.classList.add("is-visible"));
+      requestAnimationFrame(() => el9.classList.add("is-visible"));
     });
     if (parsed.until) {
       wireUntil(id, entry, parsed.until);
@@ -20666,11 +21809,11 @@
   function svgMarkup(paths, cls) {
     return "<svg" + (cls ? ' class="' + cls + '"' : "") + ' viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + "</svg>";
   }
-  function bindTooltip(el8, text) {
-    if (!el8 || !text) return;
-    el8.setAttribute("data-tooltip", text);
+  function bindTooltip(el9, text) {
+    if (!el9 || !text) return;
+    el9.setAttribute("data-tooltip", text);
     try {
-      if (typeof Tooltips !== "undefined" && typeof Tooltips.bind === "function") Tooltips.bind(el8);
+      if (typeof Tooltips !== "undefined" && typeof Tooltips.bind === "function") Tooltips.bind(el9);
     } catch (_) {
     }
   }
@@ -21032,9 +22175,11 @@
   }
   function onSettingsChanged(e) {
     if (e.ids.some((id) => settingRow(id).boot)) repaint();
+    if (e.ids.includes("startPage")) nameHome();
   }
-  function onReload() {
-    global34.location.reload();
+  function nameHome() {
+    const home = document.getElementById("btn-home");
+    if (home) home.setAttribute("href", Routes.homeUrl());
   }
   function onSettings() {
     if (global34.SettingsUI && typeof global34.SettingsUI.open === "function") {
@@ -21051,8 +22196,8 @@
       global34.Notifications.init();
     }
     track2(document.getElementById("btn-theme"), "click", toggleTheme);
-    track2(document.getElementById("btn-reload"), "click", onReload);
     track2(document.getElementById("btn-settings"), "click", onSettings);
+    nameHome();
   }
   function unmount() {
     if (!mounted2) return;
@@ -21108,15 +22253,15 @@
   function hoverTimestampOn() {
     return Settings.get("replHoverTimestamp");
   }
-  function clearStampTooltip(el8) {
-    if (!el8 || el8.nodeType !== 1) return;
+  function clearStampTooltip(el9) {
+    if (!el9 || el9.nodeType !== 1) return;
     if (typeof Tooltips !== "undefined" && Tooltips.set) {
-      Tooltips.set(el8, "", { ariaLabel: false });
+      Tooltips.set(el9, "", { ariaLabel: false });
     } else {
-      el8.removeAttribute("data-tooltip");
+      el9.removeAttribute("data-tooltip");
     }
-    el8.removeAttribute("data-tooltip-placement");
-    el8.removeAttribute("data-tooltip-no-track");
+    el9.removeAttribute("data-tooltip-placement");
+    el9.removeAttribute("data-tooltip-no-track");
   }
   function setStampTooltip(host2, tip) {
     if (!hoverTimestampOn()) {
@@ -21131,11 +22276,11 @@
       host2.setAttribute("data-tooltip", tip);
     }
   }
-  function clearStamp(el8) {
-    if (!el8 || el8.nodeType !== 1) return;
-    if (el8.dataset) delete el8.dataset.ms;
-    el8.removeAttribute("data-ms");
-    clearStampTooltip(el8);
+  function clearStamp(el9) {
+    if (!el9 || el9.nodeType !== 1) return;
+    if (el9.dataset) delete el9.dataset.ms;
+    el9.removeAttribute("data-ms");
+    clearStampTooltip(el9);
   }
   function syncStampHoverPref(root2) {
     var scope = root2 || getOutput();
@@ -21143,10 +22288,10 @@
     if (hoverTimestampOn()) {
       var stamped = scope.querySelectorAll("[data-ms]");
       for (var i = 0; i < stamped.length; i++) {
-        var el8 = stamped[i];
-        var t = Number(el8.dataset.ms);
+        var el9 = stamped[i];
+        var t = Number(el9.dataset.ms);
         if (!Number.isFinite(t)) continue;
-        setStampTooltip(el8, formatTs(t));
+        setStampTooltip(el9, formatTs(t));
       }
       return;
     }
@@ -21232,12 +22377,12 @@
     if (!scope || !scope.querySelectorAll) return;
     var stamps = scope.querySelectorAll(".repl-ts");
     for (var i = 0; i < stamps.length; i++) {
-      var el8 = stamps[i];
-      var parent = el8.parentElement;
+      var el9 = stamps[i];
+      var parent = el9.parentElement;
       var ms = NaN;
-      if (el8.dataset && el8.dataset.ms) ms = Number(el8.dataset.ms);
-      if (!Number.isFinite(ms) && el8.dateTime) ms = Date.parse(el8.dateTime);
-      if (el8.parentNode) el8.parentNode.removeChild(el8);
+      if (el9.dataset && el9.dataset.ms) ms = Number(el9.dataset.ms);
+      if (!Number.isFinite(ms) && el9.dateTime) ms = Date.parse(el9.dateTime);
+      if (el9.parentNode) el9.parentNode.removeChild(el9);
       if (parent) stampHost(parent, Number.isFinite(ms) ? ms : Date.now());
     }
   }
@@ -21257,10 +22402,10 @@
     }
     var stamped = scope.querySelectorAll("[data-ms]");
     for (var j = 0; j < stamped.length; j++) {
-      var el8 = stamped[j];
-      var t = Number(el8.dataset.ms);
+      var el9 = stamped[j];
+      var t = Number(el9.dataset.ms);
       if (!Number.isFinite(t)) continue;
-      setStampTooltip(el8, formatTs(t));
+      setStampTooltip(el9, formatTs(t));
     }
   }
   function buildLiveLine() {
@@ -22490,7 +23635,7 @@
   }
   function appendProjectOpened(info) {
     info = info || {};
-    var name = String(info.name != null ? info.name : "Untitled Project");
+    var name = String(info.name != null ? info.name : "Untitled project");
     var belCount = Number(info.belCount) || 0;
     var elfCount = Number(info.elfCount) || 0;
     var cfgCount = Number(info.cfgCount) || 0;
@@ -22525,7 +23670,7 @@
     wrap.className = "repl-banner";
     var lead = document.createElement("div");
     lead.className = "repl-banner-line";
-    lead.appendChild(document.createTextNode("Beluga 1.1.3 \u2014 "));
+    lead.appendChild(document.createTextNode("Beluga 1.1.3. Type "));
     var kHelp = document.createElement("span");
     kHelp.className = "repl-banner-cmd";
     kHelp.textContent = "help";
@@ -24087,8 +25232,8 @@
     });
     container.appendChild(trigger);
     function updateFocus() {
-      optionEls.forEach(function(el8, i) {
-        el8.classList.toggle("is-focused", i === focusedIdx);
+      optionEls.forEach(function(el9, i) {
+        el9.classList.toggle("is-focused", i === focusedIdx);
       });
     }
     function setValue(val) {
@@ -24097,8 +25242,8 @@
         return o.value === val;
       })[0];
       valueSpan.textContent = opt ? opt.label : val;
-      optionEls.forEach(function(el8) {
-        el8.classList.toggle("is-selected", el8.dataset.value === val);
+      optionEls.forEach(function(el9) {
+        el9.classList.toggle("is-selected", el9.dataset.value === val);
       });
     }
     function reposition() {
@@ -24120,9 +25265,9 @@
       panel2.style.left = pos.x + "px";
     }
     function open11() {
-      var el8 = container.parentElement;
-      while (el8 && el8.tagName !== "DIALOG") el8 = el8.parentElement;
-      var mountEl = el8 || document.body;
+      var el9 = container.parentElement;
+      while (el9 && el9.tagName !== "DIALOG") el9 = el9.parentElement;
+      var mountEl = el9 || document.body;
       if (panel2.parentElement !== mountEl) mountEl.appendChild(panel2);
       panel2.style.visibility = "hidden";
       panel2.style.display = "block";
@@ -24768,11 +25913,11 @@
         global43.Toasts.show(message2, { kind: "warn" });
       }
     }
-    function setTip2(el8, text) {
+    function setTip2(el9, text) {
       if (global43.Tooltips && typeof global43.Tooltips.set === "function") {
-        global43.Tooltips.set(el8, text);
+        global43.Tooltips.set(el9, text);
       } else {
-        el8.setAttribute("aria-label", text);
+        el9.setAttribute("aria-label", text);
       }
     }
     function normalizePairs(raw) {
@@ -24838,10 +25983,10 @@
       return null;
     }
     function buildRow2(row) {
-      var el8 = document.createElement("div");
-      el8.className = "jar-alias__row";
-      el8.setAttribute("role", "listitem");
-      el8.dataset.rowId = String(row.id);
+      var el9 = document.createElement("div");
+      el9.className = "jar-alias__row";
+      el9.setAttribute("role", "listitem");
+      el9.dataset.rowId = String(row.id);
       var trigger = document.createElement("input");
       trigger.type = "text";
       trigger.className = "jar-alias__input jar-alias__input--trigger";
@@ -24939,11 +26084,11 @@
         commit();
         render8();
       });
-      el8.appendChild(trigger);
-      el8.appendChild(arrow);
-      el8.appendChild(expansion);
-      el8.appendChild(del);
-      return el8;
+      el9.appendChild(trigger);
+      el9.appendChild(arrow);
+      el9.appendChild(expansion);
+      el9.appendChild(del);
+      return el9;
     }
     function render8() {
       list3.replaceChildren();
@@ -25037,7 +26182,7 @@
   function fullKeyboardLine() {
     var F = typeof FullKeyboard !== "undefined" ? FullKeyboard : null;
     if (F && F.isSupported && F.isSupported()) {
-      return "Full keyboard runs BelJar fullscreen with Keyboard Lock, so Ctrl+W closes nothing. Hold Esc to leave \u2014 it is in the command palette, or type :fullkeys.";
+      return "Full keyboard runs BelJar fullscreen with Keyboard Lock, so Ctrl+W closes nothing. Hold Esc to leave. It is in the command palette, or type :fullkeys.";
     }
     return "This browser has no Keyboard Lock, so those chords stay with the browser.";
   }
@@ -25124,16 +26269,16 @@
       return pop;
     }
     function positionPop() {
-      var el8 = ensurePop();
-      el8.hidden = false;
-      el8.classList.remove("is-visible", "tooltip-spout-left", "tooltip-spout-right");
-      el8.style.visibility = "hidden";
-      el8.style.left = "0";
-      el8.style.top = "0";
+      var el9 = ensurePop();
+      el9.hidden = false;
+      el9.classList.remove("is-visible", "tooltip-spout-left", "tooltip-spout-right");
+      el9.style.visibility = "hidden";
+      el9.style.left = "0";
+      el9.style.top = "0";
       var br = btn.getBoundingClientRect();
       var gap = 6;
-      var pw = el8.offsetWidth;
-      var ph = el8.offsetHeight;
+      var pw = el9.offsetWidth;
+      var ph = el9.offsetHeight;
       var left = br.right + gap;
       var top = br.top + (br.height - ph) / 2;
       var flipped = false;
@@ -25143,16 +26288,16 @@
       }
       if (top + ph > window.innerHeight - 12) top = window.innerHeight - 12 - ph;
       if (top < 12) top = 12;
-      el8.style.position = "fixed";
-      el8.style.left = left + "px";
-      el8.style.top = top + "px";
-      el8.classList.add(flipped ? "tooltip-spout-right" : "tooltip-spout-left");
+      el9.style.position = "fixed";
+      el9.style.left = left + "px";
+      el9.style.top = top + "px";
+      el9.classList.add(flipped ? "tooltip-spout-right" : "tooltip-spout-left");
       var anchorY = br.top + br.height / 2 - top;
       anchorY = Math.max(10, Math.min(ph - 10, anchorY));
-      el8.style.setProperty("--tooltip-arrow-y", anchorY + "px");
-      el8.style.visibility = "";
+      el9.style.setProperty("--tooltip-arrow-y", anchorY + "px");
+      el9.style.visibility = "";
       requestAnimationFrame(function() {
-        el8.classList.add("is-visible");
+        el9.classList.add("is-visible");
       });
     }
     function show3() {
@@ -25250,17 +26395,19 @@
     var panelBodies = {};
     var activeCategory = "appearance";
     function selectCategory(id) {
+      var arriving = id === "account" && activeCategory !== "account";
       activeCategory = id;
-      nav.querySelectorAll(".jar-settings__nav-item").forEach(function(el8) {
-        var on = el8.dataset.category === id;
-        el8.classList.toggle("is-active", on);
-        el8.setAttribute("aria-selected", on ? "true" : "false");
-        el8.tabIndex = on ? 0 : -1;
+      if (arriving && refreshAccountTab) refreshAccountTab();
+      nav.querySelectorAll(".jar-settings__nav-item").forEach(function(el9) {
+        var on = el9.dataset.category === id;
+        el9.classList.toggle("is-active", on);
+        el9.setAttribute("aria-selected", on ? "true" : "false");
+        el9.tabIndex = on ? 0 : -1;
       });
-      main.querySelectorAll(".jar-settings__panel").forEach(function(el8) {
-        var on = el8.dataset.category === id;
-        el8.hidden = !on;
-        el8.classList.toggle("is-active", on);
+      main.querySelectorAll(".jar-settings__panel").forEach(function(el9) {
+        var on = el9.dataset.category === id;
+        el9.hidden = !on;
+        el9.classList.toggle("is-active", on);
       });
       if (id !== "keybindings" && keybindingsApi) keybindingsApi.clearRecording();
       if (searchResults && !searchResults.hidden && settingsSearchInput && settingsSearchInput.value) {
@@ -25314,10 +26461,6 @@
       panel2.hidden = cat.id !== activeCategory;
       var head = document.createElement("div");
       head.className = "jar-settings__panel-head";
-      var headLabel = document.createElement("span");
-      headLabel.className = "jar-settings__panel-head-label";
-      headLabel.textContent = cat.label;
-      head.appendChild(headLabel);
       panel2.appendChild(head);
       var body = document.createElement("div");
       body.className = "jar-settings__panel-body";
@@ -26163,8 +27306,8 @@
     addDropdownRow(
       panelBodies.beluga,
       "beluga-mode",
-      "Run / Load",
-      "Stable: worker (non-blocking). Fast: main thread for Run/Load only \u2014 background checking always stays on the Stable worker.",
+      "Run and load",
+      "Stable: worker (non-blocking). Fast: main thread for runs and loads only; background checking always stays on the Stable worker.",
       [{ value: "stable", label: "Stable" }, { value: "fast", label: "Fast" }],
       function() {
         return BelugaRun.getBelugaMode();
@@ -26189,7 +27332,7 @@
       panelBodies.beluga,
       "beluga-cancel-on-edit",
       "Cancel load on edit",
-      "Abort a pending Run/Load when the buffer changes.",
+      "Abort a pending run or load when the buffer changes.",
       function() {
         return Settings.get("belugaCancelOnEdit");
       },
@@ -26277,6 +27420,19 @@
       },
       function(p, on) {
         Settings.set("autosolveShowStats", on);
+      }
+    );
+    addDropdownRow(
+      panelBodies.harpoon,
+      "case-fill",
+      "Fill missing cases",
+      "When a proof by induction is missing cases, search for them when typing pauses and show each as a faint arm to accept. Proofs without a termination measure are only filled when asked.",
+      [{ value: "auto", label: "Automatically" }, { value: "ask", label: "When asked" }],
+      function() {
+        return Settings.get("caseFill");
+      },
+      function(p, v) {
+        Settings.set("caseFill", v);
       }
     );
     addSwitchRow(
@@ -26403,6 +27559,22 @@
         Settings.set("replHistoryCap", parseInt(v, 10));
       }
     );
+    addDropdownRow(
+      panelBodies.workspace,
+      "start-page",
+      "Start page",
+      "What opens when you come to BelJar.",
+      [
+        { value: "home", label: "Home" },
+        { value: "last", label: "Last project" }
+      ],
+      function() {
+        return Settings.get("startPage");
+      },
+      function(p, v) {
+        Settings.set("startPage", v);
+      }
+    );
     addSwitchRow(
       panelBodies.workspace,
       "restore-panels",
@@ -26431,7 +27603,7 @@
       panelBodies.workspace,
       "inspector-follow",
       "Inspector follows cursor",
-      "Update the inspector as the editor cursor moves.",
+      "Follow the cursor, and move the cursor to what you open.",
       function() {
         return Settings.get("inspectorFollow");
       },
@@ -26447,7 +27619,8 @@
       "Reset",
       function() {
         ConfirmDialog.confirm({
-          message: "Reset split panes and side panel sizes? The page will reload.",
+          message: "Reset split panes and side panel sizes?",
+          note: "The page will reload.",
           confirmLabel: "Reset",
           ariaLabel: "Reset panel layout"
         }).then(function(ok) {
@@ -26658,6 +27831,81 @@
         Settings.set("signOutKeep", v);
       }
     );
+    addSectionHead(panelBodies.account, "Devices");
+    var devicesHead = panelBodies.account.lastElementChild;
+    var devicesBox = document.createElement("div");
+    devicesBox.className = "jar-settings__devices";
+    panelBodies.account.appendChild(devicesBox);
+    var devicesAsked = 0;
+    function deviceNote(text) {
+      var row = document.createElement("div");
+      row.className = "jar-dialog__setting jar-settings__action-row";
+      var main2 = document.createElement("div");
+      main2.className = "jar-dialog__setting-main";
+      var dsc = document.createElement("span");
+      dsc.className = "jar-dialog__setting-desc";
+      dsc.textContent = text;
+      main2.appendChild(dsc);
+      row.appendChild(main2);
+      return row;
+    }
+    function refreshDevices() {
+      var A = global43.Account;
+      var who = A && A.user();
+      devicesHead.hidden = !who;
+      devicesBox.hidden = !who;
+      var ask = ++devicesAsked;
+      if (!who) {
+        devicesBox.replaceChildren();
+        return;
+      }
+      A.sessions().then(function(list3) {
+        if (ask !== devicesAsked) return;
+        devicesBox.replaceChildren();
+        if (!list3) {
+          devicesBox.appendChild(deviceNote("Couldn\u2019t ask BelJar\u2019s server where you\u2019re signed in."));
+          return;
+        }
+        list3.slice().sort(function(a, b) {
+          return (b.current ? 1 : 0) - (a.current ? 1 : 0);
+        }).forEach(function(s) {
+          var w = A.sessionWords(s);
+          if (s.current) {
+            var mine = addActionRow(devicesBox, w.label, w.detail, "", function() {
+            });
+            mine.removeChild(mine.querySelector(".jar-settings__action-btn"));
+            mine.dataset.session = "current";
+            return;
+          }
+          var row = addActionRow(devicesBox, w.label, w.detail, "Sign out", function() {
+            var btn = row.querySelector(".jar-settings__action-btn");
+            btn.disabled = true;
+            A.signOutThere(s.id).then(function(ok) {
+              if (ok) {
+                row.remove();
+                return;
+              }
+              btn.disabled = false;
+              if (global43.Toasts && typeof global43.Toasts.error === "function") global43.Toasts.error("Couldn\u2019t sign out that device. Try again.");
+            });
+          });
+          row.dataset.session = "other";
+        });
+      });
+    }
+    addSectionHead(panelBodies.account, "Your data");
+    var dataHead = panelBodies.account.lastElementChild;
+    var deleteRow = addActionRow(
+      panelBodies.account,
+      "Delete account",
+      "Deletes your projects and settings in the cloud, and signs out every device. Projects in this browser stay here.",
+      "Delete account",
+      function() {
+        var A = global43.Account;
+        if (A && A.user()) A.deleteAccount();
+      }
+    );
+    deleteRow.querySelector(".jar-settings__action-btn").classList.add("jar-settings__action-btn--danger");
     refreshAccountTab = function() {
       var A = global43.Account;
       var there = !!(A && A.available());
@@ -26671,6 +27919,9 @@
       if (lbl) lbl.textContent = who ? who.name || "@" + who.handle : "Not signed in";
       if (dsc) dsc.textContent = who ? "@" + who.handle + ", signed in with GitHub." : "Sign in to have your projects and settings on every device.";
       if (btn) btn.textContent = who ? "Sign out" : "Sign in with GitHub";
+      dataHead.hidden = !who;
+      deleteRow.hidden = !who;
+      if (activeCategory === "account") refreshDevices();
     };
     refreshAccountTab();
     global43.addEventListener("beljar:account", refreshAccountTab);
@@ -26744,16 +27995,16 @@
       window.addEventListener("resize", positionSearchResults);
       window.addEventListener("scroll", positionSearchResults, true);
     }
-    function flashEl(el8) {
-      if (!el8) return;
+    function flashEl(el9) {
+      if (!el9) return;
       main.querySelectorAll(".is-flash").forEach(function(node) {
         node.classList.remove("is-flash");
       });
-      el8.classList.add("is-flash");
+      el9.classList.add("is-flash");
       if (flashTimer) clearTimeout(flashTimer);
       flashTimer = setTimeout(function() {
         flashTimer = null;
-        el8.classList.remove("is-flash");
+        el9.classList.remove("is-flash");
       }, 1100);
     }
     function hitRank(title, q) {
@@ -26771,28 +28022,28 @@
         if (tabBtn && tabBtn.hidden) return;
         var section = "";
         var scan = [];
-        Array.prototype.forEach.call(body.children, function(el8) {
-          if (el8.classList.contains("jar-settings__substyle")) {
-            if (el8.hidden) return;
-            var owner = el8.dataset.section || "";
-            Array.prototype.forEach.call(el8.children, function(sub) {
+        Array.prototype.forEach.call(body.children, function(el9) {
+          if (el9.classList.contains("jar-settings__substyle")) {
+            if (el9.hidden) return;
+            var owner = el9.dataset.section || "";
+            Array.prototype.forEach.call(el9.children, function(sub) {
               scan.push({ el: sub, section: owner });
             });
             return;
           }
-          scan.push({ el: el8, section: null });
+          scan.push({ el: el9, section: null });
         });
         scan.forEach(function(entry) {
-          var el8 = entry.el;
-          if (entry.section === null && el8.classList.contains("jar-settings__section-head")) {
-            section = String(el8.textContent || "").trim();
+          var el9 = entry.el;
+          if (entry.section === null && el9.classList.contains("jar-settings__section-head")) {
+            section = String(el9.textContent || "").trim();
             return;
           }
-          if (el8.classList.contains("jar-settings__unit")) return;
-          if (!el8.classList.contains("jar-dialog__setting")) return;
+          if (el9.classList.contains("jar-settings__unit")) return;
+          if (!el9.classList.contains("jar-dialog__setting")) return;
           var rowSection = entry.section === null ? section : entry.section;
-          var titleEl = el8.querySelector(".jar-dialog__setting-label");
-          var descEl = el8.querySelector(".jar-dialog__setting-desc");
+          var titleEl = el9.querySelector(".jar-dialog__setting-label");
+          var descEl = el9.querySelector(".jar-dialog__setting-desc");
           var title = titleEl ? String(titleEl.textContent || "") : "";
           var desc = descEl ? String(descEl.textContent || "") : "";
           var hay = (title + " " + desc + " " + rowSection + " " + cat.label).replace(/\s+/g, " ").toLowerCase();
@@ -26802,7 +28053,7 @@
             categoryId: cat.id,
             title,
             meta: rowSection || cat.label,
-            el: el8,
+            el: el9,
             rank: hitRank(title, q)
           });
         });
@@ -27000,6 +28251,8 @@
     syncFromState();
     if (keybindingsApi && typeof keybindingsApi.refresh === "function") keybindingsApi.refresh();
     Dialog.openDialog(settingsDialogEl);
+    var shown = settingsDialogEl.querySelector('.jar-settings__nav-item[aria-selected="true"]');
+    if (shown) shown.focus({ preventScroll: true });
   }
   global43.SettingsUI = {
     syncFromState,
@@ -27057,12 +28310,12 @@
     return global46.HarpoonGlyphs || null;
   }
   function displayBeluga2(text) {
-    var g18 = glyphs();
-    return g18 ? g18.displayBeluga(text) : String(text == null ? "" : text);
+    var g23 = glyphs();
+    return g23 ? g23.displayBeluga(text) : String(text == null ? "" : text);
   }
   function compactTypeLabel2(box) {
-    var g18 = glyphs();
-    return g18 ? g18.compactTypeLabel(box) : norm(box);
+    var g23 = glyphs();
+    return g23 ? g23.compactTypeLabel(box) : norm(box);
   }
   function trunc(s, max) {
     s = String(s == null ? "" : s);
@@ -27343,10 +28596,10 @@
     if (n.type === "ghost") return SIZE.ghost.label;
     return SIZE.move.label;
   }
-  function renderNodeBody(g18, n, pw, h, clipId) {
+  function renderNodeBody(g23, n, pw, h, clipId) {
     var isArm = n.type === "arm";
     var rx = isArm ? 6 : 8;
-    g18.appendChild(el3("rect", {
+    g23.appendChild(el3("rect", {
       x: -pw / 2,
       y: -h / 2,
       width: pw,
@@ -27361,16 +28614,16 @@
       "clip-path": "url(#" + clipId + ")"
     });
     text.textContent = label;
-    g18.appendChild(text);
+    g23.appendChild(text);
     if (n.closed) {
-      g18.appendChild(el3("circle", {
+      g23.appendChild(el3("circle", {
         cx: pw / 2 - 9,
         cy: -h / 2 + 9,
         r: 3,
         class: "hpt-status hpt-status--done"
       }));
     } else if (n.open && n.type === "move") {
-      g18.appendChild(el3("circle", {
+      g23.appendChild(el3("circle", {
         cx: pw / 2 - 9,
         cy: -h / 2 + 9,
         r: 3,
@@ -27379,8 +28632,8 @@
     }
   }
   function looksLikeType(s) {
-    var g18 = glyphs();
-    if (g18 && typeof g18.looksLikeBeluga === "function") return g18.looksLikeBeluga(s);
+    var g23 = glyphs();
+    if (g23 && typeof g23.looksLikeBeluga === "function") return g23.looksLikeBeluga(s);
     return /(\|-|⊢|\[)/.test(String(s || ""));
   }
   function highlightInto(host2, text, kind) {
@@ -27540,24 +28793,24 @@
     });
     var selectedG = null;
     var selectedId = opts.selectedId || null;
-    function select(n, g18) {
+    function select(n, g23) {
       if (selectedG) selectedG.classList.remove("is-selected");
-      selectedG = g18;
-      if (g18) g18.classList.add("is-selected");
+      selectedG = g23;
+      if (g23) g23.classList.add("is-selected");
       if (opts.onSelect) opts.onSelect(n);
     }
     nodes.forEach(function(n, idx) {
       var pw = n.w;
       var h = n.h;
-      var g18 = el3("g", {
+      var g23 = el3("g", {
         class: "hpt-node hpt-node--" + (n.kind || n.type) + (n.type === "ghost" ? " is-ghost" : ""),
         transform: "translate(" + n.x + "," + n.y + ")",
         "data-node-id": String(n.id),
         tabindex: "0",
         role: "button"
       });
-      g18.style.transitionDelay = Math.min(idx * 20, 600) + "ms";
-      renderNodeBody(g18, n, pw, h, n._clipId);
+      g23.style.transitionDelay = Math.min(idx * 20, 600) + "ms";
+      renderNodeBody(g23, n, pw, h, n._clipId);
       if (mode !== "space" && n.altCount > 0 && n.type === "move") {
         var bw = 20;
         var bh = 13;
@@ -27568,7 +28821,7 @@
         var ct = el3("text", { x: bw / 2, y: bh - 4, class: "hpt-altcount-text" });
         ct.textContent = "+" + n.altCount;
         chip.appendChild(ct);
-        g18.appendChild(chip);
+        g23.appendChild(chip);
       }
       var ariaTip;
       if (n.type === "ghost" && n.ghost) {
@@ -27578,26 +28831,26 @@
       }
       if (global46.Tooltips && typeof global46.Tooltips.setRich === "function") {
         (function(node) {
-          global46.Tooltips.setRich(g18, function() {
+          global46.Tooltips.setRich(g23, function() {
             return buildNodeTipFragment(node, mode);
           }, ariaTip);
         })(n);
       } else {
         var title = document.createElementNS(SVGNS, "title");
         title.textContent = ariaTip;
-        g18.appendChild(title);
+        g23.appendChild(title);
       }
-      g18.addEventListener("click", function() {
-        select(n, g18);
+      g23.addEventListener("click", function() {
+        select(n, g23);
       });
-      g18.addEventListener("keydown", function(ev) {
+      g23.addEventListener("keydown", function(ev) {
         if (ev.key === "Enter" || ev.key === " ") {
           ev.preventDefault();
-          select(n, g18);
+          select(n, g23);
         }
       });
-      scene.appendChild(g18);
-      if (selectedId && n.id === selectedId) select(n, g18);
+      scene.appendChild(g23);
+      if (selectedId && n.id === selectedId) select(n, g23);
     });
     function applyVB() {
       svg.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h);
@@ -27657,8 +28910,8 @@
     container.textContent = "";
     container.appendChild(svg);
     if (opts.instant) {
-      svg.querySelectorAll(".hpt-node").forEach(function(g22) {
-        g22.style.transitionDelay = "0ms";
+      svg.querySelectorAll(".hpt-node").forEach(function(g23) {
+        g23.style.transitionDelay = "0ms";
       });
       var pills = svg.querySelectorAll(".hpt-node");
       if (pills.length) pills[pills.length - 1].style.transitionDelay = "30ms";
@@ -27682,7 +28935,7 @@
   // js/harpoon/harpoon-lab-display.mjs
   var global47 = globalThis;
   function createDisplay(deps) {
-    var el8 = deps.el;
+    var el9 = deps.el;
     var E3 = deps.E;
     var liveEditorFileId2 = deps.liveEditorFileId;
     var bindChipTip2 = deps.bindChipTip;
@@ -27691,13 +28944,13 @@
     var ICON_ARROW_RIGHT2 = deps.ICON_ARROW_RIGHT;
     var ICON_ALERT2 = deps.ICON_ALERT;
     function normalizeGlyphs2(text) {
-      var g18 = global47.HarpoonGlyphs;
-      if (g18) return g18.fallbackNormalize(text);
+      var g23 = global47.HarpoonGlyphs;
+      if (g23) return g23.fallbackNormalize(text);
       return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
     }
     function displayType3(typeStr) {
-      var g18 = global47.HarpoonGlyphs;
-      if (g18) return g18.displayBeluga(typeStr);
+      var g23 = global47.HarpoonGlyphs;
+      if (g23) return g23.displayBeluga(typeStr);
       var ed = E3();
       if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
       return normalizeGlyphs2(typeStr);
@@ -27817,8 +29070,8 @@
       var old = wrap.querySelector(".harpoon-lab-auto-goal-priors");
       if (old) old.remove();
       if (!binders || !binders.length) return;
-      var row = el8("div", "harpoon-lab-auto-goal-priors");
-      var text = el8("span", "harpoon-lab-auto-goal-priors-text");
+      var row = el9("div", "harpoon-lab-auto-goal-priors");
+      var text = el9("span", "harpoon-lab-auto-goal-priors-text");
       renderType4(text, binders.map(function(b) {
         return b.text;
       }).join(" "), "binder");
@@ -27827,19 +29080,19 @@
     }
     function appendDeclLabel(glabel, declName, declKw) {
       if (!declName) return;
-      var name = el8("span", "harpoon-lab-auto-goal-name");
-      if (declKw) name.appendChild(el8("span", "harpoon-lab-goal-decl-kw jar-hl-keyword", declKw));
-      name.appendChild(el8("span", "harpoon-lab-goal-decl-name jar-hl-var-def", declName));
+      var name = el9("span", "harpoon-lab-auto-goal-name");
+      if (declKw) name.appendChild(el9("span", "harpoon-lab-goal-decl-kw jar-hl-keyword", declKw));
+      name.appendChild(el9("span", "harpoon-lab-goal-decl-name jar-hl-var-def", declName));
       glabel.appendChild(name);
     }
     function appendAutoGoalHero(parent, goalType, declName, goalState, priorBinders, declKw) {
-      var wrap = el8("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
-      var glabel = el8("div", "harpoon-lab-goal-label");
-      glabel.appendChild(el8("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
+      var wrap = el9("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
+      var glabel = el9("div", "harpoon-lab-goal-label");
+      glabel.appendChild(el9("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
       appendDeclLabel(glabel, declName, declKw);
       wrap.appendChild(glabel);
-      var body = el8("div", "harpoon-lab-auto-goal-body");
-      var goal = el8("div", "harpoon-hole-goal");
+      var body = el9("div", "harpoon-lab-auto-goal-body");
+      var goal = el9("div", "harpoon-hole-goal");
       var ed = E3();
       if (ed && typeof ed.mountHoleGoalTier === "function") {
         ed.mountHoleGoalTier(goal, { surface: "lab", goalState: goalState || "live", goal: goalType });
@@ -27863,9 +29116,9 @@
       return body;
     }
     function appendAutoSolution(parent, body) {
-      var wrap = el8("div", "harpoon-lab-auto-solution harpoon-lab-auto-panel");
-      wrap.appendChild(el8("span", "harpoon-lab-auto-solution-label harpoon-lab-section-label is-solution", "Solution"));
-      var bodyEl3 = el8("div", "harpoon-lab-auto-solution-body");
+      var wrap = el9("div", "harpoon-lab-auto-solution harpoon-lab-auto-panel");
+      wrap.appendChild(el9("span", "harpoon-lab-auto-solution-label harpoon-lab-section-label is-solution", "Solution"));
+      var bodyEl3 = el9("div", "harpoon-lab-auto-solution-body");
       renderSource2(bodyEl3, formatSolutionBody(body));
       wrap.appendChild(bodyEl3);
       parent.appendChild(wrap);
@@ -27887,18 +29140,18 @@
       var tag = opts.tag || "div";
       var className = opts.className || "";
       if (opts.tone) className += " tone-" + opts.tone;
-      var root2 = el8(tag, className);
+      var root2 = el9(tag, className);
       if (tag === "button") root2.type = "button";
       if (opts.disabled) root2.disabled = true;
-      var badge = el8("span", "harpoon-lab-banner-badge" + (opts.badgeClass ? " " + opts.badgeClass : ""));
+      var badge = el9("span", "harpoon-lab-banner-badge" + (opts.badgeClass ? " " + opts.badgeClass : ""));
       if (opts.icon) badge.innerHTML = opts.icon;
       root2.appendChild(badge);
-      var copy = el8("span", "harpoon-lab-banner-copy" + (opts.copyClass ? " " + opts.copyClass : ""));
+      var copy = el9("span", "harpoon-lab-banner-copy" + (opts.copyClass ? " " + opts.copyClass : ""));
       if (opts.title != null) {
-        copy.appendChild(el8("span", "harpoon-lab-banner-title" + (opts.titleClass ? " " + opts.titleClass : ""), opts.title));
+        copy.appendChild(el9("span", "harpoon-lab-banner-title" + (opts.titleClass ? " " + opts.titleClass : ""), opts.title));
       }
       if (opts.sub != null) {
-        copy.appendChild(el8("span", "harpoon-lab-banner-sub" + (opts.subClass ? " " + opts.subClass : ""), opts.sub));
+        copy.appendChild(el9("span", "harpoon-lab-banner-sub" + (opts.subClass ? " " + opts.subClass : ""), opts.sub));
       }
       root2.appendChild(copy);
       if (typeof opts.onClick === "function") {
@@ -27948,11 +29201,11 @@
       });
       var copy = banner.querySelector(".harpoon-lab-banner-copy");
       if (!placed && commit.detailRaw && copy) {
-        copy.appendChild(el8("span", "harpoon-lab-commit-tech", commit.detailRaw));
+        copy.appendChild(el9("span", "harpoon-lab-commit-tech", commit.detailRaw));
       }
       if (!placed && typeof onRetry === "function" && copy) {
-        var actions = el8("div", "harpoon-lab-commit-actions");
-        var retryBtn = el8("button", "harpoon-lab-commit-retry");
+        var actions = el9("div", "harpoon-lab-commit-actions");
+        var retryBtn = el9("button", "harpoon-lab-commit-retry");
         retryBtn.type = "button";
         retryBtn.textContent = "Try again";
         retryBtn.addEventListener("click", function(e) {
@@ -27992,12 +29245,12 @@
     };
     function goalHeadFromGoal(goal) {
       if (!goal) return null;
-      var g18 = String(goal).trim();
-      if (g18[0] === "[" && g18[g18.length - 1] === "]" || g18[0] === "(" && g18[g18.length - 1] === ")") {
-        g18 = g18.slice(1, -1).trim();
+      var g23 = String(goal).trim();
+      if (g23[0] === "[" && g23[g23.length - 1] === "]" || g23[0] === "(" && g23[g23.length - 1] === ")") {
+        g23 = g23.slice(1, -1).trim();
       }
-      var m = g18.match(/(?:\|-|⊢|\|)\s*([\s\S]*)$/);
-      var concl = (m ? m[1] : g18).trim();
+      var m = g23.match(/(?:\|-|⊢|\|)\s*([\s\S]*)$/);
+      var concl = (m ? m[1] : g23).trim();
       var head = concl.split(/\s+/)[0];
       return head || null;
     }
@@ -28052,8 +29305,8 @@
       return s && MOVE_GLOSS[s.move] || "made a move";
     }
     function facetChip(text, extraClass, tip, richKind) {
-      var chip = el8("span", "hpt-move-facet-chip" + (extraClass ? " " + extraClass : ""));
-      var code = el8("code", "hpt-move-facet-code");
+      var chip = el9("span", "hpt-move-facet-chip" + (extraClass ? " " + extraClass : ""));
+      var code = el9("code", "hpt-move-facet-code");
       renderSource2(code, text);
       chip.appendChild(code);
       if (tip) bindChipTip2(chip, tip, richKind ? text : null, richKind);
@@ -28065,7 +29318,7 @@
       if (move === "synth") {
         return renderSynthChain2(meta, variant === "detail" ? "full" : "inline");
       }
-      var wrap = el8("div", "hpt-move-facet" + (variant === "inline" ? " is-inline" : "") + (move ? " is-move-" + move : ""));
+      var wrap = el9("div", "hpt-move-facet" + (variant === "inline" ? " is-inline" : "") + (move ? " is-move-" + move : ""));
       var has3 = false;
       if (move === "intro") {
         var introNames = meta.introduced && meta.introduced.length ? meta.introduced : introducedFromText(step2.text);
@@ -28100,7 +29353,7 @@
         });
       } else if (move === "invert") {
         if (meta.uses && meta.uses[0]) {
-          var arrow = el8("span", "hpt-move-facet-arrow");
+          var arrow = el9("span", "hpt-move-facet-arrow");
           arrow.textContent = meta.uses[0] + " \u2192 " + ((meta.binds || []).join(", ") || "\u2026");
           bindChipTip2(arrow, "Hypothesis inverted into pattern variables");
           wrap.appendChild(arrow);
@@ -28436,7 +29689,7 @@
   // js/harpoon/harpoon-lab-reel.mjs
   var global49 = globalThis;
   function createReel(deps) {
-    var el8 = deps.el;
+    var el9 = deps.el;
     var tacticVerb2 = deps.tacticVerb || function(k) {
       return k || "move";
     };
@@ -28456,15 +29709,15 @@
     var ICON_PLAY2 = deps.ICON_PLAY;
     var ICON_PAUSE2 = deps.ICON_PAUSE;
     function appendAutoStepRow(trail, s, i) {
-      var item = el8("li", "harpoon-lab-auto-step");
+      var item = el9("li", "harpoon-lab-auto-step");
       item.style.setProperty("--i", String(i));
-      item.appendChild(el8("span", "harpoon-lab-auto-node"));
-      var body = el8("div", "harpoon-lab-auto-step-body");
-      var rowCopy = el8("div", "harpoon-lab-auto-step-copy");
-      var verb = el8("span", "harpoon-lab-auto-move move-" + (s.move || "move"));
+      item.appendChild(el9("span", "harpoon-lab-auto-node"));
+      var body = el9("div", "harpoon-lab-auto-step-body");
+      var rowCopy = el9("div", "harpoon-lab-auto-step-copy");
+      var verb = el9("span", "harpoon-lab-auto-move move-" + (s.move || "move"));
       verb.textContent = tacticVerb2(s.move);
       rowCopy.appendChild(verb);
-      rowCopy.appendChild(el8("span", "harpoon-lab-auto-why", moveLead(s)));
+      rowCopy.appendChild(el9("span", "harpoon-lab-auto-why", moveLead(s)));
       body.appendChild(rowCopy);
       appendMoveFacet(body, s);
       item.appendChild(body);
@@ -28499,11 +29752,11 @@
     var REEL_CLICK_EASE = "cubic-bezier(0.34, 1.22, 0.64, 1)";
     var REEL_OUT_MS = 150;
     function buildStepCopy(step2) {
-      var rowCopy = el8("div", "harpoon-lab-auto-step-copy");
-      var verb = el8("span", "harpoon-lab-auto-move move-" + (step2.move || "move"));
+      var rowCopy = el9("div", "harpoon-lab-auto-step-copy");
+      var verb = el9("span", "harpoon-lab-auto-move move-" + (step2.move || "move"));
       verb.textContent = tacticVerb2(step2.move);
       rowCopy.appendChild(verb);
-      rowCopy.appendChild(el8("span", "harpoon-lab-auto-why", moveLead(step2)));
+      rowCopy.appendChild(el9("span", "harpoon-lab-auto-why", moveLead(step2)));
       return rowCopy;
     }
     function installCommittedRow(row, step2, animate) {
@@ -28512,14 +29765,14 @@
       if (conveyor) conveyor.parentNode.removeChild(conveyor);
       var spine = row.querySelector(".harpoon-lab-auto-node");
       if (spine) spine.classList.remove("is-live");
-      else row.insertBefore(el8("span", "harpoon-lab-auto-node"), row.firstChild);
+      else row.insertBefore(el9("span", "harpoon-lab-auto-node"), row.firstChild);
       var priorBody = row.querySelector(".harpoon-lab-auto-step-body");
       if (priorBody) priorBody.parentNode.removeChild(priorBody);
       var priorCopy = row.querySelector(":scope > .harpoon-lab-auto-step-copy");
       if (priorCopy) priorCopy.parentNode.removeChild(priorCopy);
       var priorFacet = row.querySelector(":scope > .hpt-move-facet, :scope > .hpt-chain");
       if (priorFacet) priorFacet.parentNode.removeChild(priorFacet);
-      var body = el8("div", "harpoon-lab-auto-step-body");
+      var body = el9("div", "harpoon-lab-auto-step-body");
       var copy = buildStepCopy(step2);
       if (animate) copy.classList.add("is-reveal");
       body.appendChild(copy);
@@ -28530,10 +29783,10 @@
     function reelMotionOk() {
       return !prefersReducedMotion(Settings.get("motionPref"));
     }
-    function reelClearMotion(el9) {
-      if (!el9) return;
-      el9.style.transition = "";
-      el9.style.transform = "";
+    function reelClearMotion(el10) {
+      if (!el10) return;
+      el10.style.transition = "";
+      el10.style.transform = "";
     }
     function reelAnimateTick(conveyor, newChip, existingEls, oldRects) {
       if (!reelMotionOk() || !newChip) return;
@@ -28542,25 +29795,25 @@
       var chipRect = newChip.getBoundingClientRect();
       var spawnX = conveyorRect.right - chipRect.left + 8;
       newChip.style.transform = "translateX(" + spawnX + "px)";
-      var i, el9, neu, dx;
+      var i, el10, neu, dx;
       for (i = 0; i < existingEls.length; i += 1) {
-        el9 = existingEls[i];
-        if (el9.classList.contains("is-rejected")) continue;
-        neu = el9.getBoundingClientRect();
+        el10 = existingEls[i];
+        if (el10.classList.contains("is-rejected")) continue;
+        neu = el10.getBoundingClientRect();
         dx = oldRects[i].left - neu.left;
         if (Math.abs(dx) > 0.5) {
-          el9.style.transition = "none";
-          el9.style.transform = "translateX(" + dx + "px)";
+          el10.style.transition = "none";
+          el10.style.transform = "translateX(" + dx + "px)";
         }
       }
       requestAnimationFrame(function() {
         requestAnimationFrame(function() {
           var trailTrans = "transform " + dur + "ms " + REEL_EASE;
           for (i = 0; i < existingEls.length; i += 1) {
-            el9 = existingEls[i];
-            if (el9.classList.contains("is-rejected")) continue;
-            el9.style.transition = trailTrans;
-            el9.style.transform = "";
+            el10 = existingEls[i];
+            if (el10.classList.contains("is-rejected")) continue;
+            el10.style.transition = trailTrans;
+            el10.style.transform = "";
           }
           newChip.style.transition = "transform " + dur + "ms " + REEL_CLICK_EASE;
           newChip.style.transform = "";
@@ -28585,20 +29838,20 @@
       });
     }
     function makeBranchGroup(branch, i) {
-      var group = el8("li", "harpoon-lab-auto-branch");
+      var group = el9("li", "harpoon-lab-auto-branch");
       if (i != null) group.style.setProperty("--i", String(i));
-      var caseRow = el8("div", "harpoon-lab-auto-case");
-      caseRow.appendChild(el8("span", "harpoon-lab-auto-case-node"));
-      var head = el8("div", "harpoon-lab-auto-branch-head");
-      var label = el8("span", "harpoon-lab-auto-branch-label", "case");
+      var caseRow = el9("div", "harpoon-lab-auto-case");
+      caseRow.appendChild(el9("span", "harpoon-lab-auto-case-node"));
+      var head = el9("div", "harpoon-lab-auto-branch-head");
+      var label = el9("span", "harpoon-lab-auto-branch-label", "case");
       head.appendChild(label);
-      var pat = el8("code", "harpoon-lab-auto-branch-pat");
+      var pat = el9("code", "harpoon-lab-auto-branch-pat");
       renderType4(pat, branch);
       head.appendChild(pat);
       bindChipTip2(label, "Case pattern; nested steps solve this branch", branch, "type", "below");
       caseRow.appendChild(head);
       group.appendChild(caseRow);
-      var host2 = el8("ol", "harpoon-lab-auto-branch-steps");
+      var host2 = el9("ol", "harpoon-lab-auto-branch-steps");
       group.appendChild(host2);
       return { group, host: host2 };
     }
@@ -28739,7 +29992,7 @@
       if (!wrap || !wrap.parentNode) {
         var anchor3 = this._autoSearchBox;
         if (!anchor3 || !anchor3.parentNode) return;
-        wrap = el8("div", "harpoon-lab-context");
+        wrap = el9("div", "harpoon-lab-context");
         anchor3.parentNode.insertBefore(wrap, anchor3);
         this._ctxWrap = wrap;
       }
@@ -28764,11 +30017,11 @@
         return this._workingRow;
       }
       var i = this._reelRecordCount || 0;
-      var item = el8("li", "harpoon-lab-auto-step is-working");
+      var item = el9("li", "harpoon-lab-auto-step is-working");
       item.style.setProperty("--i", String(i));
-      item.appendChild(el8("span", "harpoon-lab-auto-node is-live"));
-      var lane = el8("div", "harpoon-conveyor");
-      var strip2 = el8("div", "harpoon-conveyor-strip");
+      item.appendChild(el9("span", "harpoon-lab-auto-node is-live"));
+      var lane = el9("div", "harpoon-conveyor");
+      var strip2 = el9("div", "harpoon-conveyor-strip");
       lane.appendChild(strip2);
       item.appendChild(lane);
       var host2 = this._reelRecord._branchHost || this._reelRecord;
@@ -28795,9 +30048,9 @@
         var oldRects = motionOk ? existingEls.map(function(node) {
           return node.getBoundingClientRect();
         }) : [];
-        var chip = el8("div", "harpoon-conveyor-chip is-trying is-focus move-" + (c.kind || "move"));
-        chip.appendChild(el8("span", "harpoon-conveyor-kind", c.kind || "move"));
-        var term = el8("code", "harpoon-conveyor-term");
+        var chip = el9("div", "harpoon-conveyor-chip is-trying is-focus move-" + (c.kind || "move"));
+        chip.appendChild(el9("span", "harpoon-conveyor-kind", c.kind || "move"));
+        var term = el9("code", "harpoon-conveyor-term");
         renderSource2(term, c.head || "");
         chip.appendChild(term);
         strip2.appendChild(chip);
@@ -28965,7 +30218,7 @@
 
   // js/harpoon/harpoon-lab-auto.mjs
   function createAuto(deps) {
-    var el8 = deps.el;
+    var el9 = deps.el;
     var iconBtn2 = deps.iconBtn;
     var setTip2 = deps.setTip;
     var renderType4 = deps.renderType;
@@ -28995,7 +30248,7 @@
       var na = this.nativeAuto;
       if (!na) return;
       var self = this;
-      var box = el8("div", "harpoon-lab-auto is-" + na.phase + (na.paused ? " is-paused" : "") + (self.isFrozenRetrospective() ? " is-frozen" : ""));
+      var box = el9("div", "harpoon-lab-auto is-" + na.phase + (na.paused ? " is-paused" : "") + (self.isFrozenRetrospective() ? " is-frozen" : ""));
       var stage = 0;
       if (na.goalType) {
         var hero = resolveNativeAutoGoalDisplay(self, na);
@@ -29011,11 +30264,11 @@
       }
       if (!self.isFrozenRetrospective()) this.renderCompromiseBanner(box);
       if (na.phase === "searching") {
-        var controls2 = el8("div", "harpoon-lab-auto-controls");
-        var searching = el8("div", "harpoon-lab-auto-searching");
-        var spinnerEl = el8("span", "inspector-spinner harpoon-lab-auto-searching-spinner");
+        var controls2 = el9("div", "harpoon-lab-auto-controls");
+        var searching = el9("div", "harpoon-lab-auto-searching");
+        var spinnerEl = el9("span", "inspector-spinner harpoon-lab-auto-searching-spinner");
         spinnerEl.setAttribute("aria-hidden", "true");
-        var searchTextEl = el8(
+        var searchTextEl = el9(
           "span",
           "harpoon-lab-auto-searching-text beljar-tip-shimmer",
           nativeAutoSearchLabel(na)
@@ -29052,8 +30305,8 @@
         );
         controls2.appendChild(livePop);
         box.appendChild(controls2);
-        var live2 = el8("div", "harpoon-reel");
-        var record = el8("ol", "harpoon-lab-auto-trail harpoon-reel-record is-live");
+        var live2 = el9("div", "harpoon-reel");
+        var record = el9("ol", "harpoon-lab-auto-trail harpoon-reel-record is-live");
         live2.appendChild(record);
         box.appendChild(live2);
         this._autoSearchBox = box;
@@ -29106,9 +30359,9 @@
         box.appendChild(stuckCard);
       }
       if (!na.complete && na.stuck && na.stuck.reason === "file-errors" && na.stuck.error) {
-        var errWrap = el8("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-error");
-        errWrap.appendChild(el8("span", "harpoon-lab-auto-stuck-label", "Checker error"));
-        errWrap.appendChild(el8("div", "harpoon-lab-auto-stuck-goal", na.stuck.error));
+        var errWrap = el9("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-error");
+        errWrap.appendChild(el9("span", "harpoon-lab-auto-stuck-label", "Checker error"));
+        errWrap.appendChild(el9("div", "harpoon-lab-auto-stuck-goal", na.stuck.error));
         stageNode2(errWrap, stage);
         stage += 1;
         box.appendChild(errWrap);
@@ -29189,8 +30442,8 @@
       return String(reason).replace(/^File\s+"[^"]*",\s*line\s+\d+,\s*column\s+\d+\s*/i, "").replace(/^Error:\s*/i, "").trim();
     }
     function belugaText(s) {
-      var g18 = globalThis.HarpoonGlyphs;
-      return g18 ? g18.displayBeluga(s) : String(s == null ? "" : s);
+      var g23 = globalThis.HarpoonGlyphs;
+      return g23 ? g23.displayBeluga(s) : String(s == null ? "" : s);
     }
     var STUCK_REASON = {
       "no-move": "no move certified",
@@ -29211,19 +30464,19 @@
     };
     function renderStuckCard(na) {
       var stuck = na.stuck;
-      var card = el8("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-warn harpoon-stuck");
-      var head = el8("div", "harpoon-stuck-head");
-      head.appendChild(el8("span", "harpoon-lab-auto-stuck-label", STUCK_REASON[stuck.reason] || stuck.reason || "stuck"));
+      var card = el9("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-warn harpoon-stuck");
+      var head = el9("div", "harpoon-stuck-head");
+      head.appendChild(el9("span", "harpoon-lab-auto-stuck-label", STUCK_REASON[stuck.reason] || stuck.reason || "stuck"));
       var where = stuckWhere(stuck);
-      if (where) head.appendChild(el8("code", "harpoon-stuck-where", where));
+      if (where) head.appendChild(el9("code", "harpoon-stuck-where", where));
       card.appendChild(head);
       if (stuck.goal) {
-        var goal = el8("div", "harpoon-hole-goal harpoon-lab-auto-stuck-goal");
+        var goal = el9("div", "harpoon-hole-goal harpoon-lab-auto-stuck-goal");
         renderType4(goal, stuck.goal);
         card.appendChild(goal);
       }
       var hint = STUCK_HINT[stuck.reason];
-      if (hint) card.appendChild(el8("p", "harpoon-stuck-hint", hint));
+      if (hint) card.appendChild(el9("p", "harpoon-stuck-hint", hint));
       var stuckTrace = null;
       var trace = na.trace || null;
       if (trace) {
@@ -29239,12 +30492,12 @@
         return v.verdict === "guard";
       });
       if (rejected.length || guarded.length) {
-        card.appendChild(el8(
+        card.appendChild(el9(
           "div",
           "harpoon-stuck-sub",
           rejected.length + " rejected by the checker" + (guarded.length ? " \xB7 " + guarded.length + " skipped" : "")
         ));
-        var list3 = el8("ul", "harpoon-stuck-tried");
+        var list3 = el9("ul", "harpoon-stuck-tried");
         var groupRows = function(items3) {
           var order2 = [];
           var byKey = {};
@@ -29261,24 +30514,24 @@
             return byKey[k];
           });
         };
-        var addGroup = function(g18) {
-          var li = el8("li", "harpoon-stuck-tried-row is-" + g18.verdict);
-          li.appendChild(el8("span", "hpt-card-kind hpt-kind--" + g18.kind, g18.kind));
-          var hd = el8("code", "harpoon-stuck-tried-head");
-          renderSource2(hd, g18.heads[0]);
+        var addGroup = function(g23) {
+          var li = el9("li", "harpoon-stuck-tried-row is-" + g23.verdict);
+          li.appendChild(el9("span", "hpt-card-kind hpt-kind--" + g23.kind, g23.kind));
+          var hd = el9("code", "harpoon-stuck-tried-head");
+          renderSource2(hd, g23.heads[0]);
           li.appendChild(hd);
-          if (g18.heads.length > 1) {
-            var more = el8("span", "harpoon-stuck-tried-more", "+" + (g18.heads.length - 1));
-            setTip2(more, g18.heads.map(belugaText).join("\n"), { ariaLabel: false });
+          if (g23.heads.length > 1) {
+            var more = el9("span", "harpoon-stuck-tried-more", "+" + (g23.heads.length - 1));
+            setTip2(more, g23.heads.map(belugaText).join("\n"), { ariaLabel: false });
             more.setAttribute(
               "aria-label",
-              g18.heads.length + " candidates rejected with this objection"
+              g23.heads.length + " candidates rejected with this objection"
             );
             li.appendChild(more);
           }
-          if (g18.reason) {
-            var rn = el8("span", "harpoon-stuck-tried-reason", g18.reason);
-            setTip2(rn, g18.reason, { ariaLabel: false });
+          if (g23.reason) {
+            var rn = el9("span", "harpoon-stuck-tried-reason", g23.reason);
+            setTip2(rn, g23.reason, { ariaLabel: false });
             li.appendChild(rn);
           }
           list3.appendChild(li);
@@ -29287,7 +30540,7 @@
         groupRows(guarded).forEach(addGroup);
         card.appendChild(list3);
       } else if (stuck.reason === "no-move") {
-        card.appendChild(el8("div", "harpoon-stuck-sub", "no candidate reached this goal"));
+        card.appendChild(el9("div", "harpoon-stuck-sub", "no candidate reached this goal"));
       }
       return card;
     }
@@ -29303,7 +30556,7 @@
   // js/harpoon/harpoon-lab-tree-ui.mjs
   var global50 = globalThis;
   function createTreeUi(deps) {
-    var el8 = deps.el;
+    var el9 = deps.el;
     var iconBtn2 = deps.iconBtn;
     var setTip2 = deps.setTip;
     var bindChipTip2 = deps.bindChipTip;
@@ -29326,15 +30579,15 @@
     function renderDerivationSection(box, na) {
       var self = this;
       this._compactTreeRedraw = null;
-      var section = el8("div", "harpoon-deriv");
-      var header = el8("div", "harpoon-deriv-header");
-      header.appendChild(el8("span", "harpoon-lab-section-label is-steps", "Derivation"));
-      var toggle6 = el8("div", "harpoon-deriv-toggle");
+      var section = el9("div", "harpoon-deriv");
+      var header = el9("div", "harpoon-deriv-header");
+      header.appendChild(el9("span", "harpoon-lab-section-label is-steps", "Derivation"));
+      var toggle6 = el9("div", "harpoon-deriv-toggle");
       var views = [["list", "List"], ["tree", "Tree"]];
       var view = "list";
-      var listHost = el8("ol", "harpoon-lab-auto-trail is-instant");
+      var listHost = el9("ol", "harpoon-lab-auto-trail is-instant");
       appendAutoTree(listHost, na.steps || []);
-      var treeHost = el8("div", "harpoon-deriv-treehost");
+      var treeHost = el9("div", "harpoon-deriv-treehost");
       var treeDrawn = false;
       function showView(v) {
         view = v;
@@ -29350,7 +30603,7 @@
         }
       }
       views.forEach(function(vv) {
-        var t = el8("button", "harpoon-deriv-tab" + (vv[0] === view ? " is-active" : ""), vv[1]);
+        var t = el9("button", "harpoon-deriv-tab" + (vv[0] === view ? " is-active" : ""), vv[1]);
         t.type = "button";
         t.dataset.view = vv[0];
         t.addEventListener("click", function() {
@@ -29380,11 +30633,11 @@
       var self = this;
       opts = opts || {};
       host2.textContent = "";
-      var wrap = el8("div", "hpt-panel" + (opts.compact ? " is-compact" : " is-roomy"));
+      var wrap = el9("div", "hpt-panel" + (opts.compact ? " is-compact" : " is-roomy"));
       var mode = "path";
       var selectedNodeId = null;
-      var treeHost = el8("div", "hpt-host");
-      var card = el8("div", "hpt-card");
+      var treeHost = el9("div", "hpt-host");
+      var card = el9("div", "hpt-card");
       card.hidden = true;
       var userView = null;
       function cur() {
@@ -29465,19 +30718,19 @@
           toggle6.setAttribute("aria-label", tip);
           toggle6.setAttribute("aria-expanded", collapsed ? "false" : "true");
         };
-        var split = el8("div", "hpt-split");
-        var left = el8("div", "hpt-split-tree");
+        var split = el9("div", "hpt-split");
+        var left = el9("div", "hpt-split-tree");
         left.appendChild(treeHost);
-        var rail = el8("div", "hpt-split-rail");
+        var rail = el9("div", "hpt-split-rail");
         card.hidden = false;
         card.classList.add("is-rail");
         card._hptEverSelected = false;
         self.renderTreeDetail(card, null, detailCtx(mode));
         var device = global50.Device;
         var collapsed = !!(device && device.get("harpoonDetailsCollapsed"));
-        var railHead = el8("div", "hpt-rail-head");
-        var railTitle = el8("span", "hpt-rail-title", "Details");
-        var toggle6 = el8("button", "icon-btn hpt-rail-toggle");
+        var railHead = el9("div", "hpt-rail-head");
+        var railTitle = el9("span", "hpt-rail-title", "Details");
+        var toggle6 = el9("button", "icon-btn hpt-rail-toggle");
         toggle6.type = "button";
         railHead.appendChild(railTitle);
         railHead.appendChild(toggle6);
@@ -29509,7 +30762,7 @@
         return;
       }
       var live2 = na.phase === "searching";
-      var content = el8("div", "harpoon-tree-explorer" + (live2 ? " is-live" : ""));
+      var content = el9("div", "harpoon-tree-explorer" + (live2 ? " is-live" : ""));
       var mounted4 = this.mountTreePanel(content, na, { compact: false, live: live2 });
       this._treeRedraw = mounted4.redraw;
       this._treeExplorerEl = content;
@@ -29561,44 +30814,44 @@
       var links = chain.filter(function(c) {
         return c !== "impossible";
       });
-      var wrap = el8("div", "hpt-chain" + (variant === "inline" ? " is-inline" : "") + (variant === "rail" ? " is-rail" : "") + (refutation ? " is-refutation" : ""));
+      var wrap = el9("div", "hpt-chain" + (variant === "inline" ? " is-inline" : "") + (variant === "rail" ? " is-rail" : "") + (refutation ? " is-refutation" : ""));
       if (variant === "full") {
-        wrap.appendChild(el8(
+        wrap.appendChild(el9(
           "div",
           "hpt-chain-label",
           refutation ? "Refutation \u2014 derived to a contradiction" : "Synthesis \u2014 backward-chained " + links.length + " step" + (links.length === 1 ? "" : "s")
         ));
       }
-      var seq2 = el8("div", "hpt-chain-seq");
+      var seq2 = el9("div", "hpt-chain-seq");
       var linkTotal = links.length;
       links.forEach(function(name, i) {
-        if (i > 0) seq2.appendChild(el8("span", "hpt-chain-arrow", "\u2192"));
+        if (i > 0) seq2.appendChild(el9("span", "hpt-chain-arrow", "\u2192"));
         var stepNum = i + 1;
         var isClose = i === links.length - 1 && !refutation;
         var stepTip = isClose ? "Calls " + name + " and closes this subgoal (" + stepNum + " of " + linkTotal + ")" : "Calls " + name + " (" + stepNum + " of " + linkTotal + ")";
         if (variant === "rail") {
-          var railNm = el8("code", "hpt-chain-name");
+          var railNm = el9("code", "hpt-chain-name");
           railNm.textContent = name;
           bindChipTip2(railNm, stepTip);
           seq2.appendChild(railNm);
           return;
         }
-        var link = el8("span", "hpt-chain-link" + (isClose ? " is-close" : ""));
-        link.appendChild(el8("span", "hpt-chain-idx", String(stepNum)));
-        var nm = el8("code", "hpt-chain-name");
+        var link = el9("span", "hpt-chain-link" + (isClose ? " is-close" : ""));
+        link.appendChild(el9("span", "hpt-chain-idx", String(stepNum)));
+        var nm = el9("code", "hpt-chain-name");
         nm.textContent = name;
         link.appendChild(nm);
         bindChipTip2(link, stepTip);
         seq2.appendChild(link);
       });
       if (refutation) {
-        seq2.appendChild(el8("span", "hpt-chain-arrow", "\u2192"));
+        seq2.appendChild(el9("span", "hpt-chain-arrow", "\u2192"));
         if (variant === "rail") {
-          var railImp = el8("code", "hpt-chain-name is-impossible", "impossible");
+          var railImp = el9("code", "hpt-chain-name is-impossible", "impossible");
           bindChipTip2(railImp, "This branch is impossible (contradiction)");
           seq2.appendChild(railImp);
         } else {
-          var impLink = el8("span", "hpt-chain-link is-impossible", "impossible");
+          var impLink = el9("span", "hpt-chain-link is-impossible", "impossible");
           bindChipTip2(impLink, "This branch is impossible (contradiction)");
           seq2.appendChild(impLink);
         }
@@ -29606,12 +30859,12 @@
       wrap.appendChild(seq2);
       if (variant === "full") {
         var refuted = meta.uses && meta.uses.length ? meta.uses[meta.uses.length - 1] : null;
-        var note = el8("div", "hpt-chain-note");
+        var note = el9("div", "hpt-chain-note");
         if (!refutation) {
           note.textContent = "the final rule closes the goal";
         } else if (refuted) {
           note.appendChild(document.createTextNode("these rules refute "));
-          var rc = el8("code", "hpt-chain-refuted");
+          var rc = el9("code", "hpt-chain-refuted");
           rc.textContent = refuted;
           note.appendChild(rc);
         } else {
@@ -29622,9 +30875,9 @@
       return wrap;
     }
     function detailSection(label, bodyEl3) {
-      var sec = el8("div", "hpt-detail-section");
-      if (label) sec.appendChild(el8("span", "harpoon-lab-section-label", label));
-      var body = el8("div", "hpt-detail-section-body");
+      var sec = el9("div", "hpt-detail-section");
+      if (label) sec.appendChild(el9("span", "harpoon-lab-section-label", label));
+      var body = el9("div", "hpt-detail-section-body");
       body.appendChild(bodyEl3);
       sec.appendChild(body);
       return sec;
@@ -29641,62 +30894,62 @@
         parts.push(checks + " check" + (checks === 1 ? "" : "s"));
       }
       if (!parts.length) return null;
-      var foot = el8("div", "hpt-detail-foot");
+      var foot = el9("div", "hpt-detail-foot");
       parts.forEach(function(p, i) {
-        if (i > 0) foot.appendChild(el8("span", "hpt-detail-sep", "\xB7"));
-        foot.appendChild(el8("span", "hpt-detail-meta-item", p));
+        if (i > 0) foot.appendChild(el9("span", "hpt-detail-sep", "\xB7"));
+        foot.appendChild(el9("span", "hpt-detail-meta-item", p));
       });
       return foot;
     }
     function renderDetailBanner(moveKind, name, lead) {
-      var banner = el8("div", "hpt-detail-banner");
+      var banner = el9("div", "hpt-detail-banner");
       if (moveKind) {
-        banner.appendChild(el8("span", "harpoon-lab-auto-move move-" + moveKind, moveKind));
+        banner.appendChild(el9("span", "harpoon-lab-auto-move move-" + moveKind, moveKind));
       }
-      banner.appendChild(el8("div", "hpt-detail-name", name));
-      if (lead) banner.appendChild(el8("p", "hpt-detail-lead", lead));
+      banner.appendChild(el9("div", "hpt-detail-name", name));
+      if (lead) banner.appendChild(el9("p", "hpt-detail-lead", lead));
       return banner;
     }
     function renderTreeRailOverview(mount3, ctx) {
       var na = ctx.na || {};
       var name = ctx.declName || "theorem";
-      mount3.appendChild(el8("span", "harpoon-lab-section-label is-steps", "Overview"));
-      var banner = el8("div", "hpt-detail-banner is-overview");
-      banner.appendChild(el8("div", "hpt-detail-name", name));
+      mount3.appendChild(el9("span", "harpoon-lab-section-label is-steps", "Overview"));
+      var banner = el9("div", "hpt-detail-banner is-overview");
+      banner.appendChild(el9("div", "hpt-detail-name", name));
       mount3.appendChild(banner);
       if (na.goalType) {
-        var g18 = el8("div", "hpt-detail-goal");
-        renderType4(g18, na.goalType);
-        mount3.appendChild(detailSection("Theorem", g18));
+        var g23 = el9("div", "hpt-detail-goal");
+        renderType4(g23, na.goalType);
+        mount3.appendChild(detailSection("Theorem", g23));
       }
       var snap = na.theoremSnapshot;
       if (snap && (snap.premiseCount || snap.totality)) {
-        var meta = el8("div", "hpt-detail-theorem-meta");
+        var meta = el9("div", "hpt-detail-theorem-meta");
         if (snap.premiseCount) {
-          meta.appendChild(el8("span", "hpt-detail-meta-item", snap.premiseCount + " premise" + (snap.premiseCount === 1 ? "" : "s")));
+          meta.appendChild(el9("span", "hpt-detail-meta-item", snap.premiseCount + " premise" + (snap.premiseCount === 1 ? "" : "s")));
         }
         if (snap.totality && snap.totality.kind) {
-          meta.appendChild(el8("span", "hpt-detail-meta-item", "total " + snap.totality.kind + (snap.totality.name ? " " + snap.totality.name : "")));
+          meta.appendChild(el9("span", "hpt-detail-meta-item", "total " + snap.totality.kind + (snap.totality.name ? " " + snap.totality.name : "")));
         }
         mount3.appendChild(detailSection("Structure", meta));
       }
-      var status = el8("div", "hpt-detail-status");
+      var status = el9("div", "hpt-detail-status");
       if (na.phase === "searching") {
-        status.appendChild(el8("div", "hpt-detail-status-main", nativeAutoSearchLabel(na)));
-        status.appendChild(el8("div", "hpt-detail-status-sub", reelStatText(na)));
+        status.appendChild(el9("div", "hpt-detail-status-main", nativeAutoSearchLabel(na)));
+        status.appendChild(el9("div", "hpt-detail-status-sub", reelStatText(na)));
       } else if (na.complete) {
-        status.appendChild(el8("div", "hpt-detail-status-main", autoVerdictTitle(na)));
+        status.appendChild(el9("div", "hpt-detail-status-main", autoVerdictTitle(na)));
         var sc = (na.steps || []).length;
         var line = sc ? sc + (sc === 1 ? " step" : " steps") : "";
         if (na.checks) line += (line ? " \xB7 " : "") + na.checks + (na.checks === 1 ? " check" : " checks");
-        if (line) status.appendChild(el8("div", "hpt-detail-status-sub", line));
+        if (line) status.appendChild(el9("div", "hpt-detail-status-sub", line));
       } else {
-        status.appendChild(el8("div", "hpt-detail-status-main", autoVerdictTitle(na)));
+        status.appendChild(el9("div", "hpt-detail-status-main", autoVerdictTitle(na)));
         var sub = autoSubtext(na);
-        if (sub) status.appendChild(el8("div", "hpt-detail-status-sub", sub));
+        if (sub) status.appendChild(el9("div", "hpt-detail-status-sub", sub));
         var sc2 = (na.steps || []).length;
         if (sc2) {
-          status.appendChild(el8(
+          status.appendChild(el9(
             "div",
             "hpt-detail-status-sub",
             sc2 + (sc2 === 1 ? " step" : " steps") + " recorded"
@@ -29704,7 +30957,7 @@
         }
       }
       mount3.appendChild(detailSection("Status", status));
-      mount3.appendChild(el8("p", "hpt-detail-hint", "Click a node in the tree to inspect a move."));
+      mount3.appendChild(el9("p", "hpt-detail-hint", "Click a node in the tree to inspect a move."));
     }
     function renderTreeBreadcrumb(n) {
       if (!n || !global50.HarpoonTree || typeof global50.HarpoonTree.breadcrumb !== "function") return null;
@@ -29714,10 +30967,10 @@
         s = String(s || "");
         return s.length > 22 ? s.slice(0, 21) + "\u2026" : s;
       }
-      var row = el8("div", "hpt-breadcrumb");
+      var row = el9("div", "hpt-breadcrumb");
       parts.forEach(function(p, i) {
-        if (i > 0) row.appendChild(el8("span", "hpt-breadcrumb-sep", "/"));
-        row.appendChild(el8("span", "hpt-breadcrumb-part", truncPart(p)));
+        if (i > 0) row.appendChild(el9("span", "hpt-breadcrumb-sep", "/"));
+        row.appendChild(el9("span", "hpt-breadcrumb-part", truncPart(p)));
       });
       return row;
     }
@@ -29728,26 +30981,26 @@
       if (focus.armLine) bits.push("deepest case arm (line " + focus.armLine + ")");
       if (typeof focus.score === "number") bits.push("priority score " + focus.score);
       if (!bits.length) return null;
-      return el8("p", "hpt-detail-focus", bits.join(" \xB7 "));
+      return el9("p", "hpt-detail-focus", bits.join(" \xB7 "));
     }
     function renderAltRow(v, rail) {
-      var li = el8("li", "hpt-tried is-" + v.verdict);
-      li.appendChild(el8("span", (rail ? "harpoon-lab-auto-move" : "hpt-card-kind") + " move-" + v.kind, v.kind));
-      var head = el8("code", "hpt-tried-head");
+      var li = el9("li", "hpt-tried is-" + v.verdict);
+      li.appendChild(el9("span", (rail ? "harpoon-lab-auto-move" : "hpt-card-kind") + " move-" + v.kind, v.kind));
+      var head = el9("code", "hpt-tried-head");
       renderSource2(head, v.head || v.kind);
       li.appendChild(head);
       if (v.rationale) {
-        var rat = el8("span", "hpt-tried-rationale");
+        var rat = el9("span", "hpt-tried-rationale");
         rat.textContent = v.rationale;
         li.appendChild(rat);
       }
       if (v.text && v.text !== v.head) {
-        var full = el8("pre", "hpt-tried-text");
+        var full = el9("pre", "hpt-tried-text");
         renderSource2(full, v.text);
         li.appendChild(full);
       }
       if (v.reason) {
-        var reason = el8("span", "hpt-tried-reason");
+        var reason = el9("span", "hpt-tried-reason");
         reason.textContent = (v.verdict === "guard" ? "Skipped: " : "Rejected: ") + v.reason;
         li.appendChild(reason);
       }
@@ -29773,17 +31026,17 @@
           tip: "Certified clean by Beluga and spliced into the proof."
         }
       ];
-      var wrap = el8("div", "hpt-alt-tray");
-      groups.forEach(function(g18) {
+      var wrap = el9("div", "hpt-alt-tray");
+      groups.forEach(function(g23) {
         var rows2 = tried.filter(function(v) {
-          return v.verdict === g18.key;
+          return v.verdict === g23.key;
         });
         if (!rows2.length) return;
-        var sec = el8("div", "hpt-alt-group is-" + g18.key);
-        var groupLabel = el8("div", "hpt-alt-group-label", g18.label + " (" + rows2.length + ")");
-        if (g18.tip) setTip2(groupLabel, g18.tip);
+        var sec = el9("div", "hpt-alt-group is-" + g23.key);
+        var groupLabel = el9("div", "hpt-alt-group-label", g23.label + " (" + rows2.length + ")");
+        if (g23.tip) setTip2(groupLabel, g23.tip);
         sec.appendChild(groupLabel);
-        var list3 = el8("ul", "hpt-detail-tried");
+        var list3 = el9("ul", "hpt-detail-tried");
         rows2.forEach(function(v) {
           list3.appendChild(renderAltRow(v, opts.rail));
         });
@@ -29804,12 +31057,12 @@
     }
     ;
     function renderWhereSection(self, n, st) {
-      var where = el8("div", "hpt-detail-where");
+      var where = el9("div", "hpt-detail-where");
       var crumb = renderTreeBreadcrumb(n);
       if (crumb) where.appendChild(crumb);
       var hole = st && st.hole || n.hole;
       if (hole && hole.line) {
-        var loc = el8("button", "hpt-hole-loc");
+        var loc = el9("button", "hpt-hole-loc");
         loc.type = "button";
         loc.textContent = "line " + hole.line + (hole.col ? ":" + hole.col : "") + (hole.name ? " (" + hole.name + ")" : "");
         loc.addEventListener("click", function() {
@@ -29818,12 +31071,12 @@
         where.appendChild(loc);
       }
       if (st && st.branch) {
-        where.appendChild(el8("div", "hpt-detail-branch", "in branch: " + st.branch));
+        where.appendChild(el9("div", "hpt-detail-branch", "in branch: " + st.branch));
       }
       if (st && typeof st.checks === "number" && st.checks > 0) {
         var showStats = typeof Persist === "undefined" || Settings.get("autosolveShowStats");
         if (showStats) {
-          var checksEl = el8("div", "hpt-detail-checks", st.checks + " checker call" + (st.checks === 1 ? "" : "s"));
+          var checksEl = el9("div", "hpt-detail-checks", st.checks + " checker call" + (st.checks === 1 ? "" : "s"));
           setTip2(checksEl, "Times BelJar asked Beluga to certify a candidate move at this hole before one type-checked clean.");
           where.appendChild(checksEl);
         }
@@ -29834,7 +31087,7 @@
       if (!state2) return;
       var ed = E3();
       if (state2.goal) {
-        var goalHost = el8("div", "hpt-detail-goal");
+        var goalHost = el9("div", "hpt-detail-goal");
         if (ed && typeof ed.mountHoleGoalTier === "function") {
           ed.mountHoleGoalTier(goalHost, {
             surface: "lab",
@@ -29847,12 +31100,12 @@
         mount3.appendChild(detailSection("Goal", goalHost));
       }
       if (state2.meta && state2.meta.length) {
-        var metaWrap = el8("div", "hpt-detail-ctx");
+        var metaWrap = el9("div", "hpt-detail-ctx");
         self.renderCtx(metaWrap, "meta", state2.meta);
         mount3.appendChild(detailSection("Meta context", metaWrap));
       }
       if (state2.ctx && state2.ctx.length) {
-        var ctxWrap = el8("div", "hpt-detail-ctx");
+        var ctxWrap = el9("div", "hpt-detail-ctx");
         self.renderCtx(ctxWrap, "ctx", state2.ctx);
         mount3.appendChild(detailSection("Context", ctxWrap));
       }
@@ -29863,7 +31116,7 @@
       var rail = card.classList.contains("is-rail");
       if (!n) {
         if (rail && ctx) {
-          var idle = el8("div", "hpt-detail");
+          var idle = el9("div", "hpt-detail");
           card.appendChild(idle);
           renderTreeRailOverview(idle, ctx);
         } else if (!rail) {
@@ -29871,7 +31124,7 @@
         }
         return;
       }
-      var mount3 = rail ? el8("div", "hpt-detail") : card;
+      var mount3 = rail ? el9("div", "hpt-detail") : card;
       if (rail) card.appendChild(mount3);
       var self = this;
       var treeMode = ctx && ctx.treeMode || "path";
@@ -29883,12 +31136,12 @@
         if (rail) mount3.appendChild(gBanner);
         else card.appendChild(gBanner);
         if (gh.text && gh.text !== gh.head) {
-          var gcode = rail ? el8("div", "hpt-detail-code") : el8("div", "hpt-card-code");
+          var gcode = rail ? el9("div", "hpt-detail-code") : el9("div", "hpt-card-code");
           renderSource2(gcode, gh.text);
           if (rail) mount3.appendChild(detailSection("Fragment", gcode));
           else card.appendChild(gcode);
         }
-        var gverdict = el8(
+        var gverdict = el9(
           "div",
           "hpt-detail-verdict is-" + gh.verdict,
           (gh.verdict === "guard" ? "skipped \u2014 " : "rejected \u2014 ") + (gh.reason || "did not certify")
@@ -29922,11 +31175,11 @@
           if (snap && snap.premiseCount) {
             mount3.appendChild(detailSection(
               "Structure",
-              el8("div", "hpt-detail-theorem-meta", snap.premiseCount + " premise(s)")
+              el9("div", "hpt-detail-theorem-meta", snap.premiseCount + " premise(s)")
             ));
           }
         } else if (n.type === "arm" && n.pattern) {
-          var pg = el8("div", "hpt-detail-goal");
+          var pg = el9("div", "hpt-detail-goal");
           renderType4(pg, n.pattern);
           mount3.appendChild(detailSection("Branch pattern", pg));
         }
@@ -29944,7 +31197,7 @@
         ctx: st.holeCtx,
         meta: st.holeMeta
       }, goalState);
-      var codeEl = el8("div", rail ? "hpt-detail-code" : "hpt-card-code");
+      var codeEl = el9("div", rail ? "hpt-detail-code" : "hpt-card-code");
       renderSource2(codeEl, st.text || "");
       mount3.appendChild(detailSection("Fragment", codeEl));
       if (st.move === "synth") {
@@ -29953,20 +31206,20 @@
       }
       if (st.move === "split" && meta.armPatterns && meta.armPatterns.length) {
         if (meta.scrutinee) {
-          var scrut = el8("div", "hpt-detail-goal");
+          var scrut = el9("div", "hpt-detail-goal");
           renderType4(scrut, meta.scrutinee);
           mount3.appendChild(detailSection("Scrutinee", scrut));
         }
         var armCount = meta.armPatterns.length;
-        var arms = el8("ul", "hpt-detail-arms");
+        var arms = el9("ul", "hpt-detail-arms");
         meta.armPatterns.forEach(function(pat) {
-          var li = el8("li", "hpt-detail-arm");
+          var li = el9("li", "hpt-detail-arm");
           renderType4(li, pat);
           arms.appendChild(li);
         });
         var armsSection = detailSection("Arms (" + armCount + ")", arms);
         if (armCount === 1) {
-          var note = el8(
+          var note = el9(
             "p",
             "hpt-detail-note",
             "One arm \u2014 this case only binds the scrutinee\u2019s components (it acts as a let)."
@@ -29997,7 +31250,7 @@
 
   // js/harpoon/harpoon-lab-manual.mjs
   function createManual(deps) {
-    var el8 = deps.el;
+    var el9 = deps.el;
     var iconBtn2 = deps.iconBtn;
     var setTip2 = deps.setTip;
     var E3 = deps.E;
@@ -30056,45 +31309,45 @@
       return { verb: base.verb, arg, tip: base.tip, meta };
     }
     function displayGoal(s) {
-      var g18 = globalThis.HarpoonGlyphs;
-      return g18 ? g18.displayBeluga(s) : String(s == null ? "" : s);
+      var g23 = globalThis.HarpoonGlyphs;
+      return g23 ? g23.displayBeluga(s) : String(s == null ? "" : s);
     }
     function moveHeadText(text) {
       return String(text || "").split("\n")[0].replace(/\s+/g, " ").trim().slice(0, 90);
     }
     function buildMoveRow(session, mv, hole, index) {
       var tac = tacticOf(mv, hole);
-      var row = el8("div", "harpoon-lab-move move-" + mv.kind + (index === 0 ? " is-primary" : ""));
+      var row = el9("div", "harpoon-lab-move move-" + mv.kind + (index === 0 ? " is-primary" : ""));
       row.style.setProperty("--i", String(index));
       row._mv = mv;
-      var btn = el8("button", "harpoon-lab-move-main");
+      var btn = el9("button", "harpoon-lab-move-main");
       btn.type = "button";
-      var head = el8("span", "harpoon-lab-move-head");
-      var verb = el8("span", "harpoon-lab-move-verb", tac.verb);
+      var head = el9("span", "harpoon-lab-move-head");
+      var verb = el9("span", "harpoon-lab-move-verb", tac.verb);
       setTip2(verb, tac.tip);
       head.appendChild(verb);
       if (tac.arg) {
-        var argEl = el8("span", "harpoon-lab-move-arg", tac.arg);
+        var argEl = el9("span", "harpoon-lab-move-arg", tac.arg);
         setTip2(argEl, argTip(mv.kind, tac.arg));
         head.appendChild(argEl);
       }
       btn.appendChild(head);
-      if (mv.rationale) btn.appendChild(el8("span", "harpoon-lab-move-why", mv.rationale));
+      if (mv.rationale) btn.appendChild(el9("span", "harpoon-lab-move-why", mv.rationale));
       btn.setAttribute("aria-label", "Apply " + tac.verb + (tac.arg ? " " + tac.arg : ""));
       btn.addEventListener("click", function(e) {
         e.preventDefault();
         session.manualApply(mv, row);
       });
       row.appendChild(btn);
-      var foot = el8("button", "harpoon-lab-move-foot");
+      var foot = el9("button", "harpoon-lab-move-foot");
       foot.type = "button";
       foot.setAttribute("aria-expanded", "false");
-      foot.appendChild(el8("span", "harpoon-lab-move-termhead", moveHeadText(mv.text)));
-      var pip = el8("span", "harpoon-lab-move-pip");
+      foot.appendChild(el9("span", "harpoon-lab-move-termhead", moveHeadText(mv.text)));
+      var pip = el9("span", "harpoon-lab-move-pip");
       pip.setAttribute("aria-hidden", "true");
       foot.appendChild(pip);
       row._pip = pip;
-      var chev = el8("span", "harpoon-lab-move-chevron");
+      var chev = el9("span", "harpoon-lab-move-chevron");
       chev.innerHTML = ICON_CHEVRON_DOWN2;
       foot.appendChild(chev);
       setTip2(foot, "Show the full term");
@@ -30106,7 +31359,7 @@
         setTip2(foot, open11 ? "Hide the full term" : "Show the full term");
         var full = row.querySelector(".harpoon-lab-move-term");
         if (open11 && !full) {
-          var term = el8("div", "harpoon-lab-move-term");
+          var term = el9("div", "harpoon-lab-move-term");
           renderSource2(term, mv.text);
           row.appendChild(term);
         }
@@ -30147,12 +31400,12 @@
       if (tip) row._pip.setAttribute("aria-label", tip);
     }
     function skel(cls, w) {
-      var n = el8("span", "harpoon-skel" + (cls ? " " + cls : ""));
+      var n = el9("span", "harpoon-skel" + (cls ? " " + cls : ""));
       if (w) n.style.width = w;
       return n;
     }
     function sectionLabel(text) {
-      var n = el8("div", "harpoon-lab-section-label is-steps harpoon-lab-moves-label");
+      var n = el9("div", "harpoon-lab-section-label is-steps harpoon-lab-moves-label");
       n.textContent = text;
       return n;
     }
@@ -30162,29 +31415,29 @@
       return i > 0 ? key.slice(0, i) : "";
     }
     function skelGoalHero(declName, declKw) {
-      var wrap = el8("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
-      var glabel = el8("div", "harpoon-lab-goal-label");
-      glabel.appendChild(el8("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
+      var wrap = el9("div", "harpoon-lab-auto-goal harpoon-lab-strip tone-goal");
+      var glabel = el9("div", "harpoon-lab-goal-label");
+      glabel.appendChild(el9("span", "harpoon-lab-goal-label-text harpoon-lab-section-label is-goal", "Goal"));
       appendDeclLabel(glabel, declName, declKw);
       wrap.appendChild(glabel);
-      var body = el8("div", "harpoon-lab-auto-goal-body");
+      var body = el9("div", "harpoon-lab-auto-goal-body");
       body.appendChild(skel("harpoon-skel--goal", "72%"));
       wrap.appendChild(body);
       return wrap;
     }
     function skelBar() {
-      var bar = el8("div", "harpoon-lab-bar");
-      var status = el8("div", "harpoon-lab-status");
-      status.appendChild(el8("span", "harpoon-lab-status-dot"));
+      var bar = el9("div", "harpoon-lab-bar");
+      var status = el9("div", "harpoon-lab-status");
+      status.appendChild(el9("span", "harpoon-lab-status-dot"));
       status.appendChild(skel("harpoon-skel--text", "3.6rem"));
       bar.appendChild(status);
       return bar;
     }
     function skelMoveRow(i) {
-      var row = el8("div", "harpoon-lab-move is-skeleton");
+      var row = el9("div", "harpoon-lab-move is-skeleton");
       row.style.setProperty("--i", String(i));
-      var main = el8("div", "harpoon-lab-move-main");
-      var head = el8("span", "harpoon-lab-move-head");
+      var main = el9("div", "harpoon-lab-move-main");
+      var head = el9("span", "harpoon-lab-move-head");
       head.appendChild(skel("harpoon-skel--verb", ["2.8rem", "2.2rem", "3.4rem"][i % 3]));
       main.appendChild(head);
       main.appendChild(skel("harpoon-skel--text harpoon-skel--d1", ["52%", "38%", "45%"][i % 3]));
@@ -30239,22 +31492,22 @@
       });
     }
     function buildOrcaRunning(session, na) {
-      var band = el8("div", "harpoon-lab-orca-band is-running" + (na.paused ? " is-paused" : ""));
-      var shell = el8("div", "harpoon-lab-orca harpoon-lab-orca--live");
-      var badge = el8("span", "harpoon-lab-orca-badge" + (na.paused ? "" : " is-working"));
+      var band = el9("div", "harpoon-lab-orca-band is-running" + (na.paused ? " is-paused" : ""));
+      var shell = el9("div", "harpoon-lab-orca harpoon-lab-orca--live");
+      var badge = el9("span", "harpoon-lab-orca-badge" + (na.paused ? "" : " is-working"));
       badge.innerHTML = ICON_ORCA2;
       shell.appendChild(badge);
       session._autoSearchSpinner = badge;
       session._statTipEl = badge;
-      var copy = el8("span", "harpoon-lab-orca-copy");
-      copy.appendChild(el8("span", "harpoon-lab-orca-title", na.paused ? "Orca paused" : "Orca"));
-      var sub = el8("span", "harpoon-lab-orca-sub" + (na.paused ? "" : " beljar-tip-shimmer"));
+      var copy = el9("span", "harpoon-lab-orca-copy");
+      copy.appendChild(el9("span", "harpoon-lab-orca-title", na.paused ? "Orca paused" : "Orca"));
+      var sub = el9("span", "harpoon-lab-orca-sub" + (na.paused ? "" : " beljar-tip-shimmer"));
       sub.textContent = na.paused ? "Take a step by hand, or resume" : nativeAutoSearchLabel(na);
       if (!na.paused) sub.style.setProperty("--shimmer-accent", "var(--repl-holes-accent)");
       copy.appendChild(sub);
       shell.appendChild(copy);
       session._autoSearchText = sub;
-      var actions = el8("div", "harpoon-lab-orca-actions");
+      var actions = el9("div", "harpoon-lab-orca-actions");
       var pauseBtn = iconBtn2(
         "icon-btn harpoon-lab-auto-pause",
         na.paused ? ICON_PLAY2 : ICON_PAUSE2,
@@ -30282,16 +31535,16 @@
       return band;
     }
     function buildOrca(session, state2, disabled) {
-      var band = el8("div", "harpoon-lab-orca-band");
-      var btn = el8("button", "harpoon-lab-orca");
+      var band = el9("div", "harpoon-lab-orca-band");
+      var btn = el9("button", "harpoon-lab-orca");
       btn.type = "button";
       if (disabled) btn.disabled = true;
-      var badge = el8("span", "harpoon-lab-orca-badge");
+      var badge = el9("span", "harpoon-lab-orca-badge");
       badge.innerHTML = ICON_ORCA2;
       btn.appendChild(badge);
-      var copy = el8("span", "harpoon-lab-orca-copy");
-      copy.appendChild(el8("span", "harpoon-lab-orca-title", "Orca"));
-      copy.appendChild(el8(
+      var copy = el9("span", "harpoon-lab-orca-copy");
+      copy.appendChild(el9("span", "harpoon-lab-orca-title", "Orca"));
+      copy.appendChild(el9(
         "span",
         "harpoon-lab-orca-sub",
         state2 && state2.steps.length ? "Search for the rest of the proof" : "Search for the whole proof"
@@ -30491,7 +31744,7 @@
       if (row) {
         row.classList.add("is-applying");
         if (!row.querySelector(".harpoon-lab-move-track")) {
-          row.insertBefore(el8("div", "harpoon-lab-move-track"), row.firstChild);
+          row.insertBefore(el9("div", "harpoon-lab-move-track"), row.firstChild);
         }
       }
       if (this._movesEl) this._movesEl.classList.add("is-busy");
@@ -30849,7 +32102,7 @@
       if (!m) return;
       var st = m.state;
       var complete2 = st && ed.manualIsComplete(st);
-      var box = el8("div", "harpoon-lab-manual is-" + m.phase + (complete2 ? " is-complete" : "") + (this.isFrozenRetrospective() ? " is-frozen" : ""));
+      var box = el9("div", "harpoon-lab-manual is-" + m.phase + (complete2 ? " is-complete" : "") + (this.isFrozenRetrospective() ? " is-frozen" : ""));
       var stage = 0;
       var goalType = this.manualGoalType();
       if (goalType) {
@@ -30867,9 +32120,9 @@
         if (!goalType) box.appendChild(skelGoalHero(m.declName, m.declKw));
         box.appendChild(skelBar());
         box.appendChild(buildOrca(this, null, true));
-        var skelMoves = el8("div", "harpoon-lab-moves");
+        var skelMoves = el9("div", "harpoon-lab-moves");
         skelMoves.appendChild(sectionLabel("Tactics"));
-        var skelList = el8("div", "harpoon-lab-move-list");
+        var skelList = el9("div", "harpoon-lab-move-list");
         for (var k = 0; k < 3; k += 1) skelList.appendChild(skelMoveRow(k));
         skelMoves.appendChild(skelList);
         box.appendChild(skelMoves);
@@ -30877,9 +32130,9 @@
         return;
       }
       if (m.phase === "error") {
-        var err = el8("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-error");
-        err.appendChild(el8("span", "harpoon-lab-auto-stuck-label", "Cannot prove"));
-        err.appendChild(el8("div", "harpoon-lab-auto-stuck-goal", m.error || ""));
+        var err = el9("div", "harpoon-lab-auto-stuck harpoon-lab-auto-panel tone-error");
+        err.appendChild(el9("span", "harpoon-lab-auto-stuck-label", "Cannot prove"));
+        err.appendChild(el9("div", "harpoon-lab-auto-stuck-goal", m.error || ""));
         box.appendChild(err);
         parent.appendChild(box);
         return;
@@ -30919,19 +32172,19 @@
           if (commit.status === "checking") this.updateCommitPlace();
         }
         var open11 = st ? st.holes.length : 0;
-        var bar = el8("div", "harpoon-lab-bar");
-        var status = el8("div", "harpoon-lab-status");
-        var dot = el8("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
+        var bar = el9("div", "harpoon-lab-bar");
+        var status = el9("div", "harpoon-lab-status");
+        var dot = el9("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
         setTip2(dot, complete2 ? "Proven" : "Unproven");
         dot.setAttribute("aria-label", complete2 ? "Proven" : "Unproven");
         status.appendChild(dot);
-        status.appendChild(el8(
+        status.appendChild(el9(
           "span",
           "harpoon-lab-status-text",
           complete2 ? "Proven" : open11 === 1 ? "1 goal" : open11 + " goals"
         ));
         bar.appendChild(status);
-        var actions = el8("div", "harpoon-lab-bar-actions");
+        var actions = el9("div", "harpoon-lab-bar-actions");
         var undoBtn = iconBtn2(
           "icon-btn",
           ICON_UNDO2,
@@ -30957,12 +32210,12 @@
         bar.appendChild(actions);
         box.appendChild(bar);
         if (st && st.holes.length > 1) {
-          var pickBand = el8("div", "harpoon-lab-picker-band");
-          var picker = el8("div", "harpoon-lab-picker");
+          var pickBand = el9("div", "harpoon-lab-picker-band");
+          var picker = el9("div", "harpoon-lab-picker");
           picker.setAttribute("role", "tablist");
           picker.setAttribute("aria-label", "Subgoals");
           st.holes.forEach(function(h, i) {
-            var tab = el8("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
+            var tab = el9("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
             tab.type = "button";
             tab.setAttribute("role", "tab");
             tab.setAttribute("aria-selected", i === st.focusIdx ? "true" : "false");
@@ -30981,7 +32234,7 @@
         var liveHole = naRun && naRun.phase === "searching" && naRun.liveHoles && naRun.liveHoles.length ? naRun.liveHoles[0] : null;
         var hole = liveHole || (st ? ed.focusHole(st) : null);
         if (hole && (hole.meta && hole.meta.length || hole.ctx && hole.ctx.length)) {
-          var ctxWrap = el8("div", "harpoon-lab-context");
+          var ctxWrap = el9("div", "harpoon-lab-context");
           this.renderCtx(ctxWrap, "meta", hole.meta);
           this.renderCtx(ctxWrap, "ctx", hole.ctx);
           box.appendChild(ctxWrap);
@@ -30995,19 +32248,19 @@
         }
       } else {
         var open11 = st ? st.holes.length : 0;
-        var bar = el8("div", "harpoon-lab-bar");
-        var status = el8("div", "harpoon-lab-status");
-        var dot = el8("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
+        var bar = el9("div", "harpoon-lab-bar");
+        var status = el9("div", "harpoon-lab-status");
+        var dot = el9("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
         setTip2(dot, complete2 ? "Proven" : "Unproven");
         dot.setAttribute("aria-label", complete2 ? "Proven" : "Unproven");
         status.appendChild(dot);
-        status.appendChild(el8(
+        status.appendChild(el9(
           "span",
           "harpoon-lab-status-text",
           complete2 ? "Proven" : open11 === 1 ? "1 goal" : open11 + " goals"
         ));
         bar.appendChild(status);
-        var actions = el8("div", "harpoon-lab-bar-actions");
+        var actions = el9("div", "harpoon-lab-bar-actions");
         var undoBtn = iconBtn2(
           "icon-btn",
           ICON_UNDO2,
@@ -31033,12 +32286,12 @@
         bar.appendChild(actions);
         box.appendChild(bar);
         if (st && st.holes.length > 1) {
-          var pickBand = el8("div", "harpoon-lab-picker-band");
-          var picker = el8("div", "harpoon-lab-picker");
+          var pickBand = el9("div", "harpoon-lab-picker-band");
+          var picker = el9("div", "harpoon-lab-picker");
           picker.setAttribute("role", "tablist");
           picker.setAttribute("aria-label", "Subgoals");
           st.holes.forEach(function(h, i) {
-            var tab = el8("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
+            var tab = el9("button", "harpoon-lab-picker-tab" + (i === st.focusIdx ? " is-active" : ""));
             tab.type = "button";
             tab.setAttribute("role", "tab");
             tab.setAttribute("aria-selected", i === st.focusIdx ? "true" : "false");
@@ -31057,7 +32310,7 @@
         var liveHole = naRun && naRun.phase === "searching" && naRun.liveHoles && naRun.liveHoles.length ? naRun.liveHoles[0] : null;
         var hole = liveHole || (st ? ed.focusHole(st) : null);
         if (hole && (hole.meta && hole.meta.length || hole.ctx && hole.ctx.length)) {
-          var ctxWrap = el8("div", "harpoon-lab-context");
+          var ctxWrap = el9("div", "harpoon-lab-context");
           this.renderCtx(ctxWrap, "meta", hole.meta);
           this.renderCtx(ctxWrap, "ctx", hole.ctx);
           box.appendChild(ctxWrap);
@@ -31075,16 +32328,16 @@
           stage += 1;
           box.appendChild(stuckCard);
         }
-        var movesWrap = el8("div", "harpoon-lab-moves" + (searching ? " is-locked" : ""));
+        var movesWrap = el9("div", "harpoon-lab-moves" + (searching ? " is-locked" : ""));
         this._movesEl = movesWrap;
         this._moveRows = [];
         var tacticsLabel = sectionLabel("Tactics");
         if (searching) {
           tacticsLabel.appendChild(
-            el8("span", "harpoon-lab-moves-lock", "Pause Orca to use tactics")
+            el9("span", "harpoon-lab-moves-lock", "Pause Orca to use tactics")
           );
         }
-        var tacStatus = el8("span", "harpoon-lab-moves-status");
+        var tacStatus = el9("span", "harpoon-lab-moves-status");
         tacticsLabel.appendChild(tacStatus);
         this._tacticStatusEl = tacStatus;
         movesWrap.appendChild(tacticsLabel);
@@ -31098,29 +32351,29 @@
             self.loadMoves();
           });
         }
-        var list3 = el8("div", "harpoon-lab-move-list");
+        var list3 = el9("div", "harpoon-lab-move-list");
         if (m.syncing || m.movesPending && !moves.length) {
           for (var sk = 0; sk < (m.movesPending && !moves.length ? 3 : Math.min(3, Math.max(1, moves.length))); sk += 1) {
             list3.appendChild(skelMoveRow(sk));
           }
           movesWrap.appendChild(list3);
         } else if (m.syncFailed) {
-          var lost = el8("div", "harpoon-lab-moves-empty");
-          lost.appendChild(el8(
+          var lost = el9("div", "harpoon-lab-moves-empty");
+          lost.appendChild(el9(
             "span",
             "harpoon-lab-moves-empty-title",
             "Could not read the paused proof"
           ));
-          lost.appendChild(el8(
+          lost.appendChild(el9(
             "span",
             "harpoon-lab-moves-empty-sub",
             "Resume Orca, or undo the last step and try again."
           ));
           movesWrap.appendChild(lost);
         } else if (!moves.length) {
-          var none = el8("div", "harpoon-lab-moves-empty");
-          none.appendChild(el8("span", "harpoon-lab-moves-empty-title", "Nothing applies here"));
-          none.appendChild(el8(
+          var none = el9("div", "harpoon-lab-moves-empty");
+          none.appendChild(el9("span", "harpoon-lab-moves-empty-title", "Nothing applies here"));
+          none.appendChild(el9(
             "span",
             "harpoon-lab-moves-empty-sub",
             "BelJar has no move for this goal. Undo the last step, pick another subgoal, or let Orca search."
@@ -31140,9 +32393,9 @@
       }
       var naNow = this.nativeAuto;
       if (naNow && naNow.phase === "searching") {
-        var live2 = el8("div", "harpoon-reel harpoon-lab-manual-trail");
-        var liveHead = el8("div", "harpoon-deriv-header");
-        liveHead.appendChild(el8("span", "harpoon-lab-section-label is-steps", "Derivation"));
+        var live2 = el9("div", "harpoon-reel harpoon-lab-manual-trail");
+        var liveHead = el9("div", "harpoon-deriv-header");
+        liveHead.appendChild(el9("span", "harpoon-lab-section-label is-steps", "Derivation"));
         liveHead.appendChild(iconBtn2(
           "icon-btn harpoon-deriv-popout",
           ICON_POPOUT2,
@@ -31153,7 +32406,7 @@
           }
         ));
         live2.appendChild(liveHead);
-        var record = el8("ol", "harpoon-lab-auto-trail harpoon-reel-record is-live");
+        var record = el9("ol", "harpoon-lab-auto-trail harpoon-reel-record is-live");
         record._lastBranch = null;
         record._branchHost = null;
         live2.appendChild(record);
@@ -31205,6 +32458,26 @@
       backToManual,
       commitManual
     };
+  }
+
+  // js/harpoon/orca-notice.mjs
+  var LONG_MS = 1e4;
+  function harpoonInView(session, sidePanelOpen) {
+    if (!session || session.disposed) return false;
+    if (session.host && session.host.kind === "float") return !!session.win;
+    return !!sidePanelOpen;
+  }
+  function orcaNotice(o) {
+    const reason = o.stuck && o.stuck.reason;
+    if (!o.complete && (reason === "stopped" || reason === "cancelled")) return null;
+    if (!(o.elapsedMs >= (o.longMs != null ? o.longMs : LONG_MS))) return null;
+    if (o.panelOpen && !o.hidden) return null;
+    const name = o.name ? o.name : "a hole";
+    const notice = o.complete ? { kind: "success", title: "Orca proved " + name, body: "The proof waits in Harpoon for you to place it." } : { kind: "warn", title: "Orca gave up on " + name, body: "Harpoon shows how far it got." };
+    notice.category = "ops";
+    notice.source = "orca.finished";
+    if (o.link && o.link.fileId) notice.links = o.link;
+    return notice;
   }
 
   // js/harpoon/harpoon-lab.mjs
@@ -31269,15 +32542,15 @@
   function tacticVerb(kind) {
     return TACTIC_VERB[kind] || kind || "move";
   }
-  function setTip(el8, text, opts) {
-    if (!el8) return;
+  function setTip(el9, text, opts) {
+    if (!el9) return;
     if (global51.Tooltips && global51.Tooltips.set) {
-      global51.Tooltips.set(el8, text, opts);
+      global51.Tooltips.set(el9, text, opts);
     } else {
-      el8.removeAttribute("title");
+      el9.removeAttribute("title");
       var tip = text != null ? String(text).trim() : "";
-      if (tip) el8.setAttribute("data-tooltip", tip);
-      else el8.removeAttribute("data-tooltip");
+      if (tip) el9.setAttribute("data-tooltip", tip);
+      else el9.removeAttribute("data-tooltip");
     }
   }
   function buildLabeledCodeTip(label, code, kind) {
@@ -31311,16 +32584,16 @@
       setTip(host2, "Goal at this step: " + shown, { ariaLabel: false });
     }
   }
-  function bindChipTip(el8, tip, richCode, richKind, placement) {
-    if (!el8 || !tip) return;
-    el8.setAttribute("data-tooltip-placement", placement || "below");
-    el8.setAttribute("data-tooltip-no-track", "");
+  function bindChipTip(el9, tip, richCode, richKind, placement) {
+    if (!el9 || !tip) return;
+    el9.setAttribute("data-tooltip-placement", placement || "below");
+    el9.setAttribute("data-tooltip-no-track", "");
     if (richCode && global51.Tooltips && typeof global51.Tooltips.setRich === "function") {
-      global51.Tooltips.setRich(el8, function() {
+      global51.Tooltips.setRich(el9, function() {
         return buildLabeledCodeTip(tip, richCode, richKind || "type");
       }, tip);
     } else {
-      setTip(el8, tip, { ariaLabel: false });
+      setTip(el9, tip, { ariaLabel: false });
     }
   }
   function iconBtn(className, svg, label, tip, onClick2, disabled) {
@@ -31417,6 +32690,34 @@
     var col = before.length - (lastNl < 0 ? 0 : lastNl + 1) + 1;
     var off = bodyStart + qIdx;
     return { hole: { line, col, name: null }, from: off, to: off + 1 };
+  }
+  function noteOrcaFinished(session, complete2, stuck, startedAt) {
+    var N = global51.Notifications;
+    if (!N || typeof N.emit !== "function") return;
+    var now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    var fileId = session.fileId || session.anchor && session.anchor.fileId || null;
+    var link = null;
+    if (fileId) {
+      var text = liveFileText(fileId);
+      var hit = text ? findHoleHitInText(text, session.anchor, E()) : null;
+      var P3 = global51.Persist;
+      var file = P3 && P3.getFileById ? P3.getFileById(fileId) : null;
+      if (hit) link = { fileId, path: file ? file.name : "", from: hit.from, to: hit.to };
+    }
+    var notice = orcaNotice({
+      complete: !!complete2,
+      stuck,
+      name: session.nativeAuto && session.nativeAuto.declName || session.anchor && session.anchor.declName || "",
+      elapsedMs: now - startedAt,
+      panelOpen: harpoonInView(
+        session,
+        !!(typeof document !== "undefined" && document.querySelector(".workspace.is-harpoon-open"))
+      ),
+      hidden: typeof document !== "undefined" && document.visibilityState === "hidden",
+      link,
+      longMs: typeof global51.BELJAR_ORCA_NOTICE_MS === "number" ? global51.BELJAR_ORCA_NOTICE_MS : LONG_MS
+    });
+    if (notice) N.emit(notice);
   }
   var displayApi = null;
   var commitApi = null;
@@ -32025,6 +33326,7 @@
       startedAt: typeof performance !== "undefined" ? performance.now() : Date.now()
     };
     var orcaToken = claimOrcaRun(this);
+    var orcaStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     this.render();
     if (!this._goalTierListener) {
       this._goalTierListener = function() {
@@ -32132,6 +33434,7 @@
       });
     }).then(function(r) {
       if (self.disposed) return false;
+      if (r && ed.withoutSynthesizedMeasure) r = ed.withoutSynthesizedMeasure(r, thm);
       self.probeAnchor();
       if (self._retireOrca) {
         self._retireOrca = false;
@@ -32163,6 +33466,7 @@
       self.render();
       self.refreshTreeExplorer();
       if (self.manual) self.absorbOrcaResult(r);
+      noteOrcaFinished(self, !!(r && r.complete), stuck, orcaStartedAt);
       return !!(r && r.complete);
     }).catch(function(err) {
       if (self.disposed) return false;
@@ -32181,6 +33485,7 @@
       };
       self.render();
       self.refreshTreeExplorer();
+      noteOrcaFinished(self, false, self.nativeAuto.stuck, orcaStartedAt);
       return false;
     }).finally(function() {
       var stillMine = self._orcaToken === orcaToken;
@@ -33273,13 +34578,13 @@
     });
   }
   function normalizeGlyphs(text) {
-    var g18 = global53.HarpoonGlyphs;
-    if (g18) return g18.fallbackNormalize(text);
+    var g23 = global53.HarpoonGlyphs;
+    if (g23) return g23.fallbackNormalize(text);
     return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
   }
   function displayType2(typeStr) {
-    var g18 = global53.HarpoonGlyphs;
-    if (g18) return g18.displayBeluga(typeStr);
+    var g23 = global53.HarpoonGlyphs;
+    if (g23) return g23.displayBeluga(typeStr);
     var ed = E2();
     if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
     return normalizeGlyphs(typeStr);
@@ -33328,9 +34633,9 @@
     } else if (st === "pending") {
       st = "loading";
     }
-    var g18 = goal || "";
-    if (g18) g18 = displayType2(g18).replace(/\s+/g, "");
-    return st + ":" + g18;
+    var g23 = goal || "";
+    if (g23) g23 = displayType2(g23).replace(/\s+/g, "");
+    return st + ":" + g23;
   }
   function modelRenderKey(model) {
     if (!model || !model.totalCount) return "";
@@ -33408,9 +34713,9 @@
   function entryKey(entry) {
     return entry.fileId + ":" + holeKey(entry.hit);
   }
-  function mirrorTierClass(win3) {
-    var track3 = trackOf(win3);
-    win3.classList.toggle(
+  function mirrorTierClass(win4) {
+    var track3 = trackOf(win4);
+    win4.classList.toggle(
       "harpoon-hole-goal--tiered",
       !!track3 && track3.classList.contains("harpoon-hole-goal--tiered")
     );
@@ -33590,35 +34895,35 @@
     }
     return null;
   }
-  function maskOf(win3) {
-    return win3 && win3.firstElementChild;
+  function maskOf(win4) {
+    return win4 && win4.firstElementChild;
   }
-  function trackOf(win3) {
-    var mask = maskOf(win3);
+  function trackOf(win4) {
+    var mask = maskOf(win4);
     return mask ? mask.firstElementChild : null;
   }
-  function readOver(win3) {
-    var mask = maskOf(win3);
-    var track3 = trackOf(win3);
+  function readOver(win4) {
+    var mask = maskOf(win4);
+    var track3 = trackOf(win4);
     if (!mask || !track3 || !mask.clientWidth) return -1;
     return Math.max(0, Math.round(track3.scrollWidth - mask.clientWidth));
   }
-  function applyOver(win3, over) {
+  function applyOver(win4, over) {
     if (over < 0) return;
-    win3.dataset.measured = "1";
+    win4.dataset.measured = "1";
     if (over <= 1) {
-      if (!win3.classList.contains("is-clipped")) return;
-      win3.classList.remove("is-clipped");
-      win3.style.removeProperty("--slide");
-      win3.style.removeProperty("--slide-ms");
+      if (!win4.classList.contains("is-clipped")) return;
+      win4.classList.remove("is-clipped");
+      win4.style.removeProperty("--slide");
+      win4.style.removeProperty("--slide-ms");
       return;
     }
     var slide = "-" + over + "px";
     var ms = Math.min(2800, Math.max(500, Math.round(over * 6))) + "ms";
-    if (win3.style.getPropertyValue("--slide").trim() === slide && win3.style.getPropertyValue("--slide-ms").trim() === ms && win3.classList.contains("is-clipped")) return;
-    win3.classList.add("is-clipped");
-    win3.style.setProperty("--slide", slide);
-    win3.style.setProperty("--slide-ms", ms);
+    if (win4.style.getPropertyValue("--slide").trim() === slide && win4.style.getPropertyValue("--slide-ms").trim() === ms && win4.classList.contains("is-clipped")) return;
+    win4.classList.add("is-clipped");
+    win4.style.setProperty("--slide", slide);
+    win4.style.setProperty("--slide-ms", ms);
   }
   function markClipped(root2) {
     if (!root2) return;
@@ -34006,6 +35311,61 @@
     prettifyQueryBindings
   };
 
+  // js/beluga/run-notice.mjs
+  var ANSI = /\x1b\[[0-9;]*m/g;
+  var STATUS = /^##\s*Type Reconstruction (begin|done):/i;
+  var FILE_LOC = /^File\s+"([^"]*)"\s*,\s*line\s+(\d+)/i;
+  var COMPACT = /([^\s:"]+\.(?:bel|elf|cfg)):(\d+)\.(\d+)/;
+  function runVerdict(raw) {
+    const lines = String(raw || "").replace(ANSI, "").split("\n");
+    let holes = 0;
+    let error = false;
+    let first = null;
+    let inHoles = false;
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t || /^Done\.?$/.test(t) || t === ";") continue;
+      if (/^##\s/.test(t)) {
+        inHoles = /##\s*Holes:/i.test(t);
+        if (inHoles) holes += 1;
+        if (!inHoles && !STATUS.test(t)) error = true;
+        continue;
+      }
+      if (inHoles) continue;
+      error = true;
+      if (!first) {
+        const f = FILE_LOC.exec(t);
+        const c = f ? null : COMPACT.exec(t);
+        if (f) first = { path: f[1], line: Number(f[2]) };
+        else if (c) first = { path: c[1], line: Number(c[2]) };
+      }
+    }
+    return { kind: error ? "error" : holes ? "holes" : "ok", holes, first };
+  }
+  function leftDuringRun(start, end) {
+    return !!end.hidden || start.fileId != null && end.fileId !== start.fileId;
+  }
+  function runNotice(verdict, label, fileOf) {
+    if (verdict.kind === "ok") {
+      return { kind: "success", category: "ops", source: "run.finished", title: "Checked " + label, body: "No errors." };
+    }
+    if (verdict.kind === "holes") {
+      return { kind: "info", category: "ops", source: "run.finished", title: "Checked " + label, body: "No errors, with holes left to fill." };
+    }
+    const notice = { kind: "error", category: "ops", source: "run.finished", title: "Errors in " + label, body: "The first is shown when you open this." };
+    const at = verdict.first;
+    const fileId = at && typeof fileOf === "function" ? fileOf(at.path) : null;
+    if (at && fileId) {
+      notice.body = "The first is in " + at.path.slice(at.path.lastIndexOf("/") + 1) + ", line " + at.line + ".";
+      notice.links = { fileId, path: at.path, line: at.line };
+    } else if (at) {
+      notice.body = "The first is in " + at.path + ", line " + at.line + ".";
+    } else {
+      notice.body = "The REPL has the details.";
+    }
+    return notice;
+  }
+
   // js/beluga/beluga-run.mjs
   var global55 = globalThis;
   var belugaBusy = false;
@@ -34265,6 +35625,24 @@
       ReplStream.endTurn();
     }
   }
+  function whereNow() {
+    var P3 = typeof Persist !== "undefined" ? Persist : null;
+    return {
+      fileId: P3 && P3.getActiveFileId ? P3.getActiveFileId() : null,
+      hidden: typeof document !== "undefined" && document.visibilityState === "hidden"
+    };
+  }
+  function noteIfLeft(start, raw, label) {
+    var N = typeof Notifications !== "undefined" ? Notifications : null;
+    if (!N || typeof N.emit !== "function" || !leftDuringRun(start, whereNow())) return;
+    var files2 = typeof Persist !== "undefined" && Persist.listFiles && Persist.listFiles() || [];
+    function fileOf(path) {
+      for (var i = 0; i < files2.length; i++) if (files2[i].name === path) return files2[i].id;
+      for (var j = 0; j < files2.length; j++) if (baseName6(files2[j].name) === baseName6(path)) return files2[j].id;
+      return null;
+    }
+    N.emit(runNotice(runVerdict(raw), label, fileOf));
+  }
   async function runLoad(code, spans, opts) {
     opts = opts || {};
     if (typeof BelugaClient === "undefined") {
@@ -34272,6 +35650,8 @@
       return;
     }
     var caption = opts.caption || "run " + (opts.displayName || "input.bel");
+    var startedAt = whereNow();
+    var noticeLabel = opts.label || opts.displayName || "the run";
     beginRunTurn(caption);
     if (typeof ReplOutput !== "undefined" && ReplOutput.beginRunSkeleton) {
       ReplOutput.beginRunSkeleton();
@@ -34306,6 +35686,7 @@
       }
       setBelugaBusy(false);
       void RunProgress.complete({ lines: lineCount2, ms: performance.now() - t0 });
+      noteIfLeft(startedAt, raw, noticeLabel);
     } catch (e) {
       setBelugaBusy(false);
       RunProgress.fail();
@@ -34313,7 +35694,9 @@
         await ReplOutput.dismissRunSkeleton();
       }
       if (!isCancelled2(e)) {
-        Toasts.error(formatLoadError(e, spans, opts.prelude, opts.displayName), { duration: 0, closable: true });
+        var loadError = formatLoadError(e, spans, opts.prelude, opts.displayName);
+        Toasts.error(loadError, { duration: 0, closable: true });
+        noteIfLeft(startedAt, String(loadError), noticeLabel);
       }
     } finally {
       endRunTurn();
@@ -34454,6 +35837,8 @@
       });
     }
     setBelugaBusy(true, { label: "the project" });
+    var projectStart = whereNow();
+    var projectOutput = "";
     var t0 = performance.now();
     if (shouldShowRunProgress()) RunProgress.start({ op: "load" });
     var failures = 0;
@@ -34474,6 +35859,7 @@
         if (!String(raw).trim()) {
           raw = "## Type Reconstruction begin: " + job.dev.name + " ##\n## Type Reconstruction done:  " + job.dev.name + " ##";
         }
+        projectOutput += raw + "\n";
         if (typeof ReplOutput !== "undefined" && ReplOutput.resolveRunOutput) {
           await ReplOutput.resolveRunOutput(raw);
         } else {
@@ -34490,6 +35876,7 @@
         }
         failures++;
         var msg = applyOutputNaming(e && e.message ? String(e.message) : String(e), job.spans, null, job.dev.name);
+        projectOutput += msg + "\n";
         if (typeof ReplOutput !== "undefined" && ReplOutput.resolveRunOutput) {
           await ReplOutput.resolveRunOutput(msg);
         } else {
@@ -34508,6 +35895,7 @@
         { duration: 0, closable: true }
       );
     }
+    if (!cancelled) noteIfLeft(projectStart, projectOutput, "the project");
   }
   var loadCode = runToHere;
   var loadProject = runModule;
@@ -34627,32 +36015,59 @@
   }
 
   // js/persist/sync/http-transport.mjs
-  var METHODS = ["heads", "head", "blobs", "missing", "putBlobs", "commit", "remove", "settings", "commitSettings"];
+  var METHODS = ["heads", "head", "blobs", "missing", "putBlobs", "commit", "remove", "settings", "commitSettings", "versions", "version"];
+  var TIMEOUT_MS = 3e4;
+  var TEXTS_TIMEOUT_MS = 12e4;
+  var CARRIES_TEXTS = /* @__PURE__ */ new Set(["blobs", "putBlobs"]);
   function createHttpTransport(o = {}) {
     const base = (o.base || "/api/sync").replace(/\/$/, "");
     const doFetch = o.fetch || ((...a) => globalThis.fetch(...a));
     const headers = Object.assign({ "content-type": "application/json" }, o.headers || {});
-    async function call(method, args) {
-      const res = await doFetch(base + "/" + method, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ args }),
-        credentials: "same-origin"
-      });
-      if (res.status !== 200) {
-        throw Object.assign(new Error("sync server answered " + res.status + " to " + method), { status: res.status });
+    const timers = o.timers || { set: (fn, ms) => setTimeout(fn, ms), clear: (h) => clearTimeout(h) };
+    const limitFor = (method) => CARRIES_TEXTS.has(method) ? o.textsTimeoutMs != null ? o.textsTimeoutMs : TEXTS_TIMEOUT_MS : o.timeoutMs != null ? o.timeoutMs : TIMEOUT_MS;
+    async function call(method, args, extra) {
+      const abort = new AbortController();
+      let late = false;
+      const timer2 = timers.set(() => {
+        late = true;
+        abort.abort();
+      }, limitFor(method));
+      try {
+        const res = await doFetch(base + "/" + method, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ args }),
+          credentials: "same-origin",
+          signal: abort.signal,
+          keepalive: !!(extra && extra.keepalive)
+        });
+        if (res.status === 401 && typeof o.onSignedOut === "function") {
+          try {
+            o.onSignedOut();
+          } catch (_) {
+          }
+        }
+        if (res.status !== 200) {
+          throw Object.assign(new Error("sync server answered " + res.status + " to " + method), { status: res.status });
+        }
+        const body = await res.json();
+        if (!body || !("result" in body)) throw new Error("sync server sent no result for " + method);
+        return body.result;
+      } catch (err) {
+        if (late) throw Object.assign(new Error("sync server did not answer " + method + " in time"), { timeout: true });
+        throw err;
+      } finally {
+        timers.clear(timer2);
       }
-      const body = await res.json();
-      if (!body || !("result" in body)) throw new Error("sync server sent no result for " + method);
-      return body.result;
     }
     const transport = {};
     for (const m of METHODS) transport[m] = (...args) => call(m, args);
+    transport.commitOnHide = (pid, req) => call("commit", [pid, req], { keepalive: true });
     return transport;
   }
 
   // js/account/account.mjs
-  var g13 = typeof window !== "undefined" ? window : globalThis;
+  var g15 = typeof window !== "undefined" ? window : globalThis;
   var user = null;
   var available = false;
   var unreachable2 = null;
@@ -34664,6 +36079,28 @@
   }
   function adoptable(projects, sizeOf) {
     return projects.filter((p) => p.owner === null && sizeOf(p.id) > 0).map((p) => p.id);
+  }
+  function endedStep(reason, keepSetting) {
+    if (reason === "deleted") return "release";
+    return keepSetting === "keep" ? "keep" : "leave";
+  }
+  function endedWords(reason, left) {
+    if (reason === "deleted") return "Your account was deleted. Its projects stay in this browser.";
+    const first = reason === "elsewhere" ? "This browser was signed out from another device." : "Your session in this browser ended.";
+    return left ? first + " Sign in to bring your projects back." : first;
+  }
+  var HOUR2 = 60 * 60 * 1e3;
+  function sessionWords(s, now = Date.now()) {
+    const label = s.device || "A browser";
+    if (s.current) return { label, detail: "This browser" };
+    const h = Math.floor((now - s.usedAt) / HOUR2);
+    if (h < 1) return { label, detail: "Used in the last hour" };
+    if (h < 24) return { label, detail: "Last used " + (h === 1 ? "1 hour" : h + " hours") + " ago" };
+    const d = Math.floor(h / 24);
+    if (d < 7) return { label, detail: "Last used " + (d === 1 ? "yesterday" : d + " days ago") };
+    const then = new Date(s.usedAt);
+    const opts = then.getFullYear() === new Date(now).getFullYear() ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" };
+    return { label, detail: "Last used " + then.toLocaleDateString([], opts) };
   }
   function signInFailure(why, detail2) {
     switch (why) {
@@ -34703,7 +36140,7 @@
         if (res.status === 404) return { none: true };
         if (res.status === 200 && /application\/json/.test(res.headers.get("content-type") || "")) {
           const body = await res.json();
-          return body && "user" in body ? { user: body.user } : { error: "not-json" };
+          return body && "user" in body ? { user: body.user, ended: body.ended || null } : { error: "not-json" };
         }
         error = res.status === 200 ? "not-json" : "status-" + res.status;
       } catch (_) {
@@ -34726,12 +36163,17 @@
     return "The server did not answer.";
   }
   function toast3(kind, message2) {
-    const T = g13.Toasts;
+    const T = g15.Toasts;
     if (T && typeof T[kind] === "function") T[kind](message2);
+  }
+  function syncTransport2() {
+    return createHttpTransport({ onSignedOut: () => {
+      recheck();
+    } });
   }
   function saveNow2() {
     try {
-      if (g13.Commands && typeof g13.Commands.run === "function") g13.Commands.run("file.save");
+      if (g15.Commands && typeof g15.Commands.run === "function") g15.Commands.run("file.save");
     } catch (_) {
     }
   }
@@ -34749,11 +36191,15 @@
     }, { once: true });
     return img;
   }
+  function onEditor() {
+    return Routes.pageOf(g15.location) === "edit";
+  }
   function render5() {
     const btn = document.getElementById("btn-account");
     if (!btn) return;
-    btn.hidden = !available;
-    if (!available) return;
+    const shown = available && (!!user || !!unreachable2 || !onEditor());
+    btn.hidden = !shown;
+    if (!shown) return;
     btn.replaceChildren();
     btn.classList.toggle("is-signed-in", !!user);
     btn.classList.toggle("is-unreachable", !!unreachable2);
@@ -34788,31 +36234,37 @@
         media: avatarNode("account-avatar account-avatar--menu")
       },
       { type: "separator" },
-      { label: "Settings", onSelect: () => g13.SettingsUI && g13.SettingsUI.open("account") },
+      ...onEditor() ? [{ label: "Home", onSelect: () => goHome() }] : [],
+      // Only where there is a Settings dialog to open (home has none yet).
+      ...g15.SettingsUI ? [{ label: "Settings", onSelect: () => g15.SettingsUI.open("account") }] : [],
       { label: "Sign out", onSelect: signOut }
     ];
   }
+  function goHome() {
+    saveNow2();
+    Routes.go(Routes.homeUrl());
+  }
   function signIn() {
     saveNow2();
-    g13.location.assign("/api/auth/github/start");
+    Routes.go(Routes.signInUrl());
   }
   function adopt(projects) {
-    const P3 = g13.Persist;
+    const P3 = g15.Persist;
     let n = 0;
     const sizeOf = (pid) => P3.projectStats(pid).size;
-    for (const pid of adoptable(projects || P3.listProjects(), sizeOf)) if (P3.claimProject(pid)) n += 1;
+    for (const pid of adoptable(projects || P3.projects(), sizeOf)) if (P3.claimProject(pid)) n += 1;
     if (n) {
-      g13.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
+      g15.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
       P3.syncNow();
     }
     return n;
   }
   function adoptOnWrite() {
-    const P3 = g13.Persist;
+    const P3 = g15.Persist;
     const owned = /* @__PURE__ */ new Set();
     P3.onFileChange(({ pid }) => {
       if (!user || !pid || owned.has(pid)) return;
-      const p = P3.listProjects().find((x) => x.id === pid);
+      const p = P3.projects().find((x) => x.id === pid);
       if (!p) return;
       if (p.owner !== null) {
         owned.add(pid);
@@ -34823,14 +36275,14 @@
   }
   async function signOut() {
     if (!user) return;
-    const P3 = g13.Persist;
+    const P3 = g15.Persist;
     saveNow2();
-    const keep = !!(g13.Settings && g13.Settings.get("signOutKeep") === "keep");
+    const keep = !!(g15.Settings && g15.Settings.get("signOutKeep") === "keep");
     const check = await P3.confirmSynced(keep ? 5e3 : void 0);
     if (!keep && !check.ok) {
-      const choice = await g13.PromptDialog.open({
+      const choice = await g15.PromptDialog.open({
         ariaLabel: "Sign out",
-        message: "Not everything is in the cloud yet.",
+        message: "Not everything is in the cloud yet",
         note: check.reason === "offline" ? "You\u2019re offline. Signing out removes your projects from this browser, with what hasn\u2019t synced." : "Signing out removes your projects from this browser, with what hasn\u2019t synced.",
         layout: "row",
         buttons: [
@@ -34840,7 +36292,7 @@
       });
       if (choice !== "out") return;
     }
-    await P3.stopSync();
+    await P3.stopSync({ hold: true });
     try {
       await fetch("/api/auth/signout", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: "{}" });
     } catch (_) {
@@ -34852,9 +36304,126 @@
       P3.setAccount(null);
     } else {
       P3.setAccount(null);
-      P3.removeAccountProjects(uid);
+      P3.leaveAccount(uid);
     }
-    g13.location.reload();
+    Routes.go(Routes.homeUrl(), { replace: true });
+  }
+  var following = null;
+  function followEndedSession(uid, reason) {
+    if (!following) following = followEnded(uid, reason).finally(() => {
+      following = null;
+    });
+    return following;
+  }
+  async function followEnded(uid, reason) {
+    const P3 = g15.Persist;
+    user = null;
+    await P3.stopSync();
+    const step2 = endedStep(reason, g15.Settings && g15.Settings.get("signOutKeep"));
+    if (step2 === "leave") {
+      const stay = await P3.unsyncedProjects(uid).catch(() => null);
+      if (stay) {
+        P3.setAccount(null);
+        P3.leaveAccount(uid, stay);
+        P3.noteSignedOut(reason === "elsewhere" ? "elsewhere" : "ended");
+        Routes.go(Routes.homeUrl(), { replace: true });
+        return;
+      }
+    }
+    if (step2 === "release") P3.releaseAccount(uid);
+    else P3.keepAccountProjects(uid);
+    P3.setAccount(null);
+    render5();
+    announce2();
+    toast3("info", endedWords(reason, false));
+  }
+  function noteEndedSession() {
+    const note = g15.Persist.takeSignedOutNote();
+    if (note) toast3("info", endedWords(note === "elsewhere" ? "elsewhere" : null, true));
+  }
+  var rechecking = false;
+  async function recheck() {
+    if (rechecking || !user) return;
+    rechecking = true;
+    try {
+      const answer = await askServer();
+      const uid = g15.Persist.getAccount();
+      if (user && uid && answer && "user" in answer && !answer.user) await followEndedSession(uid, answer.ended);
+    } finally {
+      rechecking = false;
+    }
+  }
+  async function sessions() {
+    if (!user) return [];
+    try {
+      const res = await fetch("/api/auth/sessions", { credentials: "same-origin", headers: { accept: "application/json" } });
+      if (res.status === 401) {
+        recheck();
+        return null;
+      }
+      if (res.status !== 200) return null;
+      const body = await res.json();
+      return body && Array.isArray(body.sessions) ? body.sessions : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  async function signOutThere(id) {
+    try {
+      const res = await fetch("/api/auth/sessions/end", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id })
+      });
+      return res.status === 200;
+    } catch (_) {
+      return false;
+    }
+  }
+  async function deleteAccount() {
+    if (!user) return;
+    const who = user;
+    const P3 = g15.Persist;
+    const yes = await g15.ConfirmDialog.confirm({
+      ariaLabel: "Delete account",
+      subject: "@" + who.handle,
+      message: "Delete your account?",
+      note: "Everything in the cloud is deleted: your projects, every version of them, and your settings. Every device is signed out. Projects in this browser stay here.",
+      confirmLabel: "Delete account"
+    });
+    if (!yes || user !== who) return;
+    saveNow2();
+    const nav = g15.navigator;
+    if (nav && nav.onLine === false) {
+      toast3("error", "You\u2019re offline. Deleting your account needs BelJar\u2019s server.");
+      return;
+    }
+    await P3.stopSync({ hold: true });
+    let deleted = false;
+    try {
+      const res = await fetch("/api/auth/delete", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: "{}"
+      });
+      deleted = res.status === 200;
+    } catch (_) {
+    }
+    if (!deleted) {
+      const answer = await askServer();
+      deleted = !!answer && "user" in answer && !answer.user && answer.ended === "deleted";
+    }
+    if (!deleted) {
+      P3.startSync({ transport: syncTransport2() });
+      toast3("error", "Couldn\u2019t delete your account. Nothing was changed.");
+      return;
+    }
+    user = null;
+    P3.releaseAccount(who.id);
+    P3.setAccount(null);
+    Routes.go(Routes.homeUrl(), { replace: true });
   }
   function resumeTarget(projects, uid, remembered) {
     const mine = (projects || []).filter((p) => p.owner === uid);
@@ -34864,43 +36433,47 @@
     return mine.reduce((a, b) => b.createdAt >= a.createdAt ? b : a).id;
   }
   function resumeAfterSignIn() {
-    const P3 = g13.Persist;
+    const P3 = g15.Persist;
+    if (!onEditor()) {
+      if (user && P3.resumeFor(user.id)) P3.clearResume();
+      return;
+    }
     if (!user || !P3.resumeFor(user.id)) return;
     let done = false;
     let off = null;
-    const settle = () => {
+    const settle2 = () => {
       done = true;
       if (off) off();
     };
     const attempt = (s) => {
       if (done || !user) return;
       const r = P3.resumeFor(user.id);
-      if (!r) return settle();
+      if (!r) return settle2();
       const active5 = P3.getActiveProjectId();
-      const ed = g13.CurrentEditor;
+      const ed = g15.CurrentEditor;
       const typing = !!ed && typeof ed.getValue === "function" && ed.getValue() !== "";
       if (!P3.isBlankProject(active5) || typing) {
         P3.clearResume();
-        return settle();
+        return settle2();
       }
-      const target = resumeTarget(P3.listProjects(), user.id, r.project);
+      const target = resumeTarget(P3.projects(), user.id, r.project);
       if (!target) {
         if (s && s.lastSync > 0 && s.state !== "syncing") {
           P3.clearResume();
-          settle();
+          settle2();
         }
         return void 0;
       }
       P3.clearResume();
-      settle();
-      if (g13.App && typeof g13.App.resumeProject === "function") g13.App.resumeProject(target, active5);
+      settle2();
+      if (g15.App && typeof g15.App.resumeProject === "function") g15.App.resumeProject(target, active5);
       return void 0;
     };
     off = P3.onSyncSummary(attempt);
     attempt(P3.syncSummary());
   }
   function noteFailedSignIn() {
-    const search = g13.location && g13.location.search;
+    const search = g15.location && g15.location.search;
     if (!search) return;
     const params = new URLSearchParams(search);
     if (params.get("signin") !== "failed") return;
@@ -34911,7 +36484,7 @@
       toast3("info", "Sign-in was cancelled.");
     } else {
       toast3("error", "Couldn\u2019t sign in with GitHub. The notifications say why.");
-      const N = g13.Notifications;
+      const N = g15.Notifications;
       if (N && typeof N.emit === "function") {
         N.emit({
           kind: "error",
@@ -34927,10 +36500,10 @@
     params.delete("why");
     params.delete("detail");
     const rest = params.toString();
-    g13.history.replaceState(null, "", g13.location.pathname + (rest ? "?" + rest : "") + g13.location.hash);
+    g15.history.replaceState(null, "", g15.location.pathname + (rest ? "?" + rest : "") + g15.location.hash);
   }
   function noteUnreachable(error) {
-    const N = g13.Notifications;
+    const N = g15.Notifications;
     if (!N || typeof N.emit !== "function") return;
     N.emit({
       kind: "warn",
@@ -34942,66 +36515,103 @@
       body: unreachableWords(error) + " Sign-in and sync are off until it can. (" + error + ")"
     });
   }
+  async function follow() {
+    const P3 = g15.Persist;
+    if (onEditor() && P3.ownerLeft()) {
+      Routes.go(Routes.homeUrl(), { replace: true });
+      return;
+    }
+    await P3.stopSync();
+    await connect();
+  }
   async function boot() {
     noteFailedSignIn();
+    noteEndedSession();
+    g15.Persist.onAccountElsewhere(() => {
+      follow();
+    });
     await connect();
+  }
+  function noteNoServer() {
+    const host2 = g15.location && g15.location.hostname;
+    if (host2 !== "127.0.0.1" && host2 !== "localhost") return;
+    console.info("BelJar: no server here (a static server has no /api), so sign-in and sync are off. For them locally: npm run dev, then http://127.0.0.1:8787");
+  }
+  function announce2() {
+    g15.dispatchEvent(new CustomEvent("beljar:account", { detail: { user: user ? Object.assign({}, user) : null } }));
   }
   async function connect() {
     const answer = await askServer();
-    const where = reach(answer, !!g13.BELJAR_DEPLOYED);
-    if (where === "none") return;
+    const where = reach(answer, !!g15.BELJAR_DEPLOYED);
+    if (where === "none") {
+      noteNoServer();
+      announce2();
+      return;
+    }
     available = true;
     if (where === "unreachable") {
       unreachable2 = answer.error || "status-404";
       user = null;
       render5();
       noteUnreachable(unreachable2);
+      announce2();
       return;
     }
     unreachable2 = null;
     const me = answer.user;
     user = me;
-    const P3 = g13.Persist;
+    const P3 = g15.Persist;
     const step2 = accountStep(me, P3.getAccount());
+    if (step2 === "ended") {
+      await followEndedSession(P3.getAccount(), answer.ended);
+      return;
+    }
     if (step2 === "first" || step2 === "switched") {
       P3.setAccount(me.id);
       if (step2 === "switched") {
-        g13.location.reload();
+        g15.location.reload();
         return;
       }
     }
     render5();
-    g13.dispatchEvent(new CustomEvent("beljar:account", { detail: { user: user ? Object.assign({}, user) : null } }));
+    announce2();
     if (!me) return;
     adopt();
     if (!adopting) adoptOnWrite();
     adopting = true;
-    P3.startSync({ transport: createHttpTransport() });
+    P3.startSync({ transport: syncTransport2() });
     resumeAfterSignIn();
   }
   var Account2 = {
     user: () => user ? Object.assign({}, user) : null,
     available: () => available,
+    unreachable: () => unreachable2,
     menuItems,
     signIn,
     signOut,
+    goHome,
+    sessions,
+    sessionWords,
+    signOutThere,
+    deleteAccount,
     _boot: boot
   };
-  g13.Account = Account2;
+  g15.Account = Account2;
   if (typeof document !== "undefined") {
-    const go = () => {
-      const idle = g13.requestIdleCallback;
+    const go2 = () => {
+      if (g15.BELJAR_LEAVING) return;
+      const idle = g15.requestIdleCallback;
       if (typeof idle === "function") idle(() => {
         boot();
       }, { timeout: 2e3 });
       else setTimeout(boot, 0);
     };
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go, { once: true });
-    else go();
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go2, { once: true });
+    else go2();
   }
 
   // js/ui/review-differences.mjs
-  var g14 = typeof window !== "undefined" ? window : globalThis;
+  var g16 = typeof window !== "undefined" ? window : globalThis;
   function lineDiff(theirs, mine) {
     const a = splitLines(theirs);
     const b = splitLines(mine);
@@ -35059,15 +36669,15 @@
     return n;
   }
   function sidesOf(c) {
-    const App = g14.App;
+    const App = g16.App;
     const open11 = App && typeof App.openConflictSides === "function" ? App.openConflictSides(c.pid, c.fid) : null;
-    return open11 || g14.Persist.conflictSides(c.pid, c.fid);
+    return open11 || g16.Persist.conflictSides(c.pid, c.fid);
   }
   function resolveDifference(c, choice) {
-    const App = g14.App;
+    const App = g16.App;
     const open11 = App && typeof App.resolveOpenConflict === "function" ? App.resolveOpenConflict(c.pid, c.fid, choice) : null;
     if (open11 !== null && open11 !== void 0) return open11;
-    return g14.Persist.resolveStoredConflict(c.pid, c.fid, choice);
+    return g16.Persist.resolveStoredConflict(c.pid, c.fid, choice);
   }
   function diffNode(sides) {
     const pre = el6("div", "review-diff");
@@ -35090,7 +36700,7 @@
   }
   var win = null;
   function render6(body) {
-    const P3 = g14.Persist;
+    const P3 = g16.Persist;
     const files2 = P3.listConflicts();
     body.replaceChildren();
     if (!files2.length) {
@@ -35135,7 +36745,7 @@
       const mineAll = actionButton("Keep all mine", "mine", "primary");
       for (const btn of [theirsAll, mineAll]) {
         btn.addEventListener("click", () => {
-          for (const c of g14.Persist.listConflicts()) resolveDifference(c, btn.dataset.action);
+          for (const c of g16.Persist.listConflicts()) resolveDifference(c, btn.dataset.action);
           render6(body);
         });
         bar.appendChild(btn);
@@ -35152,9 +36762,9 @@
     return Math.max(220, Math.min(540, 124 + files2.length * 52 + rows2 * 18 + (files2.length > 1 ? 44 : 0)));
   }
   function openReviewDifferences() {
-    const FW2 = g14.FloatingWindow;
-    if (!FW2 || !g14.Persist) return false;
-    if (!g14.Persist.listConflicts().length) return false;
+    const FW2 = g16.FloatingWindow;
+    if (!FW2 || !g16.Persist) return false;
+    if (!g16.Persist.listConflicts().length) return false;
     if (win) {
       render6(win.body);
       return true;
@@ -35165,7 +36775,7 @@
       className: "floating-window--review",
       content: body,
       width: 560,
-      height: fittingHeight(g14.Persist.listConflicts()),
+      height: fittingHeight(g16.Persist.listConflicts()),
       minWidth: 360,
       minHeight: 220,
       onClose: () => {
@@ -35180,10 +36790,10 @@
     if (win) render6(win.body);
   }
   var ReviewDifferences = { open: openReviewDifferences, refresh: refreshReviewDifferences, resolve: resolveDifference };
-  g14.ReviewDifferences = ReviewDifferences;
+  g16.ReviewDifferences = ReviewDifferences;
 
   // js/ui/review-offline.mjs
-  var g15 = typeof window !== "undefined" ? window : globalThis;
+  var g17 = typeof window !== "undefined" ? window : globalThis;
   var CHANGE_WORDS = { added: "new", edited: "edited", renamed: "renamed", deleted: "deleted" };
   function changeSummary(p) {
     if (p.isNew) return "new here";
@@ -35234,7 +36844,7 @@
   var busy = false;
   var problem = null;
   function projectSection(row) {
-    const P3 = g15.Persist;
+    const P3 = g17.Persist;
     const { p, side } = row;
     const section = el7("section", "review__file");
     section.dataset.pid = p.pid;
@@ -35264,7 +36874,7 @@
     return section;
   }
   async function cloudSides(changes) {
-    const P3 = g15.Persist;
+    const P3 = g17.Persist;
     const sides = {};
     for (const p of changes) {
       if (p.isNew) {
@@ -35280,7 +36890,7 @@
     return sides;
   }
   async function render7(body) {
-    const P3 = g15.Persist;
+    const P3 = g17.Persist;
     const changes = await P3.offlineChanges();
     const rows2 = offlineRows(changes, await cloudSides(changes));
     body.replaceChildren();
@@ -35329,8 +36939,8 @@
     if (win2) await render7(win2.body);
   }
   async function openReviewOffline() {
-    const FW2 = g15.FloatingWindow;
-    if (!FW2 || !g15.Persist) return false;
+    const FW2 = g17.FloatingWindow;
+    if (!FW2 || !g17.Persist) return false;
     if (win2) {
       await render7(win2.body);
       return true;
@@ -35354,16 +36964,16 @@
     return true;
   }
   var ReviewOffline = { open: openReviewOffline };
-  g15.ReviewOffline = ReviewOffline;
+  g17.ReviewOffline = ReviewOffline;
 
   // js/account/cloud-glyphs.mjs
   var CLOUD = "M6.75 18.25A4 4 0 0 1 6.52 10.26A5.5 5.5 0 0 1 17.41 9.75A4.25 4.25 0 0 1 17.25 18.25Z";
   var SLASH = "M5.75 6.5 17.75 18.5";
   var MARKS = {
     // pathLength 1: the check can draw itself in when a round lands (css).
-    synced: '<path class="sync-cloud__mark sync-cloud__check" pathLength="1" d="M9.4 13.75l2 2 3.6-3.6"/>',
-    syncing: '<path class="sync-cloud__mark sync-cloud__arrow" d="M12 16.25v-5m-2.25 2.25L12 11.25l2.25 2.25"/>',
-    alert: '<path class="sync-cloud__mark" d="M12 11v3.25"/><path class="sync-cloud__mark" d="M12 16.75h.01"/>'
+    synced: '<path class="sync-cloud__mark sync-cloud__check" pathLength="1" d="M9.9 14.05l1.5 1.5 3-3"/>',
+    syncing: '<path class="sync-cloud__mark sync-cloud__arrow" d="M12 15.75v-4m-1.75 1.75L12 11.75l1.75 1.75"/>',
+    alert: '<path class="sync-cloud__mark" d="M12 11.5v2.75"/><path class="sync-cloud__mark" d="M12 16.5h.01"/>'
   };
   function cloudLook(state2) {
     if (state2 === "pending" || state2 === "syncing") return "syncing";
@@ -35371,15 +36981,47 @@
     return state2 === "offline" ? "offline" : "synced";
   }
   function cloudSvg(look) {
-    const open11 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+    const open11 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
     if (look === "offline") {
       return open11 + '<mask id="sync-cloud-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/><path d="' + SLASH + '" stroke="#000" stroke-width="5"/></mask><path d="' + CLOUD + '" mask="url(#sync-cloud-cut)"/><path class="sync-cloud__mark" d="' + SLASH + '"/></svg>';
     }
     return open11 + '<path d="' + CLOUD + '"/>' + (MARKS[look] || MARKS.synced) + "</svg>";
   }
 
+  // js/account/sync-watch.mjs
+  var FAILING_MS = 10 * 60 * 1e3;
+  function createFailureWatch(o = {}) {
+    const now = o.now || (() => Date.now());
+    const after = o.after != null ? o.after : FAILING_MS;
+    let since = null;
+    let told = false;
+    return {
+      observe(s) {
+        const state2 = s && s.state;
+        if (state2 === "error") {
+          if (since === null) since = now();
+          if (!told && now() - since >= after) {
+            told = true;
+            return "emit";
+          }
+          return null;
+        }
+        if (state2 === "synced") {
+          since = null;
+          if (told) {
+            told = false;
+            return "clear";
+          }
+          return null;
+        }
+        return null;
+      },
+      since: () => since
+    };
+  }
+
   // js/account/sync-ui.mjs
-  var g16 = typeof window !== "undefined" ? window : globalThis;
+  var g18 = typeof window !== "undefined" ? window : globalThis;
   var summary = null;
   var wasOffline = false;
   var marks = null;
@@ -35393,6 +37035,25 @@
     if (m < 60) return plural3(m, "minute", "minutes") + " ago";
     return "at " + new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
+  function failureWords(reason) {
+    const m = /^status-(\d+)$/.exec(reason || "");
+    if (m) {
+      const code = Number(m[1]);
+      if (code === 429) return "BelJar\u2019s server is busy (429). It tries again on its own; nothing here is lost.";
+      if (code >= 500) return "BelJar\u2019s server had a problem (" + code + "). It tries again on its own; nothing here is lost.";
+      if (code === 413) return "A change was too large for the server to take (413). It stays here.";
+      if (code === 401) return "This browser\u2019s session has ended. Sign in again to sync.";
+      return "BelJar\u2019s server refused the request (" + code + "). It tries again on its own; nothing here is lost.";
+    }
+    if (reason === "refused-quota-projects") {
+      return "Your account has " + QUOTA.projects.toLocaleString("en") + " projects, BelJar\u2019s limit. Delete projects you no longer need, and new ones sync.";
+    }
+    if (reason === "refused-quota-texts") {
+      return "Your account has stored as much text as BelJar allows (" + Math.round(QUOTA.textBytes / (1024 * 1024 * 1024)) + " GB), which usually means something has gone wrong. Report an issue; nothing here is lost.";
+    }
+    if (reason === "refused-too-many" || reason === "refused-bad-manifest") return "The server refused a change it could not take. It stays here.";
+    return null;
+  }
   function cloudWords(s, now = Date.now()) {
     switch (s.state) {
       case "differs": {
@@ -35404,7 +37065,7 @@
       case "held":
         return { tip: "Changes made offline", title: "Changes made offline", detail: "They wait for you to upload them, or use the cloud\u2019s version.", tone: "warning" };
       case "error":
-        return { tip: "Couldn\u2019t sync", title: "Couldn\u2019t sync", detail: "BelJar keeps trying.", tone: "error" };
+        return { tip: "Couldn\u2019t sync", title: "Couldn\u2019t sync", detail: failureWords(s.reason) || "BelJar keeps trying.", tone: "error" };
       case "syncing":
       case "pending":
         return { tip: "Syncing", title: "Syncing", detail: s.lastSync ? "Last synced " + ago(s.lastSync, now) : null };
@@ -35430,11 +37091,11 @@
     }
     const tip = cloudWords(s).tip;
     btn.setAttribute("aria-label", tip);
-    if (g16.Tooltips && typeof g16.Tooltips.set === "function") g16.Tooltips.set(btn, tip);
+    if (g18.Tooltips && typeof g18.Tooltips.set === "function") g18.Tooltips.set(btn, tip);
     else btn.setAttribute("data-tooltip", tip);
   }
   function menuItems2() {
-    const s = summary || g16.Persist.syncSummary();
+    const s = summary || g18.Persist.syncSummary();
     const words = cloudWords(s);
     const items3 = [{ type: "status", title: words.title, detail: words.detail, tone: words.tone }];
     if (s.differs.length) {
@@ -35447,23 +37108,24 @@
     items3.push({ type: "separator" }, {
       label: "Sync now",
       disabled: s.state === "offline" || s.state === "syncing",
-      onSelect: () => g16.Persist.confirmSynced()
+      onSelect: () => g18.Persist.confirmSynced()
     });
     return items3;
   }
   function markExplorer(s) {
+    if (!g18.Routes || g18.Routes.pageOf(g18.location) !== "edit") return;
     if (!marks) {
       marks = document.createElement("style");
       marks.id = "sync-differs-marks";
       document.head.appendChild(marks);
     }
-    const pid = g16.Persist.getActiveProjectId();
+    const pid = g18.Persist.getActiveProjectId();
     const ids = s.differs.filter((d) => d.pid === pid).map((d) => d.fid);
-    const esc = (id) => g16.CSS && typeof g16.CSS.escape === "function" ? g16.CSS.escape(id) : String(id).replace(/"/g, "");
+    const esc = (id) => g18.CSS && typeof g18.CSS.escape === "function" ? g18.CSS.escape(id) : String(id).replace(/"/g, "");
     marks.textContent = ids.length ? ids.map((id) => `.explorer-file-item[data-file-id="${esc(id)}"] .explorer-file-item-name`).join(",\n") + " { color: var(--ide-status-warning); }\n" + ids.map((id) => `.explorer-file-item[data-file-id="${esc(id)}"] .explorer-file-item-name::after`).join(",\n") + ' { content: " \\2260"; opacity: 0.85; }' : "";
   }
   function applyPreference(s) {
-    const S = g16.Settings;
+    const S = g18.Settings;
     if (!S || S.get("syncBothChanged") !== "merge") return false;
     const how = S.get("syncOverlap");
     if (how !== "mine" && how !== "cloud") return false;
@@ -35475,15 +37137,51 @@
     return settled;
   }
   function say2(text) {
-    if (g16.StatusStrip && typeof g16.StatusStrip.setMessage === "function") g16.StatusStrip.setMessage(text);
+    if (g18.StatusStrip && typeof g18.StatusStrip.setMessage === "function") g18.StatusStrip.setMessage(text);
   }
   function notices() {
-    return !g16.Settings || g16.Settings.get("syncNotices") !== false;
+    return !g18.Settings || g18.Settings.get("syncNotices") !== false;
   }
+  function noteRefusal(s) {
+    const reason = s && s.state === "error" ? s.reason : null;
+    if (!reason || !/^refused-quota-/.test(reason)) return;
+    const N = g18.Notifications;
+    if (!N || typeof N.emit !== "function") return;
+    N.emit({
+      kind: "error",
+      category: "ops",
+      origin: "local",
+      source: "sync.quota",
+      dedupeKey: "sync." + reason,
+      title: reason === "refused-quota-projects" ? "Too many projects to sync" : "Your account is full",
+      body: failureWords(reason)
+    });
+  }
+  function noteFailing(action, s, N = g18.Notifications) {
+    if (!N || typeof N.emit !== "function") return;
+    if (action === "emit") {
+      N.emit({
+        kind: "error",
+        category: "ops",
+        origin: "local",
+        source: "sync.failing",
+        dedupeKey: "sync.failing",
+        title: "Couldn\u2019t sync for ten minutes",
+        body: failureWords(s && s.reason) || "BelJar keeps trying. Everything stays in this browser meanwhile."
+      });
+    } else if (action === "clear") {
+      const card = (typeof N.list === "function" ? N.list() : []).find((r) => r.dedupeKey === "sync.failing" && !r.dismissedAt);
+      if (card && typeof N.dismiss === "function") N.dismiss(card.id);
+    }
+  }
+  var failing = createFailureWatch({ after: typeof g18.BELJAR_SYNC_FAILING_MS === "number" ? g18.BELJAR_SYNC_FAILING_MS : void 0 });
   function update(s) {
     if (applyPreference(s)) return;
     const before = summary;
     summary = s;
+    noteRefusal(s);
+    const act2 = failing.observe(s);
+    if (act2) noteFailing(act2, s);
     if (s.state === "offline") wasOffline = true;
     else if (wasOffline && s.state === "synced") {
       wasOffline = false;
@@ -35492,36 +37190,291 @@
     renderCloud(s);
     markExplorer(s);
     refreshReviewDifferences();
-    if (g16.StatusStrip && typeof g16.StatusStrip.setEditorState === "function") {
-      g16.StatusStrip.setEditorState({ sync: Object.assign({}, s, { notices: notices() }) });
+    if (g18.StatusStrip && typeof g18.StatusStrip.setEditorState === "function") {
+      g18.StatusStrip.setEditorState({ sync: Object.assign({}, s, { notices: notices() }) });
     }
   }
   var SyncUI2 = {
     menuItems: menuItems2,
     review: () => openReviewDifferences(),
     reviewOffline: () => openReviewOffline(),
-    summary: () => summary || (g16.Persist ? g16.Persist.syncSummary() : null)
+    summary: () => summary || (g18.Persist ? g18.Persist.syncSummary() : null)
   };
-  g16.SyncUI = SyncUI2;
+  g18.SyncUI = SyncUI2;
   if (typeof document !== "undefined") {
-    const go = () => {
-      const P3 = g16.Persist;
+    const go2 = () => {
+      const P3 = g18.Persist;
       if (!P3 || typeof P3.onSyncSummary !== "function") return;
       P3.onSyncSummary(update);
       update(P3.syncSummary());
-      g16.addEventListener("beljar:account", () => update(P3.syncSummary()));
-      if (g16.Settings && typeof g16.Settings.subscribe === "function") {
-        g16.Settings.subscribe((e) => {
+      g18.addEventListener("beljar:account", () => update(P3.syncSummary()));
+      if (g18.Settings && typeof g18.Settings.subscribe === "function") {
+        g18.Settings.subscribe((e) => {
           if (e && Array.isArray(e.ids) && e.ids.some((id) => /^sync/.test(id))) update(P3.syncSummary());
         });
       }
-      g16.addEventListener("beljar:project-tree-changed", () => {
+      g18.addEventListener("beljar:project-tree-changed", () => {
         if (summary) markExplorer(summary);
       });
     };
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go, { once: true });
-    else go();
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", go2, { once: true });
+    else go2();
   }
+
+  // js/ui/version-history.mjs
+  var g19 = typeof window !== "undefined" ? window : globalThis;
+  var DAY2 = 24 * 60 * 60 * 1e3;
+  function versionTime(ms, now = Date.now()) {
+    const at = new Date(ms);
+    const time = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const today = new Date(now);
+    const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    if (ms >= midnight) return "Today " + time;
+    if (ms >= midnight - DAY2) return "Yesterday " + time;
+    const opts = at.getFullYear() === today.getFullYear() ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" };
+    return at.toLocaleDateString([], opts) + " " + time;
+  }
+  function versionWords(v, o = {}) {
+    if (v.deleted) return "Deleted";
+    const parts = [];
+    if (o.current) parts.push("Current");
+    if (v.name && o.name && v.name !== o.name) parts.push("Named " + v.name);
+    parts.push(v.files === 1 ? "1 file" : v.files + " files");
+    return parts.join(", ");
+  }
+  function versionChanges(version2, current) {
+    const now = new Map(current.map((f) => [f.id, f]));
+    const out = [];
+    for (const f of version2.files) {
+      const c = now.get(f.id);
+      now.delete(f.id);
+      if (!c) out.push({ path: f.path, change: "back", before: "", after: f.text });
+      else if (c.text !== f.text) out.push({ path: f.path, change: "edited", before: c.text, after: f.text });
+      else if (c.path !== f.path) out.push({ path: f.path, change: "renamed", before: c.path, after: f.path });
+    }
+    for (const c of now.values()) out.push({ path: c.path, change: "gone", before: c.text, after: "" });
+    return out;
+  }
+  var CHANGE_WORDS2 = { edited: "edited", renamed: "renamed", back: "comes back", gone: "goes" };
+  function restoreProblem(error) {
+    if (error === "unsynced") return "Not everything here is in the cloud yet, and restoring would lose it. Try again once it\u2019s synced.";
+    if (error === "review") return "Some files are waiting in Review differences. Settle them first.";
+    if (error === "no-version") return "That version can\u2019t be restored.";
+    return "Couldn\u2019t reach the cloud. Try again.";
+  }
+  function el8(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function diffNode3(before, after) {
+    const box = el8("div", "review-diff");
+    for (const r of compactDiff(lineDiff(before || "", after || ""), 1)) {
+      if (r.kind === "gap") {
+        box.appendChild(el8("div", "review-diff__gap", r.count === 1 ? "1 unchanged line" : r.count + " unchanged lines"));
+        continue;
+      }
+      const line = el8("div", "review-diff__line is-" + r.kind);
+      line.appendChild(el8("span", "review-diff__mark", r.kind === "theirs" ? "\u2212" : r.kind === "mine" ? "+" : ""));
+      line.appendChild(el8("span", "review-diff__text", r.text || " "));
+      box.appendChild(line);
+    }
+    return box;
+  }
+  function currentFiles() {
+    const P3 = g19.Persist;
+    return (P3.listFiles() || []).map((f) => ({ id: f.id, path: f.name, text: P3.getFileText(f.id) || "" }));
+  }
+  var win3 = null;
+  function saveNow3() {
+    try {
+      if (g19.Commands && typeof g19.Commands.run === "function") g19.Commands.run("file.save");
+    } catch (_) {
+    }
+  }
+  async function openVersionHistory() {
+    const FW2 = g19.FloatingWindow;
+    const P3 = g19.Persist;
+    if (!FW2 || !P3) return false;
+    const pid = P3.getActiveProjectId();
+    if (win3 && win3.pid === pid) {
+      await win3.load(true);
+      return true;
+    }
+    if (win3) win3.close();
+    const body = el8("div", "history");
+    const list3 = el8("div", "history__list");
+    list3.setAttribute("role", "listbox");
+    list3.setAttribute("aria-label", "Versions");
+    const view = el8("div", "history__view");
+    body.append(list3, view);
+    let versions = [];
+    let more = false;
+    let chosen2 = null;
+    let busy2 = false;
+    const state2 = { pid, load, close: () => handle.close() };
+    function rowNode2(v, i) {
+      const row = el8("button", "history__row");
+      row.type = "button";
+      row.setAttribute("role", "option");
+      row.dataset.version = String(v.version);
+      row.setAttribute("aria-selected", chosen2 === v.version ? "true" : "false");
+      row.appendChild(el8("span", "history__when", versionTime(v.createdAt)));
+      row.appendChild(el8("span", "history__what", versionWords(v, { current: i === 0, name: P3.getProjectName() })));
+      row.addEventListener("click", () => choose2(v.version));
+      return row;
+    }
+    function drawList() {
+      list3.replaceChildren(...versions.map(rowNode2));
+      if (more) {
+        const older = el8("button", "history__older", "Show older");
+        older.type = "button";
+        older.addEventListener("click", () => loadOlder());
+        list3.appendChild(older);
+      }
+    }
+    function say3(text, retry) {
+      view.replaceChildren(el8("p", "history__note", text));
+      if (retry) {
+        const again = actionButton("Try again", "retry", "secondary");
+        again.addEventListener("click", () => load(true));
+        view.appendChild(again);
+      }
+    }
+    async function load(fresh) {
+      if (fresh) chosen2 = null;
+      let page;
+      try {
+        page = await P3.projectHistory(pid);
+      } catch (_) {
+        page = void 0;
+      }
+      if (page === null) {
+        list3.replaceChildren();
+        say3("Version history is kept in the cloud. Sign in to see it.");
+        return;
+      }
+      if (!page) {
+        list3.replaceChildren();
+        say3("Couldn\u2019t reach the cloud. Try again.", true);
+        return;
+      }
+      versions = page;
+      more = page.length >= 50;
+      drawList();
+      if (!versions.length) {
+        say3("This project has no versions in the cloud yet. One is made each time it syncs.");
+        return;
+      }
+      if (chosen2 == null) await choose2(versions.length > 1 ? versions[1].version : versions[0].version);
+    }
+    async function loadOlder() {
+      const last = versions[versions.length - 1];
+      let page = null;
+      try {
+        page = await P3.projectHistory(pid, { before: last.version });
+      } catch (_) {
+      }
+      if (!page) return;
+      versions = versions.concat(page);
+      more = page.length >= 50;
+      drawList();
+    }
+    async function choose2(n) {
+      chosen2 = n;
+      for (const r of list3.querySelectorAll(".history__row")) r.setAttribute("aria-selected", r.dataset.version === String(n) ? "true" : "false");
+      view.replaceChildren(el8("p", "history__note", "Opening\u2026"));
+      let v = null;
+      try {
+        v = await P3.readVersion(pid, n);
+      } catch (_) {
+        v = void 0;
+      }
+      if (chosen2 !== n) return;
+      if (v === void 0) return say3("Couldn\u2019t reach the cloud. Try again.", true);
+      if (!v) return say3("That version can\u2019t be read.");
+      drawVersion(v);
+    }
+    function drawVersion(v, problem2) {
+      view.replaceChildren();
+      const head = el8("div", "history__head");
+      const title = el8("div", "history__title");
+      title.appendChild(el8("span", "history__stamp", versionTime(v.createdAt)));
+      title.appendChild(el8("span", "history__sub", v.deleted ? "The project was deleted here" : "Read only"));
+      head.appendChild(title);
+      const isCurrent = versions.length && versions[0].version === v.version;
+      if (!v.deleted && !isCurrent) {
+        const restore2 = actionButton("Restore this version", "restore", "primary");
+        restore2.addEventListener("click", () => doRestore(v, restore2));
+        head.appendChild(restore2);
+      }
+      view.appendChild(head);
+      if (problem2) view.appendChild(el8("p", "review__problem", problem2));
+      if (v.deleted) return;
+      const changes = versionChanges(v, currentFiles());
+      if (!changes.length) {
+        view.appendChild(el8("p", "history__note", "The same as the project is now."));
+        return;
+      }
+      const legend = el8("p", "review__legend");
+      legend.appendChild(el8("span", "review__key is-theirs", "\u2212 now"));
+      legend.appendChild(el8("span", "review__key is-mine", "+ this version"));
+      view.appendChild(legend);
+      for (const c of changes) {
+        const line = el8("div", "review__change");
+        line.appendChild(el8("span", "review__path", c.path));
+        line.appendChild(el8("span", "review__kind", CHANGE_WORDS2[c.change]));
+        view.appendChild(line);
+        if (c.change === "edited") view.appendChild(diffNode3(c.before, c.after));
+      }
+    }
+    async function doRestore(v, btn) {
+      if (busy2) return;
+      busy2 = true;
+      btn.disabled = true;
+      saveNow3();
+      let res;
+      try {
+        const synced = await P3.confirmSynced();
+        res = synced && synced.ok ? await P3.restoreVersion(pid, v.version) : { ok: false, error: "unsynced" };
+      } catch (_) {
+        res = { ok: false, error: "network" };
+      }
+      busy2 = false;
+      if (res && res.ok) {
+        handle.close();
+        return;
+      }
+      btn.disabled = false;
+      drawVersion(v, restoreProblem(res && res.error));
+    }
+    const handle = FW2.open({
+      title: "Version history",
+      className: "floating-window--history",
+      content: body,
+      width: 720,
+      height: 460,
+      minWidth: 480,
+      minHeight: 260,
+      onClose: () => {
+        if (win3 === state2) win3 = null;
+      }
+    });
+    win3 = state2;
+    await load(true);
+    return true;
+  }
+  function historyAvailable() {
+    const P3 = g19.Persist;
+    const A = g19.Account;
+    if (!P3 || !A || typeof A.user !== "function" || !A.user()) return false;
+    const pid = P3.getActiveProjectId();
+    const p = (P3.projects() || []).find((x) => x.id === pid);
+    return !!p && !!p.owner && p.owner === P3.getAccount();
+  }
+  var VersionHistory = { open: openVersionHistory, available: historyAvailable };
+  g19.VersionHistory = VersionHistory;
 
   // js/app/app-empty-state.mjs
   function create5(opts) {
@@ -35531,11 +37484,11 @@
     var getEditorMount = opts.getEditorMount;
     var projectTreeEmpty = opts.projectTreeEmpty;
     var editorCanvasIdle = opts.editorCanvasIdle;
-    function setEmptyOverlayVisible(el8, visible2) {
-      if (!el8) return;
-      el8.hidden = !visible2;
-      el8.setAttribute("aria-hidden", visible2 ? "false" : "true");
-      if ("inert" in el8) el8.inert = !visible2;
+    function setEmptyOverlayVisible(el9, visible2) {
+      if (!el9) return;
+      el9.hidden = !visible2;
+      el9.setAttribute("aria-hidden", visible2 ? "false" : "true");
+      if ("inert" in el9) el9.inert = !visible2;
     }
     function updateInspectorProjectEmpty() {
       var inspectorPanelEl = getInspectorPanelEl && getInspectorPanelEl();
@@ -35610,6 +37563,7 @@
       if (!workspaceEl || !cfg) return false;
       var open11 = !workspaceEl.classList.contains(cfg.openClass);
       if (open11) closeOtherSidePanels(id);
+      if (open11 && typeof Hint !== "undefined" && Hint.isVisible && Hint.isVisible("library")) Hint.dismiss("library");
       setSidePanelOpen(id, open11);
       notifySidePanelLayout();
       return open11;
@@ -35890,11 +37844,28 @@
       const id = getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId();
       return id ? Persist.getFileById(id) : null;
     }
+    const baseOf = (p) => p.slice(p.lastIndexOf("/") + 1);
+    const holeCounts = /* @__PURE__ */ new Map();
+    function holesInFile(f) {
+      const text = projectFileText(f.id) || "";
+      const hit = holeCounts.get(f.id);
+      if (hit && hit.text === text) return hit.n;
+      const ed = typeof BelEditor !== "undefined" ? BelEditor : null;
+      const n = ed && ed.scanFileHoles ? ed.scanFileHoles(text).length : 0;
+      holeCounts.set(f.id, { text, n });
+      return n;
+    }
     function publishSuite(file) {
       const strip2 = typeof StatusStrip !== "undefined" ? StatusStrip : null;
       if (!strip2 || !strip2.setSuite) return;
       const m = file && !/\.cfg$/i.test(file.name) ? activeSuiteMembership(file.name) : null;
-      strip2.setSuite(m && m.member ? { name: m.cfg.slice(m.cfg.lastIndexOf("/") + 1).replace(/\.cfg$/i, ""), index: m.index, count: m.count } : null);
+      if (!m || !m.member) {
+        strip2.setSuite(null);
+        return;
+      }
+      const { cfg, index, count } = m;
+      const elsewhere = ProjectSource.developmentFilesForCfg(Persist.listFiles(), cfg, projectFileText).filter((f) => f.id !== file.id).map((f) => ({ name: baseOf(f.name), holes: holesInFile(f) })).filter((x) => x.holes);
+      strip2.setSuite({ name: baseOf(cfg).replace(/\.cfg$/i, ""), index, count, elsewhere });
     }
     function updateRunButtonTooltip() {
       const file = activeFileRecord();
@@ -35929,6 +37900,89 @@
       updateRunButtonTooltip
     };
   }
+
+  // js/workspace/import-project.mjs
+  var g20 = typeof window !== "undefined" ? window : globalThis;
+  function relPathFromPickerFile(file, opts) {
+    const rel = file.webkitRelativePath || file.name;
+    const parts = rel.split("/");
+    if (opts && opts.stripRoot && parts.length > 1) return parts.slice(1).join("/");
+    return rel;
+  }
+  function projectEntriesFromRawEntries(rawEntries) {
+    const belEntries = [];
+    const elfEntries = [];
+    const cfgEntries = [];
+    for (const entry of rawEntries) {
+      if (ProjectSource2.isCfgPath(entry.name)) cfgEntries.push(entry);
+      else if (ProjectSource2.isElfPath(entry.name)) elfEntries.push(entry);
+      else if (ProjectSource2.isBelPath(entry.name)) belEntries.push(entry);
+    }
+    const belPaths = belEntries.map((e) => e.name);
+    const sigPaths = belPaths.concat(elfEntries.map((e) => e.name));
+    const cfgByDir = {};
+    for (const entry of cfgEntries) {
+      const dir = ProjectSource2.dirOf(entry.name);
+      const base = entry.name.slice(entry.name.lastIndexOf("/") + 1);
+      if (!cfgByDir[dir]) cfgByDir[dir] = {};
+      cfgByDir[dir][base] = entry.text;
+    }
+    const byPath = new Map([...belEntries, ...elfEntries, ...cfgEntries].map((e) => [e.name, e]));
+    const orderedSig = typeof ProjectSource2.orderSignaturePaths === "function" ? ProjectSource2.orderSignaturePaths(sigPaths, cfgByDir) : sigPaths.slice().sort();
+    const projectEntries = orderedSig.map((p) => byPath.get(p)).filter(Boolean);
+    for (const cfg of cfgEntries) projectEntries.push(cfg);
+    return { projectEntries, belCount: belPaths.length, sigCount: sigPaths.length };
+  }
+  async function projectEntriesFromPickerFiles(all, opts) {
+    const rawEntries = [];
+    for (const file of all) {
+      if (!ProjectSource2.isProjectSourcePath(file.name)) continue;
+      rawEntries.push({ name: relPathFromPickerFile(file, opts), text: await file.text() });
+    }
+    return projectEntriesFromRawEntries(rawEntries);
+  }
+  function activeCfgByDirFor(projectEntries) {
+    if (typeof ProjectSource2.inferActiveCfgByDir !== "function") return null;
+    const tmpFiles = projectEntries.map((e, i) => ({ id: "tmp-" + i, name: e.name }));
+    const tmpText = (id) => (projectEntries[Number(id.slice(4))] || {}).text || "";
+    return ProjectSource2.inferActiveCfgByDir(tmpFiles, tmpText);
+  }
+  async function folderAsProject(all) {
+    const { projectEntries, belCount } = await projectEntriesFromPickerFiles(all, { stripRoot: true });
+    if (!belCount) return null;
+    const first = all[0];
+    const name = first && first.webkitRelativePath ? first.webkitRelativePath.split("/")[0] : "Imported";
+    const bel = projectEntries.filter((e) => ProjectSource2.isBelPath(e.name));
+    return {
+      name,
+      entries: projectEntries,
+      activeCfgByDir: activeCfgByDirFor(projectEntries),
+      firstBel: bel.length ? bel[0].name : null
+    };
+  }
+  function createImportedProject(plan) {
+    const P3 = g20.Persist;
+    const made = P3.createProjectWithFiles(plan.name, plan.entries, {
+      projectName: plan.name,
+      activeCfgByDir: plan.activeCfgByDir || void 0
+    });
+    if (!made || !made.projectId) return null;
+    const open11 = plan.activePath || plan.firstBel;
+    if (open11) {
+      const created = P3.listFiles().find((f) => f.name === open11);
+      if (created) P3.setActiveFileId(created.id);
+    }
+    return made.projectId;
+  }
+  var ImportProject = {
+    relPathFromPickerFile,
+    projectEntriesFromRawEntries,
+    projectEntriesFromPickerFiles,
+    activeCfgByDirFor,
+    folderAsProject,
+    createImportedProject
+  };
+  g20.ImportProject = ImportProject;
 
   // js/app/app-upload-import.mjs
   function create9(deps) {
@@ -35974,44 +38028,6 @@
         );
       }
     });
-    function relPathFromPickerFile(file, opts) {
-      const rel = file.webkitRelativePath || file.name;
-      const parts = rel.split("/");
-      if (opts && opts.stripRoot && parts.length > 1) return parts.slice(1).join("/");
-      return rel;
-    }
-    function projectEntriesFromRawEntries(rawEntries) {
-      const belEntries = [];
-      const elfEntries = [];
-      const cfgEntries = [];
-      for (const entry of rawEntries) {
-        if (ProjectSource.isCfgPath(entry.name)) cfgEntries.push(entry);
-        else if (ProjectSource.isElfPath(entry.name)) elfEntries.push(entry);
-        else if (ProjectSource.isBelPath(entry.name)) belEntries.push(entry);
-      }
-      const belPaths = belEntries.map((e) => e.name);
-      const sigPaths = belPaths.concat(elfEntries.map((e) => e.name));
-      const cfgByDir = {};
-      for (const entry of cfgEntries) {
-        const dir = ProjectSource.dirOf(entry.name);
-        const base = entry.name.slice(entry.name.lastIndexOf("/") + 1);
-        if (!cfgByDir[dir]) cfgByDir[dir] = {};
-        cfgByDir[dir][base] = entry.text;
-      }
-      const byPath = new Map([...belEntries, ...elfEntries, ...cfgEntries].map((e) => [e.name, e]));
-      const orderedSig = typeof ProjectSource.orderSignaturePaths === "function" ? ProjectSource.orderSignaturePaths(sigPaths, cfgByDir) : sigPaths.slice().sort();
-      const projectEntries = orderedSig.map((p) => byPath.get(p)).filter(Boolean);
-      for (const cfg of cfgEntries) projectEntries.push(cfg);
-      return { projectEntries, belCount: belPaths.length, sigCount: sigPaths.length };
-    }
-    async function projectEntriesFromPickerFiles(all, opts) {
-      const rawEntries = [];
-      for (const file of all) {
-        if (!ProjectSource.isProjectSourcePath(file.name)) continue;
-        rawEntries.push({ name: relPathFromPickerFile(file, opts), text: await file.text() });
-      }
-      return projectEntriesFromRawEntries(rawEntries);
-    }
     async function exportLibraryAsNewProject(payload) {
       if (!getPersist2() || !payload) return;
       const { projectEntries } = projectEntriesFromRawEntries(payload.entries || []);
@@ -36029,23 +38045,14 @@
         confirmLabel: "Create"
       });
       if (projName === null) return;
-      const tmpFiles = projectEntries.map((e, i) => ({ id: "tmp-" + i, name: e.name }));
-      const tmpText = (id) => projectEntries[Number(id.slice(4))]?.text ?? "";
-      const activeCfgByDir = typeof ProjectSource.inferActiveCfgByDir === "function" ? ProjectSource.inferActiveCfgByDir(tmpFiles, tmpText) : null;
+      const activeCfgByDir = activeCfgByDirFor(projectEntries);
       let activePath = payload.activeRelPath || null;
       if (!activePath) {
         const orderedBel = projectEntries.filter((e) => ProjectSource.isBelPath(e.name)).map((e) => e.name);
         activePath = orderedBel[0] || projectEntries.find((e) => ProjectSource.isSignaturePath(e.name))?.name || projectEntries.find((e) => ProjectSource.isCfgPath(e.name))?.name || null;
       }
       switchProjectAndReload(() => {
-        Persist.createProjectWithFiles(projName, projectEntries, {
-          projectName: projName,
-          activeCfgByDir: activeCfgByDir || void 0
-        });
-        if (activePath) {
-          const created = Persist.listFiles().find((f) => f.name === activePath);
-          if (created) Persist.setActiveFileId(created.id);
-        }
+        createImportedProject({ name: projName, entries: projectEntries, activeCfgByDir, activePath });
       });
     }
     function applyFileReplacement(id, text) {
@@ -36322,26 +38329,13 @@
       const all = Array.from(folderInputEl.files || []);
       folderInputEl.value = "";
       if (!getPersist2()) return;
-      const { projectEntries, belCount } = await projectEntriesFromPickerFiles(all, { stripRoot: true });
-      if (!belCount) {
+      const plan = await folderAsProject(all);
+      if (!plan) {
         showToast("No .bel files in that folder.", { kind: "warn" });
         return;
       }
-      const rootName = all[0] && all[0].webkitRelativePath ? all[0].webkitRelativePath.split("/")[0] : "Imported";
-      const orderedPaths = projectEntries.filter((e) => ProjectSource.isBelPath(e.name)).map((e) => e.name);
-      const firstBel = orderedPaths.length ? orderedPaths[0] : null;
-      const tmpFiles = projectEntries.map((e, i) => ({ id: "tmp-" + i, name: e.name }));
-      const tmpText = (id) => projectEntries[Number(id.slice(4))]?.text ?? "";
-      const activeCfgByDir = typeof ProjectSource.inferActiveCfgByDir === "function" ? ProjectSource.inferActiveCfgByDir(tmpFiles, tmpText) : null;
       switchProjectAndReload(() => {
-        Persist.createProjectWithFiles(rootName, projectEntries, {
-          projectName: rootName,
-          activeCfgByDir: activeCfgByDir || void 0
-        });
-        if (firstBel) {
-          const created = Persist.listFiles().find((f) => f.name === firstBel);
-          if (created) Persist.setActiveFileId(created.id);
-        }
+        createImportedProject(plan);
       });
     });
     function baseName7(path) {
@@ -37198,7 +39192,7 @@
         getFileDiag: explorerFileDiag,
         bindFileDiagTip: bindExplorerDiagTip,
         getProjectName: () => Persist.getProjectName(),
-        applyTip: (el8, tip) => setTip2(el8, tip, { ariaLabel: false }),
+        applyTip: (el9, tip) => setTip2(el9, tip, { ariaLabel: false }),
         getFileContextItems: (fileId) => fileContextItems(fileId),
         getSelectionContextItems: (selection) => explorerSelectionContextItems(selection),
         getFolderContextItems: (folderPath) => explorerFolderContextItems(folderPath),
@@ -37256,7 +39250,7 @@
         }),
         getActiveFileId: () => getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId(),
         getEditor: () => getEditor(),
-        applyTip: (el8, tip) => setTip2(el8, tip, { ariaLabel: false }),
+        applyTip: (el9, tip) => setTip2(el9, tip, { ariaLabel: false }),
         showToast,
         afterSuiteEdit,
         applyFileReplacement: (id, text) => applyFileReplacement(id, text),
@@ -37373,52 +39367,6 @@
     var getExplorerController = deps.getExplorerController;
     var editorTabsEl = deps.editorTabsEl;
     var projectFileText = deps.projectFileText;
-    function wireMenuTrigger(btn, menuOpts) {
-      if (!btn) return;
-      let suppressNextClick = false;
-      function setOpen2(open11) {
-        btn.classList.toggle("is-active", open11);
-        btn.setAttribute("aria-expanded", open11 ? "true" : "false");
-      }
-      function runMenuInteraction() {
-        if (typeof Menu !== "undefined" && Menu.isOpen() && Menu.rootAnchor() === btn) {
-          Menu.closeAll();
-          return;
-        }
-        if (typeof Menu === "undefined") return;
-        const items3 = typeof menuOpts.items === "function" ? menuOpts.items() : menuOpts.items;
-        Menu.open({
-          anchor: btn,
-          side: menuOpts.side,
-          align: menuOpts.align,
-          items: items3,
-          onClose: () => setOpen2(false)
-        });
-        setOpen2(true);
-      }
-      btn.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0) return;
-        e.stopPropagation();
-        suppressNextClick = true;
-        if (typeof Tooltips !== "undefined") {
-          Tooltips.suppressAnchor(btn);
-          Tooltips.hide();
-        }
-        runMenuInteraction();
-      });
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (suppressNextClick) {
-          suppressNextClick = false;
-          return;
-        }
-        if (typeof Tooltips !== "undefined") {
-          Tooltips.suppressAnchor(btn);
-          Tooltips.hide();
-        }
-        runMenuInteraction();
-      });
-    }
     function signatureFileCount() {
       const files2 = Persist.listFiles() || [];
       return files2.filter((f) => ProjectSource.isSignaturePath(String(f.name || ""))).length;
@@ -37474,6 +39422,8 @@
           disabled: !(Persist.listFiles() || []).length,
           onSelect: downloadProject
         },
+        // Signed in only: the versions are the cloud's.
+        ...window.VersionHistory && window.VersionHistory.available() ? [{ label: "Version history", onSelect: () => window.VersionHistory.open() }] : [],
         {
           label: 'Download "' + (currentFile ? currentFile.name : "file") + '"',
           onSelect: downloadCurrentFile
@@ -37730,8 +39680,8 @@
     }
     if (typeof Menu !== "undefined") {
       const contextItemsFromEvent = (e) => {
-        const el8 = e.target.closest("[data-file-id]");
-        return el8 ? fileContextItems(el8.getAttribute("data-file-id"), { fromTab: true }) : [];
+        const el9 = e.target.closest("[data-file-id]");
+        return el9 ? fileContextItems(el9.getAttribute("data-file-id"), { fromTab: true }) : [];
       };
       if (editorTabsEl) Menu.bindContextMenu(editorTabsEl, contextItemsFromEvent);
     }
@@ -38190,12 +40140,50 @@ ${doc2.documentElement.outerHTML}`;
     return { exportCurrentManuscript };
   }
 
+  // js/commands/shared-commands.mjs
+  var g21 = globalThis;
+  function attachSharedCommands(page) {
+    const say3 = page && typeof page.say === "function" ? page.say : () => {
+    };
+    const applied = page && typeof page.applied === "function" ? page.applied : () => {
+    };
+    const on = (id, run3, when) => Commands2.attach(id, when ? { run: run3, when } : { run: run3 });
+    const account = () => g21.Account || null;
+    const sync = () => g21.Persist && typeof g21.Persist.syncSummary === "function" ? g21.Persist.syncSummary() : null;
+    on("account.sign-in", () => account().signIn(), () => !!account() && account().available() && !account().user());
+    on("account.sign-out", () => account().signOut(), () => !!account() && !!account().user());
+    on("sync.now", () => g21.Persist.confirmSynced(), () => {
+      const s = sync();
+      return !!s && s.signedIn && s.state !== "offline" && s.state !== "held";
+    });
+    on("sync.review", () => g21.SyncUI.review(), () => {
+      const s = sync();
+      return !!s && s.differs.length > 0;
+    });
+    on("sync.review-offline", () => g21.SyncUI.reviewOffline(), () => {
+      const s = sync();
+      return !!s && s.state === "held";
+    });
+    on("view.theme", () => g21.Frame.toggleTheme());
+    on("app.report-issue", () => Routes.reportIssue());
+    on("tools.palette", () => g21.CommandPalette.open());
+    for (const spec of SETTINGS2) {
+      const id = settingId(spec.slug);
+      if (!Commands2.runsHere(id)) continue;
+      on(id, () => {
+        const res = applyValue(g21.Settings, spec, void 0);
+        if (res.applied) applied(spec);
+        say3(res.message);
+        return res.ok;
+      }, spec.needs === "server" ? serverAnswers : void 0);
+    }
+  }
+
   // js/app/app-command-palette.mjs
   function create14(deps) {
     var getPersist2 = deps.getPersist;
     var toggleSidePanel = deps.toggleSidePanel;
     var revealActiveFile = deps.revealActiveFile;
-    var toggleTheme2 = deps.toggleTheme;
     var newProject = deps.newProject;
     var newFile = deps.newFile;
     var fileInputEl = deps.fileInputEl;
@@ -38223,12 +40211,7 @@ ${doc2.documentElement.outerHTML}`;
       const reapplyPrefs = () => {
         if (typeof BelEditor !== "undefined" && BelEditor.applyEditorPrefs) BelEditor.applyEditorPrefs();
       };
-      const toggleSetting = (spec) => {
-        const res = applyValue(Settings, spec, void 0);
-        if (res.applied) reapplyPrefs();
-        say3(res.message);
-        return res.ok;
-      };
+      attachSharedCommands({ say: say3, applied: reapplyPrefs });
       const runSet = (argText) => {
         const res = runSetOn(Settings, argText);
         if (res.applied) reapplyPrefs();
@@ -38237,7 +40220,7 @@ ${doc2.documentElement.outerHTML}`;
       };
       Commands2.runSet = runSet;
       const currentEditor = () => window.CurrentEditor;
-      const onEditor = (id, fn, ready) => Commands2.attach(id, {
+      const onEditor2 = (id, fn, ready) => Commands2.attach(id, {
         run: () => {
           const e = currentEditor();
           if (!e) return false;
@@ -38276,22 +40259,7 @@ ${doc2.documentElement.outerHTML}`;
       on("file.import-folder", () => folderInputEl.click());
       on("file.download", downloadCurrentFile);
       on("project.download", () => downloadProject(), () => (Persist.listFiles() || []).length > 0);
-      const account = () => typeof Account !== "undefined" ? Account : null;
-      const syncState = () => typeof Persist.syncSummary === "function" ? Persist.syncSummary() : null;
-      on("account.sign-in", () => account().signIn(), () => !!account() && account().available() && !account().user());
-      on("account.sign-out", () => account().signOut(), () => !!account() && !!account().user());
-      on("sync.now", () => Persist.confirmSynced(), () => {
-        const s = syncState();
-        return !!s && s.signedIn && s.state !== "offline" && s.state !== "held";
-      });
-      on("sync.review", () => SyncUI.review(), () => {
-        const s = syncState();
-        return !!s && s.differs.length > 0;
-      });
-      on("sync.review-offline", () => SyncUI.reviewOffline(), () => {
-        const s = syncState();
-        return !!s && s.state === "held";
-      });
+      on("project.history", () => window.VersionHistory.open(), () => !!window.VersionHistory && window.VersionHistory.available());
       on("tab.next", () => stepTab(1), () => openTabIds().length > 1);
       on("tab.prev", () => stepTab(-1), () => openTabIds().length > 1);
       on(
@@ -38387,28 +40355,32 @@ ${doc2.documentElement.outerHTML}`;
       on("edit.search-project", () => CommandPalette.open({ mode: "search" }));
       on("edit.toggle-comment", () => editorExec("toggleComment"));
       on("edit.format", () => editorExec("format"));
-      onEditor("edit.rename", (e) => e.rename());
-      onEditor("edit.select-all", (e) => e.selectAll());
+      onEditor2("edit.rename", (e) => e.rename());
+      onEditor2("edit.select-all", (e) => e.selectAll());
       on("nav.symbol", () => CommandPalette.open({ mode: "symbols" }));
-      onEditor("nav.definition", (e) => e.goToDefinition());
-      onEditor("nav.references", (e) => e.findReferences());
-      onEditor("nav.enclosing-decl", (e) => {
+      onEditor2("nav.definition", (e) => e.goToDefinition());
+      onEditor2("nav.references", (e) => e.findReferences());
+      onEditor2("nav.enclosing-decl", (e) => {
         const head = caretHead(e);
         if (head == null) return false;
         const span = e.getDeclSpan(head);
         if (!span) return false;
         return e.jumpToRange({ from: span.from, to: span.from });
       });
-      onEditor("nav.binder", (e) => e.revealBinder());
-      onEditor("nav.inspector", (e) => e.revealInInspector());
-      onEditor("nav.next-hole", (e) => e.cycleHole(1));
-      onEditor("nav.prev-hole", (e) => e.cycleHole(-1));
-      onEditor("nav.next-problem", (e) => e.jumpToNextError());
-      onEditor("nav.prev-problem", (e) => e.jumpToPrevError());
-      onEditor("prover.hole-intro", (e) => e.runHoleIntro(), holeAtCaret);
-      onEditor("prover.hole-split", (e) => e.runHoleSplit(), holeAtCaret);
-      onEditor("prover.hole-fill", (e) => e.runHoleFill(), holeAtCaret);
-      onEditor("prover.open-in-harpoon", (e) => e.openHoleInHarpoon(), holeAtCaret);
+      onEditor2("nav.binder", (e) => e.revealBinder());
+      onEditor2("nav.inspector", (e) => e.revealInInspector());
+      onEditor2("nav.next-hole", (e) => e.cycleHole(1));
+      onEditor2("nav.prev-hole", (e) => e.cycleHole(-1));
+      onEditor2("nav.next-problem", (e) => e.jumpToNextError());
+      onEditor2("nav.prev-problem", (e) => e.jumpToPrevError());
+      onEditor2("prover.hole-intro", (e) => e.runHoleIntro(), holeAtCaret);
+      onEditor2("prover.hole-split", (e) => e.runHoleSplit(), holeAtCaret);
+      onEditor2("prover.hole-fill", (e) => e.runHoleFill(), holeAtCaret);
+      onEditor2("prover.open-in-harpoon", (e) => e.openHoleInHarpoon(), holeAtCaret);
+      const caseState = (e) => typeof e.caseCommandState === "function" ? e.caseCommandState() : null;
+      onEditor2("prover.case-accept", (e) => e.acceptFilledCase(), (e) => !!caseState(e)?.hasFilled);
+      onEditor2("prover.case-fill", (e) => e.fillCaseNow(), (e) => !!caseState(e)?.inProof);
+      onEditor2("prover.case-dismiss", (e) => e.dismissFilledCase(), (e) => !!caseState(e)?.hasFilled);
       const lab = () => {
         const H = window.Harpoon;
         return H && typeof H.activeSession === "function" ? H.activeSession() : null;
@@ -38473,9 +40445,6 @@ ${doc2.documentElement.outerHTML}`;
         s.backToManual();
         return true;
       }, searching);
-      for (const spec of SETTINGS2) {
-        on(settingId(spec.slug), () => toggleSetting(spec));
-      }
       on("settings.set", (ctx) => runSet(ctx && ctx.argText));
       on("cmdline.open", () => StatusStrip.openCommandLine(""));
       on("nav.goto-line", () => {
@@ -38496,10 +40465,9 @@ ${doc2.documentElement.outerHTML}`;
         () => StatusStrip.repeatLastCommand(),
         () => !!(typeof StatusStrip !== "undefined" && StatusStrip.lastCommandLine && StatusStrip.lastCommandLine())
       );
-      on("tools.palette", () => CommandPalette.open());
       on("nav.anywhere", () => CommandPalette.open());
       on("tools.commands", () => CommandPalette.runCommandEntry());
-      onEditor("edit.autocomplete", (e) => e.toggleAutocomplete() !== false);
+      onEditor2("edit.autocomplete", (e) => e.toggleAutocomplete() !== false);
       on("tools.graph", () => window.CurrentEditor?.openDependencyGraph());
       on("tools.inspector", () => window.dispatchEvent(new Event("beljar:open-inspector")));
       const runDefault = () => {
@@ -38533,6 +40501,7 @@ ${doc2.documentElement.outerHTML}`;
       on("run.clear-output", () => {
         ReplOutput.clearOutput();
       });
+      on("app.home", () => Account.goHome());
       on("app.reload", () => {
         try {
           flushEverythingToStorage(false);
@@ -38540,7 +40509,6 @@ ${doc2.documentElement.outerHTML}`;
         }
         window.location.reload();
       });
-      on("view.theme", toggleTheme2);
       on("view.explorer", () => toggleSidePanel("explorer"));
       on("view.reveal-file", () => revealActiveFile(), () => !!Persist.getActiveFileId());
       on("view.library", () => toggleSidePanel("library"));
@@ -38551,8 +40519,8 @@ ${doc2.documentElement.outerHTML}`;
       on("view.settings", () => {
         SettingsUI.open();
       });
-      onEditor("fold.all", (e) => e.foldAll());
-      onEditor("fold.unfold-all", (e) => e.unfoldAll());
+      onEditor2("fold.all", (e) => e.foldAll());
+      onEditor2("fold.unfold-all", (e) => e.unfoldAll());
       CommandPalette.setProvider("files", () => {
         const currentId = getPersist2() ? getPersist2().getCurrentFileId() : null;
         return Persist.listFiles().filter((f) => f.id !== currentId).map((f) => ({
@@ -38601,9 +40569,9 @@ ${doc2.documentElement.outerHTML}`;
         }));
         return corpus;
       };
-      CommandPalette.setProvider("search", (query2) => {
-        if (!query2) return [];
-        return ProjectSource.scanProjectText(searchCorpus(), query2, 60).map((m) => ({
+      CommandPalette.setProvider("search", (query3) => {
+        if (!query3) return [];
+        return ProjectSource.scanProjectText(searchCorpus(), query3, 60).map((m) => ({
           title: m.lineText,
           mono: true,
           detail: m.name.split("/").pop() + ":" + m.line,
@@ -38611,6 +40579,45 @@ ${doc2.documentElement.outerHTML}`;
         }));
       });
     }
+  }
+
+  // js/app/suite-notice.mjs
+  function createSuiteWatch() {
+    const last = /* @__PURE__ */ new Map();
+    return {
+      observe(suite, members, openPath) {
+        const bad2 = members.filter((m) => m.errors > 0);
+        const red = bad2.length > 0;
+        const prev = last.get(suite);
+        last.set(suite, { red, bad: new Set(bad2.map((m) => m.path)) });
+        if (!prev || prev.red === red) return null;
+        const name = suite.replace(/\.cfg$/i, "").replace(/^.*\//, "");
+        if (red) {
+          const turned = bad2.find((m) => !prev.bad.has(m.path)) || bad2[0];
+          if (turned.path === openPath) return null;
+          const notice = {
+            kind: "error",
+            category: "ops",
+            source: "suite.colour",
+            dedupeKey: "suite." + suite,
+            title: "Suite " + name + " has errors",
+            body: turned.path.replace(/^.*\//, "") + " has errors now."
+          };
+          if (turned.fileId && Number.isFinite(turned.line)) notice.links = { fileId: turned.fileId, path: turned.path, line: turned.line };
+          return notice;
+        }
+        const fixed = [...prev.bad];
+        if (fixed.length === 1 && fixed[0] === openPath) return null;
+        return {
+          kind: "success",
+          category: "ops",
+          source: "suite.colour",
+          dedupeKey: "suite." + suite,
+          title: "Suite " + name + " checks again",
+          body: fixed.length === 1 ? fixed[0].replace(/^.*\//, "") + " was the last to be fixed." : "Every file in it checks."
+        };
+      }
+    };
   }
 
   // js/app/app.mjs
@@ -38636,6 +40643,10 @@ ${doc2.documentElement.outerHTML}`;
     const inspectorProjectEmptyEl = document.getElementById("inspector-project-empty");
     const cmdInput = typeof ReplStream !== "undefined" && ReplStream.getCommandInput ? ReplStream.getCommandInput() : document.getElementById("command-input");
     const btnRun2 = typeof ReplStream !== "undefined" && ReplStream.getRunButton ? ReplStream.getRunButton() : document.getElementById("btn-run");
+    if (!Persist.leaving()) Routes.nameProject(Persist.getActiveProjectId());
+    onDoc("visibilitychange", () => {
+      if (document.visibilityState === "visible" && !Persist.leaving()) Persist.projectInUse();
+    });
     ensureProjectActiveCfgs();
     if (typeof EditHistoryInstall !== "undefined") {
       EditHistoryInstall.init();
@@ -38997,12 +41008,9 @@ ${doc2.documentElement.outerHTML}`;
         Toasts.error("CodeMirror editor bundle failed to load.", { duration: 0, closable: true });
       }
     }
-    function setTip2(el8, text, opts) {
-      if (!el8 || typeof Tooltips === "undefined" || !Tooltips.set) return;
-      Tooltips.set(el8, text, opts);
-    }
-    function toggleTheme2() {
-      return Frame.toggleTheme();
+    function setTip2(el9, text, opts) {
+      if (!el9 || typeof Tooltips === "undefined" || !Tooltips.set) return;
+      Tooltips.set(el9, text, opts);
     }
     window.Repl = {
       appendBuffered: function(text, kind) {
@@ -39019,6 +41027,67 @@ ${doc2.documentElement.outerHTML}`;
     const inspectorPanelEl = document.getElementById("inspector-panel");
     const libraryPanelEl = document.getElementById("library-panel");
     const harpoonPanelEl = document.getElementById("harpoon-panel");
+    const INSPECTOR_FOLLOW_HINT = "inspector-cursor";
+    let inspectorFollowHintGen = 0;
+    let inspectorFollowHintWait = 0;
+    function cancelInspectorFollowHintWait() {
+      inspectorFollowHintGen += 1;
+      if (inspectorFollowHintWait) {
+        clearTimeout(inspectorFollowHintWait);
+        inspectorFollowHintWait = 0;
+      }
+    }
+    function hideInspectorFollowHint() {
+      cancelInspectorFollowHintWait();
+      if (typeof Hint === "undefined" || !Hint.isVisible || !Hint.dismiss) return;
+      if (Hint.isVisible(INSPECTOR_FOLLOW_HINT)) Hint.dismiss(INSPECTOR_FOLLOW_HINT);
+    }
+    function acknowledgeInspectorFollowHint() {
+      cancelInspectorFollowHintWait();
+      if (typeof Hint !== "undefined" && Hint.dismiss) Hint.dismiss(INSPECTOR_FOLLOW_HINT);
+    }
+    function pumpInspectorFollowHint(gen, tries) {
+      if (gen !== inspectorFollowHintGen) return;
+      inspectorFollowHintWait = 0;
+      if (!workspaceEl || !workspaceEl.classList.contains("is-inspector-open")) return;
+      if (typeof Hint === "undefined" || !Hint.show) return;
+      if (Hint.wasDismissed && Hint.wasDismissed(INSPECTOR_FOLLOW_HINT)) return;
+      if (Hint.isVisible && Hint.isVisible(INSPECTOR_FOLLOW_HINT)) return;
+      if (Hint.isVisible && Hint.isVisible()) {
+        inspectorFollowHintWait = setTimeout(() => pumpInspectorFollowHint(gen, tries || 0), 200);
+        return;
+      }
+      const anchor3 = document.getElementById("inspector-sync-toggle");
+      const box = anchor3 && anchor3.getBoundingClientRect();
+      if (!anchor3 || !box || box.width < 1 || box.height < 1) {
+        if ((tries || 0) > 20) return;
+        inspectorFollowHintWait = setTimeout(() => pumpInspectorFollowHint(gen, (tries || 0) + 1), 50);
+        return;
+      }
+      Hint.show({
+        id: INSPECTOR_FOLLOW_HINT,
+        anchor: anchor3,
+        text: "Click to make the inspector follow your cursor and vice versa"
+      });
+    }
+    function scheduleInspectorFollowHint() {
+      if (typeof Hint === "undefined" || !Hint.show) return;
+      if (Hint.wasDismissed && Hint.wasDismissed(INSPECTOR_FOLLOW_HINT)) return;
+      if (Hint.isVisible && Hint.isVisible(INSPECTOR_FOLLOW_HINT)) return;
+      cancelInspectorFollowHintWait();
+      const gen = inspectorFollowHintGen;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (gen !== inspectorFollowHintGen) return;
+          if (Hint.wasDismissed && !Hint.wasDismissed("library") && !(Hint.isVisible && Hint.isVisible())) {
+            inspectorFollowHintWait = setTimeout(() => pumpInspectorFollowHint(gen, 0), 50);
+            return;
+          }
+          pumpInspectorFollowHint(gen, 0);
+        });
+      });
+    }
+    teardown3.push(cancelInspectorFollowHintWait);
     const SIDE_PANELS = {
       explorer: {
         btn: filesBtn,
@@ -39028,7 +41097,11 @@ ${doc2.documentElement.outerHTML}`;
       inspector: {
         btn: inspectorBtn,
         panel: inspectorPanelEl,
-        openClass: "is-inspector-open"
+        openClass: "is-inspector-open",
+        onOpenChange: (open11) => {
+          if (open11) scheduleInspectorFollowHint();
+          else hideInspectorFollowHint();
+        }
       },
       library: {
         btn: libraryBtn,
@@ -39115,18 +41188,18 @@ ${doc2.documentElement.outerHTML}`;
       }
       return null;
     }
-    function bindExplorerDiagTip(el8, fileId, fileName, diag) {
-      if (!el8 || !diag) return;
-      el8.removeAttribute("title");
+    function bindExplorerDiagTip(el9, fileId, fileName, diag) {
+      if (!el9 || !diag) return;
+      el9.removeAttribute("title");
       const items3 = explorerFileDiagItems(fileId, fileName);
       if (items3 && items3.length) {
-        el8.setAttribute("data-tooltip", lintTooltipHead(items3));
-        el8.setAttribute("data-tooltip-head", "");
-        el8.setAttribute("data-tooltip-errors", JSON.stringify(items3));
-        if (typeof Tooltips !== "undefined" && Tooltips.bind) Tooltips.bind(el8);
+        el9.setAttribute("data-tooltip", lintTooltipHead(items3));
+        el9.setAttribute("data-tooltip-head", "");
+        el9.setAttribute("data-tooltip-errors", JSON.stringify(items3));
+        if (typeof Tooltips !== "undefined" && Tooltips.bind) Tooltips.bind(el9);
         return;
       }
-      setTip2(el8, diag === "error" ? "Has errors" : "Has warnings", { ariaLabel: false });
+      setTip2(el9, diag === "error" ? "Has errors" : "Has warnings", { ariaLabel: false });
     }
     function updateTabLintStyles() {
       if (!editorTabsEl) return;
@@ -39527,7 +41600,6 @@ ${doc2.documentElement.outerHTML}`;
       create14(Object.assign({}, peelHub, {
         toggleSidePanel,
         revealActiveFile,
-        toggleTheme: toggleTheme2,
         newProject,
         newFile,
         fileInputEl: uploadImportApi.fileInputEl,
@@ -39558,7 +41630,7 @@ ${doc2.documentElement.outerHTML}`;
       });
     }
     let suppressUnloadFlush = false;
-    function switchProjectAndReload(mutate) {
+    function switchProjectAndReload(mutate, opts) {
       if (persist2) persist2.flushCheckpoint();
       WorkspaceState.flushWorkspace();
       suppressUnloadFlush = true;
@@ -39568,7 +41640,7 @@ ${doc2.documentElement.outerHTML}`;
         suppressUnloadFlush = false;
         throw e;
       }
-      window.location.reload();
+      Routes.go(Routes.editUrl(Persist.getActiveProjectId()), { replace: !!(opts && opts.replace) });
     }
     async function newProject(name) {
       var projName = name;
@@ -39594,7 +41666,7 @@ ${doc2.documentElement.outerHTML}`;
       switchProjectAndReload(() => {
         Persist.setActiveProjectId(target);
         Persist.deleteProject(blank);
-      });
+      }, { replace: true });
       return true;
     }
     resumeDoor = resumeProject;
@@ -39617,7 +41689,7 @@ ${doc2.documentElement.outerHTML}`;
       })) return;
       const wasActive = id === Persist.getActiveProjectId();
       if (wasActive) {
-        switchProjectAndReload(() => Persist.deleteProject(id));
+        switchProjectAndReload(() => Persist.deleteProject(id), { replace: true });
         return;
       }
       Persist.deleteProject(id);
@@ -39663,23 +41735,23 @@ ${doc2.documentElement.outerHTML}`;
     }
     let headerProjectRenameInput = null;
     function endHeaderProjectRename() {
-      const el8 = document.getElementById("header-context");
-      if (!el8 || !headerProjectRenameInput) return;
+      const el9 = document.getElementById("header-context");
+      if (!el9 || !headerProjectRenameInput) return;
       const nameEl = document.createElement("span");
       nameEl.className = "header-context-name";
       nameEl.id = "header-context-name";
       headerProjectRenameInput.replaceWith(nameEl);
       headerProjectRenameInput = null;
-      el8.classList.remove("is-renaming");
+      el9.classList.remove("is-renaming");
     }
     function startHeaderProjectRename() {
       if (headerProjectRenameInput) return;
-      const el8 = document.getElementById("header-context");
+      const el9 = document.getElementById("header-context");
       const nameEl = document.getElementById("header-context-name");
-      if (!el8 || !nameEl) return;
+      if (!el9 || !nameEl) return;
       const initial = Persist.getProjectName();
-      el8.classList.add("is-renaming");
-      setTip2(el8, "");
+      el9.classList.add("is-renaming");
+      setTip2(el9, "");
       const input2 = document.createElement("input");
       input2.type = "text";
       input2.className = "header-context-inline-name";
@@ -39755,14 +41827,14 @@ ${doc2.documentElement.outerHTML}`;
       });
     }
     function updateHeaderContext() {
-      const el8 = document.getElementById("header-context");
+      const el9 = document.getElementById("header-context");
       const nameEl = document.getElementById("header-context-name");
-      if (!el8 || !nameEl) return;
+      if (!el9 || !nameEl) return;
       if (headerProjectRenameInput) return;
       nameEl.textContent = Persist.getProjectName();
       const tip = headerContextFileHint();
-      el8.setAttribute("aria-label", tip);
-      setTip2(el8, tip);
+      el9.setAttribute("aria-label", tip);
+      setTip2(el9, tip);
     }
     const headerContextEl = document.getElementById("header-context");
     if (headerContextEl) {
@@ -39801,6 +41873,27 @@ ${doc2.documentElement.outerHTML}`;
     });
     onWin("beljar:explorer-health-changed", () => scheduleTabLintStyles());
     onWin("beljar:development-checked", () => scheduleTabLintStyles());
+    const suiteWatch = createSuiteWatch();
+    let suiteWatchTimer = 0;
+    function watchSuites() {
+      suiteWatchTimer = 0;
+      const N = window.Notifications;
+      if (!N || typeof N.emit !== "function") return;
+      const files2 = Persist.listFiles() || [];
+      const open11 = Persist.getFileById(Persist.getActiveFileId());
+      for (const cfg of files2.filter((f) => /\.cfg$/i.test(f.name))) {
+        const members = ProjectSource.developmentFilesForCfg(files2, cfg.name, projectFileText).map((f) => {
+          const health = belFileHealth(f.id);
+          const first = (health.items || []).find((it) => it.kind === "error");
+          return { path: f.name, fileId: f.id, errors: health.errors || 0, line: first ? first.line : void 0 };
+        });
+        const notice = suiteWatch.observe(cfg.name, members, open11 ? open11.name : null);
+        if (notice) N.emit(notice);
+      }
+    }
+    onWin("beljar:explorer-health-changed", () => {
+      if (!suiteWatchTimer) suiteWatchTimer = setTimeout(watchSuites, 600);
+    });
     if (activeFileId2) Persist.openFile(activeFileId2);
     registerWorkspaceProviders();
     renderTabs();
@@ -39833,6 +41926,10 @@ ${doc2.documentElement.outerHTML}`;
         if (open11) refreshInspector({ live: true });
       });
       onWin("beljar:open-inspector", openInspector);
+    }
+    const inspectorFollowBtn = document.getElementById("inspector-sync-toggle");
+    if (inspectorFollowBtn) {
+      inspectorFollowBtn.addEventListener("click", acknowledgeInspectorFollowHint);
     }
     function openLibrary() {
       if (!workspaceEl) return;
@@ -39876,6 +41973,13 @@ ${doc2.documentElement.outerHTML}`;
       }
     }
     ensureLibrary();
+    if (workspaceEl && workspaceEl.classList.contains("is-inspector-open")) {
+      scheduleInspectorFollowHint();
+    }
+    if (libraryBtn && workspaceEl && window.location.hash === "#library") {
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+      if (!workspaceEl.classList.contains("is-library-open")) libraryBtn.click();
+    }
     let harpoonPanelInited = false;
     function ensureHarpoonPanel() {
       if (harpoonPanelInited || typeof HarpoonPanel === "undefined") return;
@@ -40057,7 +42161,7 @@ ${doc2.documentElement.outerHTML}`;
   mount2();
 
   // js/compat/beljar-window-aliases.mjs
-  var g17 = globalThis;
+  var g22 = globalThis;
   var ALIASES = [
     ["BelJarExplorerSuiteLayout", "ExplorerSuiteLayout"],
     ["BelJarHarpoonGoalSections", "HarpoonGoalSections"],
@@ -40111,7 +42215,7 @@ ${doc2.documentElement.outerHTML}`;
   ];
   function installBelJarWindowAliases() {
     for (const [legacy, neu] of ALIASES) {
-      if (neu in g17 && g17[neu] != null) g17[legacy] = g17[neu];
+      if (neu in g22 && g22[neu] != null) g22[legacy] = g22[neu];
     }
   }
   installBelJarWindowAliases();

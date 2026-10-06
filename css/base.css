@@ -14,7 +14,7 @@
 
 *::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -55,6 +55,13 @@ html.light body {
   justify-content: center;
   cursor: pointer;
   transition: color var(--transition), box-shadow var(--transition);
+}
+
+/* `display` above outranks the `hidden` attribute: without this a hidden icon
+   button (the account and the cloud, signed out) kept its slot, empty, and the
+   header's last icon stood a button short of the edge (docs/UI.md §7). */
+.icon-btn[hidden] {
+  display: none;
 }
 
 .icon-btn::before {

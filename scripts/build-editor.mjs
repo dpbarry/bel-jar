@@ -32,3 +32,17 @@ await esbuild.build({
 });
 
 console.log('Wrote js/prover-moves.worker.js');
+
+// The case-completion worker. iife, started as a CLASSIC worker: it loads the Beluga
+// runtime with importScripts, which a module worker cannot call.
+await esbuild.build({
+  entryPoints: [join(root, 'js', 'editor-src', 'prover', 'case-fill-worker.mjs')],
+  bundle: true,
+  format: 'iife',
+  outfile: join(root, 'js', 'case-fill.worker.js'),
+  platform: 'browser',
+  legalComments: 'none',
+  minify: true,
+});
+
+console.log('Wrote js/case-fill.worker.js');

@@ -81,7 +81,7 @@ export async function enter() {
     return false;
   }
   active = true;
-  say('Full keyboard on — Ctrl+N, Ctrl+T, Ctrl+W and the rest are yours. Hold Esc to leave.');
+  say('Full keyboard on. Ctrl+N, Ctrl+T, Ctrl+W and the rest are yours. Hold Esc to leave.');
   return true;
 }
 

@@ -21,7 +21,7 @@ function expect(cond, msg) {
   for (const look of looks) {
     const svg = cloudSvg(look);
     expect(svg.startsWith('<svg') && svg.endsWith('</svg>') && /aria-hidden="true"/.test(svg), `${look}: one svg, hidden from assistive tech (the button carries the words)`);
-    expect(/stroke-width="1\.75"/.test(svg), `${look}: drawn at the cloud's stroke`);
+    expect(/stroke-width="1\.5"/.test(svg), `${look}: drawn at the cloud's stroke`);
   }
   expect(outline(cloudSvg('synced')) === 1 && outline(cloudSvg('syncing')) === 1 && outline(cloudSvg('alert')) === 1,
     'every state but offline draws the one outline once');

@@ -29,6 +29,7 @@ import {
 import { parseErrorHighlightExtensions } from './ide/invalid-highlight.mjs';
 import { declaresName } from './tree-helpers.mjs';
 import { belugaScopeHighlight } from './ide/scope-highlight.mjs';
+import { printerIndentation } from './format/indent.mjs';
 
 function lineStartsClosingSemi(doc, pos) {
   return /^\s*;\s*$/.test(doc.lineAt(pos).text);
@@ -197,6 +198,7 @@ const belugaHighlight = styleTags({
   SufficesKeyword: t.keyword,
   ToshowKeyword: t.keyword,
   TrustKeyword: t.keyword,
+  TotalKeyword: t.keyword,
 
   '--coverage --warncoverage --nostrengthen --infix --prefix --assoc \
    --name --abbrev --not --open --query --opaque': t.meta,
@@ -216,7 +218,6 @@ const belugaHighlight = styleTags({
   'PrefixPragma/Number!':               t.number,
   'OpaquePragma/LowerIdentifier!':      t.propertyName,
   'QuerySubject/UpperIdentifier!':        t.propertyName,
-  'QuerySubject/:!':                      t.definitionOperator,
   'QueryPragma/QueryBound!':              t.number,
   'QueryPragma/CompType/CompAppType/CompAtomicType/LowerIdentifier!': t.typeName,
   'QueryPragma/CompType/CompAppType/CompAtomicType/UpperIdentifier!': t.typeName,
@@ -249,7 +250,6 @@ const belugaHighlight = styleTags({
   'FnParam/LowerIdentifier':          t.definition(t.local(t.variableName)),
   'MLamParam/LowerIdentifier':        t.definition(t.local(t.variableName)),
   'MLamParam/UpperIdentifier':        t.definition(t.local(t.typeName)),
-  'LFLambdaBinder/...':               t.definition(t.local(t.variableName)),
   'LFLambdaBinder/LowerIdentifier':   t.definition(t.local(t.variableName)),
   'LFBlockField/LowerIdentifier':     t.definition(t.local(t.variableName)),
   'ContextEntry/LowerIdentifier':     t.definition(t.local(t.variableName)),
@@ -297,7 +297,21 @@ const belugaHighlight = styleTags({
   '|': t.separator,
   ';': t.separator,
   '.': t.separator,
-  '=': t.definitionOperator,
+  ',': t.separator,
+  '=': t.separator,
+  '::': t.separator,
+  '+': t.separator,
+  '"/"': t.punctuation,
+  '\\': t.punctuation,
+  '"*"': t.typeOperator,
+
+  '( )': t.paren,
+  '[ ]': t.squareBracket,
+  '{ }': t.brace,
+  '< >': t.angleBracket,
+
+  NamedProjection: t.propertyName,
+  ParameterSubstArg: t.special(t.variableName),
 
   'Turnstile!':      t.controlKeyword,
   'TurnstileHash!':  t.controlKeyword,
@@ -437,7 +451,7 @@ export const belugaLanguage = LRLanguage.define({
 });
 
 export function beluga() {
-  return new LanguageSupport(belugaLanguage, [belPercentLineCommentFold]);
+  return new LanguageSupport(belugaLanguage, [belPercentLineCommentFold, printerIndentation]);
 }
 
 export function belugaHighlightExtensions(opts = {}) {

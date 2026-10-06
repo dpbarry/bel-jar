@@ -172,14 +172,45 @@ export function goalConcludesInFamily(goalText, families) {
 // first completion, whose code carries the pragma. No completion ⇒ the original
 // verdict, with the attempted measures recorded.
 
-function spliceTotalityPragma(code, name, pragmaText) {
+// The index of the body `=` of declaration `name`, where a measure is spliced; -1 if none.
+function bodyEqOfDecl(code, name) {
   const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const head = new RegExp('(?:^|\\n|\\s)(?:rec|proof|and)\\s+' + esc + '\\s*:');
   const hm = head.exec(String(code || ''));
-  if (!hm) return null;
-  const eq = declBodyEqIndex(String(code), hm.index + hm[0].length);
+  if (!hm) return -1;
+  return declBodyEqIndex(String(code), hm.index + hm[0].length);
+}
+
+export function spliceTotalityPragma(code, name, pragmaText) {
+  const eq = bodyEqOfDecl(code, name);
   if (eq < 0) return null;
   return `${code.slice(0, eq + 1)}\n${pragmaText}${code.slice(eq + 1)}`;
+}
+
+/**
+ * ⛔ Never hand on a `/ total /` the author did not write. A winning measure fork
+ * (`proveProgramWithScope`) returns code that carries the measure it spliced; anything
+ * that takes that code into a file must take this instead. The exact inverse of
+ * `spliceTotalityPragma`: the measure comes off from where it was put, and nothing else
+ * changes. The proof stands without it: certification has already checked it is not
+ * circular (entry 55). If the measure is not where the splice put it, the result FAILS
+ * rather than passing on code that may still carry it. A result with no synthesized
+ * measure is returned as is; the author's own pragma is never touched.
+ */
+export function withoutSynthesizedMeasure(res, thm) {
+  if (!res || !res.synthesizedMeasure) return res;
+  const { synthesizedMeasure: pragma, ...rest } = res;
+  const code = String(res.code == null ? '' : res.code);
+  const spliced = `\n${pragma}`;
+  const eq = bodyEqOfDecl(code, thm && thm.name);
+  if (eq < 0 || code.slice(eq + 1, eq + 1 + spliced.length) !== spliced) {
+    return {
+      ...rest,
+      complete: false,
+      stuck: { reason: 'synthesized-measure', error: 'the search added a termination measure that could not be taken off again' },
+    };
+  }
+  return { ...rest, code: code.slice(0, eq + 1) + code.slice(eq + 1 + spliced.length), measureRemoved: pragma };
 }
 
 // Candidate hypothetical measures, as { pragma, totality } descriptors.
@@ -404,6 +435,17 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
   const maxSteps = opts.maxSteps || 200;
   let code = String(initialCode);
   const steps = [];
+  // FOCUS (case completion, 2026-10-03). A proof missing several cases is filled one
+  // case at a time: every other missing case is written as a NAMED hole whose name
+  // starts with `opts.ignoreHolePrefix` (`?cf_…`). Those holes keep the program
+  // covering, so it checks, and this run neither works on them nor waits for them:
+  // it is complete when its own holes are closed. Names, not offsets, because the
+  // offsets move with every step. Off unless asked for; with no such holes it changes
+  // nothing.
+  const ignorePrefix = opts.ignoreHolePrefix ? String(opts.ignoreHolePrefix) : null;
+  const focused = (list) => (ignorePrefix
+    ? list.filter((h) => !String((h && h.name) || '').replace(/^\?/, '').startsWith(ignorePrefix))
+    : list);
   const hardCancel = () => opts.shouldCancel && opts.shouldCancel();
   const paused = () => opts.shouldPause && opts.shouldPause();
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -530,7 +572,7 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
   const holeSig = (h) => ctxSig(h) + '§' + branchBodyBefore(code, h).replace(/\s+/g, ' ').trim();
   const fingerprint = (holes) => holes.map(holeSig).sort().join('||');
   const baseHoles = parseHoles(base.output || '');
-  seen.add(fingerprint(holesForTheorem(code, thm, baseHoles)));
+  seen.add(fingerprint(focused(holesForTheorem(code, thm, baseHoles))));
 
   // Speculative-binding budget per goal: a `let … in ?` (recurse/invert) that adds
   // a hypothesis but leaves the leftmost GOAL alpha-unchanged is "speculative" — it
@@ -624,9 +666,9 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
     if (checked.cancelled) {
       return finish({ complete: false, code, steps, stuck: { reason: 'cancelled' } });
     }
-    let holes = holesForTheorem(code, thm, parseHoles(checked.output || ''));
+    let holes = focused(holesForTheorem(code, thm, parseHoles(checked.output || '')));
     if (!holes.length) {
-      const syn = syntacticHoleInTheorem(code, thm);
+      const syn = syntacticHoleInTheorem(code, thm, ignorePrefix);
       if (!syn) {
         // ⛔ A COMPLETION WITH ZERO ACCEPTED MOVES IS NOT A PROOF (master plan 52b).
         // Reaching here on the FIRST iteration means the checker reported no hole and
@@ -1100,7 +1142,7 @@ async function proveProgramCore(initialCode, thm, oracle, opts = {}) {
           (firstErrorOf(res.output) || 'did not certify').slice(0, 160));
         continue;
       }
-      const nextHoles = holesForTheorem(spliced, thm, parseHoles(res.output || ''));
+      const nextHoles = focused(holesForTheorem(spliced, thm, parseHoles(res.output || '')));
       const fp = fingerprint(nextHoles);
       const bodyBefore = branchBodyBefore(code, hole).trim();
       const bodyAfter = branchBodyBefore(spliced, hole).trim();
@@ -1500,14 +1542,25 @@ function syntacticHoleAt(code, thm, line, col) {
 // goal — that is what Beluga itself reports there — so intro can bootstrap the
 // search; past an arm/binder we leave the goal unknown (conclusion via resolve).
 
-function syntacticHoleInTheorem(code, thm) {
+function syntacticHoleInTheorem(code, thm, ignorePrefix = null) {
   const range = theoremDeclRange(code, thm && thm.name);
   const lines = String(code || '').split('\n');
   const start = range ? range.start - 1 : 0;
   const end = range ? range.end : lines.length;
   for (let i = start; i < end; i += 1) {
-    const col = lines[i].indexOf('?');
-    if (col >= 0) {
+    if (!ignorePrefix) {
+      // Unchanged behaviour when no focus is asked for: the first `?` on a line only.
+      const col = lines[i].indexOf('?');
+      if (col >= 0) {
+        const hit = syntacticHoleAt(code, thm, i + 1, col + 1);
+        if (hit) return hit;
+      }
+      continue;
+    }
+    // A focused run skips the named holes it was told to leave alone, and one of
+    // them may sit before its own on the same line.
+    for (let col = lines[i].indexOf('?'); col >= 0; col = lines[i].indexOf('?', col + 1)) {
+      if (lines[i].startsWith(ignorePrefix, col + 1)) continue;
       const hit = syntacticHoleAt(code, thm, i + 1, col + 1);
       if (hit) return hit;
     }

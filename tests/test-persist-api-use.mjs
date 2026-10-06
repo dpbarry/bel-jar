@@ -8,7 +8,7 @@
 // (2026-09-28): nothing had run a file with the real Persist on the page, and Node
 // tests run the client without Persist, where the call is skipped.
 //
-// This reads every script the page can load (js/ and index.html) and holds each
+// This reads every script the pages can load (js/ and the two documents) and holds each
 // `Persist.<name>` to the real Persist, and each literal id given to Settings,
 // readSetting/writeSetting and Device to its schema.
 import fs from 'node:fs';
@@ -31,7 +31,7 @@ function expect(cond, msg) {
 const { P } = openTab(makeBrowserStorage());
 expect(P && typeof P.listProjects === 'function', 'the real Persist runs here');
 
-const files = [path.join(root, 'index.html')];
+const files = [path.join(root, 'index.html'), path.join(root, 'edit.html')];
 (function walk(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);

@@ -34,8 +34,49 @@ try {
 
   const t0 = Date.now();
   console.log('  live:', LIVE);
+  // 0. Two pages (docs/PERSIST.md §5.11). The site opens on home: the projects
+  //    and the way in, with nothing of the editor or of Beluga loaded.
   await page.goto(LIVE, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.waitForFunction(() => window.Persist && window.Home && window.Frame && window.Frame.isMounted(), { timeout: 60000 });
+  const account = await page.waitForFunction(() => { const b = document.getElementById('btn-account'); return b && !b.hidden; }, { timeout: 15000 })
+    .then(() => true, () => false);
+  check(account, 'home found the server: its header shows the account button');
+  // The editor's scripts may be FETCHED ahead once home is idle (a prefetch link:
+  // js/home/preload-editor.mjs). None is run here, and the Beluga runtime is not touched.
+  const ahead = await page.waitForFunction(() => document.querySelectorAll('link[rel="prefetch"]').length > 0, { timeout: 15000 })
+    .then(() => true, () => false);
+  const home = await page.evaluate(async () => {
+    const editHtml = await (await fetch(window.Routes.editUrl())).text();
+    const scripts = [...editHtml.replace(/<!--[\s\S]*?-->/g, '').matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => new URL(m[1], location.origin + '/').pathname);
+    return {
+      editor: !!(window.BelugaClient || window.CurrentEditor || window.HarpoonEngine),
+      run: performance.getEntriesByType('resource').filter((r) => /editor-cm\.bundle|shell\.js$|beluga-client/.test(new URL(r.name).pathname) && r.initiatorType !== 'link')
+        .map((r) => new URL(r.name).pathname),
+      beluga: performance.getEntriesByType('resource').map((r) => new URL(r.name).pathname).filter((p) => /beluga_web|beluga-worker/.test(p)),
+      edit: window.Routes.editUrl(),
+      signin: !!document.getElementById('home-signin') && !document.getElementById('home-signin').hidden,
+      prefetched: [...document.querySelectorAll('link[rel="prefetch"]')].map((l) => new URL(l.href).pathname),
+      scripts,
+      optIn: /<style>\s*@view-transition\s*\{\s*navigation:\s*auto;\s*\}\s*<\/style>/.test(document.head.innerHTML) && /@view-transition/.test(editHtml),
+      commands: window.Commands.list({ palette: true, runnable: true, available: true }).map((c) => c.id),
+    };
+  });
+  console.log('  home:', JSON.stringify(home));
+  check(!home.editor && home.run.length === 0 && home.beluga.length === 0, `home runs no editor and touches no Beluga (${home.run.concat(home.beluga).join(', ')})`);
+  check(home.edit === '/edit' && home.signin, 'it links to the editor at /edit, and offers to sign in');
+  check(ahead && home.scripts.length >= 5 && home.prefetched.join() === home.scripts.join(),
+    `idle, it fetches the editor's scripts ahead: exactly the ones the editor's document loads (${home.prefetched.length} of ${home.scripts.length})`);
+  check(home.optIn, 'both documents opt in to the transition between them, in their own heads');
+  check(home.commands.includes('project.new') && home.commands.includes('account.sign-in') && home.commands.includes('set.sync-reconnect')
+    && !home.commands.some((id) => /^(edit|run|nav|tab)\./.test(id)),
+    `the palette on home offers home's commands, the sync preferences among them, and nothing that needs an editor (${home.commands.length})`);
+
+  // The editor, with no project named: the last one opened, and the address says which.
+  await page.goto(new URL('edit', LIVE).href, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction(() => window.BelugaClient && window.HarpoonEngine && window.App, { timeout: 60000 });
+  const named = await page.waitForFunction(() => window.Routes && window.Persist && window.Routes.projectOf(location) === window.Persist.getActiveProjectId(),
+    { timeout: 15000 }).then(() => true, () => false);
+  check(named, 'the editor is served at /edit, and its address names its project');
 
   const cfg = await page.evaluate(() => ({ base: window.BELJAR_RUNTIME_BASE || null, host: location.hostname }));
   console.log('  config:', JSON.stringify(cfg));
@@ -158,13 +199,32 @@ try {
   check(forged.status === 401, `and the dev account header means nothing here (${forged.status})`);
   const cross = await hit('/api/auth/signout', { method: 'POST', headers: { origin: 'https://elsewhere.example' } });
   check(cross.status === 403, `another site cannot sign anyone out (${cross.status})`);
+  // Devices and Delete account (plan v6 c3): deployed, and closed to nobody signed in and to other sites.
+  const listed = await hit('/api/auth/sessions');
+  const del = await hit('/api/auth/delete', { method: 'POST', headers: { 'content-type': 'application/json', origin: site }, body: '{}' });
+  const delCross = await hit('/api/auth/delete', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://elsewhere.example' }, body: '{}' });
+  check(listed.status === 401 && del.status === 401 && delCross.status === 403,
+    `the devices list and Delete account are there, for the signed in only, never from another site (${listed.status}, ${del.status}, ${delCross.status})`);
+  // What BelJar keeps (plan v6 c4): live at its short address.
+  const privacy = await hit('/privacy');
+  const privacyText = privacy.status === 200 ? await privacy.text() : '';
+  check(/<title>What BelJar keeps<\/title>/.test(privacyText), `the page on what BelJar keeps is live at /privacy (${privacy.status})`);
   for (const p of ['/.git/config', '/.git/HEAD', '/wrangler.jsonc', '/server/worker.mjs', '/server/.dev.vars', '/package.json', '/AGENTS.md']) {
     const r = await hit(p);
     check(r.status === 404, `${p} is not served (${r.status})`);
   }
-  const account = await page.waitForFunction(() => { const b = document.getElementById('btn-account'); return b && !b.hidden; }, { timeout: 15000 })
+  // Signing in comes back to the page it started from, and to nowhere else.
+  const cookieOf = (res, name) => (res.headers.getSetCookie ? res.headers.getSetCookie() : []).find((c) => c.startsWith(name + '='));
+  const from = '/edit?p=p_01m3xq1ph808nx8xjd4jj1rhcx';
+  const kept = cookieOf(await hit('/api/auth/github/start?return=' + encodeURIComponent(from)), '__Host-bj_return');
+  check(!!kept && decodeURIComponent(kept.split(';')[0].split('=').slice(1).join('=')) === from && /HttpOnly/.test(kept) && /Secure/.test(kept),
+    `sign-in remembers the page it was started from (${kept ? kept.split(';')[0] : 'no cookie'})`);
+  const away = cookieOf(await hit('/api/auth/github/start?return=' + encodeURIComponent('https://elsewhere.example/')), '__Host-bj_return');
+  check(!away || /Max-Age=0/.test(away), `and never an address on another site (${away ? away.split(';')[0] : 'no cookie'})`);
+  // Signed out, the editor has no account button: signing in is home's, and the palette's.
+  const quiet = await page.waitForFunction(() => window.Account && window.Account.available() && document.getElementById('btn-account').hidden, { timeout: 15000 })
     .then(() => true, () => false);
-  check(account, 'the page found the server: the header shows the account button');
+  check(quiet, 'the editor found the server too, and signed out shows no account button');
 
   console.log('  total wall:', Date.now() - t0, 'ms');
   if (consoleErrs.length) console.log('  console errors:', JSON.stringify(consoleErrs));

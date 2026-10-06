@@ -52,6 +52,9 @@
       if (!workspaceEl || !cfg) return false;
       var open = !workspaceEl.classList.contains(cfg.openClass);
       if (open) closeOtherSidePanels(id);
+      // The library tip points at the rail: opening any panel answers it, and
+      // left up it would cover the panel's first rows (docs/UI.md §7).
+      if (open && typeof Hint !== 'undefined' && Hint.isVisible && Hint.isVisible('library')) Hint.dismiss('library');
       setSidePanelOpen(id, open);
       notifySidePanelLayout();
       return open;

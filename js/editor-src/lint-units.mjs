@@ -88,15 +88,41 @@ function rawFromDecl(decl) {
   };
 }
 
+const isComment = (n) => n.name === 'LineComment' || n.name === 'BlockComment';
+
+// Recovery parks stray tokens between declarations (`;|`, a lone `)`, an
+// unfinished `inductive Box : c`) outside every Declaration; each run of them
+// is a unit of its own so the fault is flagged and masked like any other.
+function debrisCollector(isDebris) {
+  let run = null;
+  return (node, raws) => {
+    if (!isDebris(node)) {
+      run = null;
+      return false;
+    }
+    if (run) {
+      run.to = node.to;
+      run.inners.push(node);
+    } else if (node.from < node.to) {
+      run = { from: node.from, to: node.to, inners: [node] };
+      raws.push(run);
+    }
+    return true;
+  };
+}
+
 function gatherRawDecls(program) {
   const raws = [];
+  const topDebris = debrisCollector((n) => n.name !== 'Declaration' && !isComment(n));
   for (let cur = program.firstChild; cur; cur = cur.nextSibling) {
-    if (cur.name !== 'Declaration') continue;
+    if (topDebris(cur, raws) || cur.name !== 'Declaration') continue;
     const inner = cur.firstChild;
     if (inner && inner.name === 'ModuleDeclaration') {
       const nested = [];
       let firstNested = null;
+      const nestedDebris = debrisCollector((n) => n.type.isError);
       for (let c = inner.firstChild; c; c = c.nextSibling) {
+        if (firstNested && nestedDebris(c, nested)) continue;
         if (c.name === 'Declaration') {
           if (!firstNested) firstNested = c;
           nested.push(rawFromDecl(c));

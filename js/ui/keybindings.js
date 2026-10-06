@@ -96,6 +96,8 @@
     { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
     { id: "autosolveFocusNext", section: "harpoon", default: ON },
     { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // Case completion: fill a proof's missing cases when typing pauses, or only on a command.
+    { id: "caseFill", section: "harpoon", default: "auto", values: ["auto", "ask"] },
     // ── REPL ────────────────────────────────────────────────────────────────
     { id: "replAutoscroll", section: "repl", default: ON },
     { id: "replWelcome", section: "repl", default: ON },
@@ -108,9 +110,17 @@
     // Where this browser keeps history: a shared computer is not your laptop.
     { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
     // ── Workspace ───────────────────────────────────────────────────────────
-    { id: "inspectorFollow", section: "workspace", default: ON },
+    // What a plain arrival at BelJar opens: home, or the project last opened, the
+    // way an IDE reopens its last window. Early boot decides, before first paint
+    // (js/boot/early-boot-core.mjs `startTarget`).
+    { id: "startPage", section: "workspace", default: "home", values: ["home", "last"] },
+    { id: "inspectorFollow", section: "workspace", default: OFF },
     { id: "restorePanels", section: "workspace", default: ON },
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Tips seen once on any computer stay seen on all of them (js/ui/hint-seen.mjs):
+    // one row per tip, so two computers that each saw a different one never disagree.
+    { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },
@@ -320,8 +330,75 @@
       slug: "hover-sticky",
       title: "Sticky hover",
       setting: "hoverSticky"
+    },
+    // ── the two pages ─────────────────────────────────────────────────────────
+    {
+      slug: "start-page",
+      title: "Start page",
+      pages: "both",
+      labels: { home: "Home", last: "Last project" },
+      setting: "startPage"
+    },
+    // ── the account (Settings > Account; the labels are that panel's) ─────────
+    {
+      slug: "sync-settings",
+      title: "Sync settings",
+      verb: "settings sync",
+      pages: "both",
+      needs: "server",
+      setting: "syncSettings"
+    },
+    {
+      slug: "sync-both-changed",
+      title: "Changed in two places",
+      verb: "files changed in two places",
+      pages: "both",
+      needs: "server",
+      labels: { merge: "Merge them", ask: "Ask me" },
+      setting: "syncBothChanged"
+    },
+    {
+      slug: "sync-overlap",
+      title: "Where edits overlap",
+      pages: "both",
+      needs: "server",
+      labels: { ask: "Ask me", mine: "Keep mine", cloud: "Keep the cloud\u2019s" },
+      setting: "syncOverlap"
+    },
+    {
+      slug: "sync-reconnect",
+      title: "Back online",
+      verb: "edits made offline",
+      pages: "both",
+      needs: "server",
+      labels: { upload: "Upload them", ask: "Ask me first" },
+      setting: "syncReconnect"
+    },
+    {
+      slug: "sync-notices",
+      title: "Say when you go offline",
+      verb: "offline notices",
+      pages: "both",
+      needs: "server",
+      setting: "syncNotices"
+    },
+    {
+      slug: "sign-out-keep",
+      title: "Projects in this browser",
+      verb: "projects kept on sign-out",
+      pages: "both",
+      needs: "server",
+      labels: { remove: "Remove them", keep: "Keep them" },
+      setting: "signOutKeep"
     }
   ];
+  function serverAnswers() {
+    const A = globalThis.Account;
+    return !!(A && typeof A.available === "function" && A.available());
+  }
+  function offered(s) {
+    return s.needs !== "server" || serverAnswers();
+  }
   var SETTINGS2 = ROWS.map((r) => {
     const row = settingRow(r.setting);
     if (!row) throw new Error(`command-settings: "${r.slug}" names no setting "${r.setting}"`);
@@ -341,12 +418,13 @@
       section: "Settings",
       scope: "global",
       keybindable: true,
-      palette: true
+      palette: true,
+      pages: s.pages || "editor"
     }));
   }
   function optionNames() {
     const out = [];
-    for (const s of SETTINGS2) {
+    for (const s of SETTINGS2.filter(offered)) {
       out.push(s.slug);
       for (const a of s.aliases || []) out.push(a);
     }
@@ -354,11 +432,11 @@
   }
   function optionCandidates() {
     const out = [];
-    for (const s of SETTINGS2) {
+    for (const s of SETTINGS2.filter(offered)) {
       out.push({ value: s.slug, label: s.title });
       for (const a of s.aliases || []) out.push({ value: a, label: s.title });
     }
-    for (const s of SETTINGS2) {
+    for (const s of SETTINGS2.filter(offered)) {
       if (s.kind !== "bool" && s.off === void 0) continue;
       out.push({ value: "no" + s.slug, label: s.title + " (off)" });
       for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " (off)" });
@@ -369,7 +447,8 @@
     const key = String(name == null ? "" : name).toLowerCase();
     if (!key) return null;
     const bare = key.startsWith("set.") ? key.slice(4) : key;
-    return SETTINGS2.find((s) => s.slug === bare) || SETTINGS2.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
+    const here = SETTINGS2.filter(offered);
+    return here.find((s) => s.slug === bare) || here.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
   }
   function nextValue(spec, current, requested) {
     if (!spec) return null;
@@ -449,16 +528,18 @@
   }
 
   // js/commands/command-catalog.mjs
-  var CATALOG = [
+  var ROWS2 = [
     // ── File ───────────────────────────────────────────────────────────────────
     { id: "project.new", title: "New Project\u2026", section: "File", scope: "global", palette: true },
-    { id: "file.new", title: "New file\u2026", section: "File", scope: "global", palette: true },
+    { id: "file.new", title: "New File\u2026", section: "File", scope: "global", palette: true },
     { id: "file.upload", title: "Upload File", section: "File", scope: "global", palette: true },
     { id: "file.upload-folder", title: "Upload Folder", section: "File", scope: "global", palette: true },
     { id: "file.import-folder", title: "Import Folder as New Project", section: "File", scope: "global", palette: true },
     { id: "file.download", title: "Download Current File", section: "File", scope: "global", palette: true },
     // The whole project as a zip: how work outlives a browser that clears its storage.
     { id: "project.download", title: "Download Project", section: "File", scope: "global", palette: true },
+    // Every version the cloud keeps, and Restore (js/ui/version-history.mjs): signed in only.
+    { id: "project.history", title: "Version History", section: "File", scope: "global", palette: true },
     { id: "tab.next", title: "Next Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bn"] },
     { id: "tab.prev", title: "Previous Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bp"] },
     { id: "tab.close", title: "Close Tab", section: "File", scope: "global", palette: true, keybindable: true },
@@ -916,6 +997,37 @@
       ex: ["harpoon"],
       styles: { vim: "always" }
     },
+    // Case completion (docs/case-completion.md). The missing cases of a proof are filled
+    // in the background and drawn as faint arms; these act on the one whose ghost hangs
+    // from the caret's line, else on every one of the proof under the caret. Gated on
+    // there being something to act on, so the palette stays quiet otherwise.
+    {
+      id: "prover.case-accept",
+      title: "Accept Filled Case",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "prover.case-fill",
+      title: "Fill This Case",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "prover.case-dismiss",
+      title: "Dismiss Filled Case",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
     // Reading the proof state, from the editor. Not gated on standing IN a hole:
     // "how many are left" is a question you ask from anywhere in the file.
     {
@@ -1105,6 +1217,10 @@
      * flush every buffer to storage, so a reload loses nothing.
      */
     { id: "app.reload", title: "Reload BelJar", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["reload", "refresh"] },
+    // Home: your projects and the account (index.html). The brand in the header
+    // is the same link; this is its name, for the palette and the command line.
+    { id: "app.home", title: "Go Home", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["home"] },
+    { id: "app.report-issue", title: "Report an Issue", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "cmdline.repeat", title: "Repeat Last Command", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "cmdline.open", title: "Command Line", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "tools.palette", title: "Open Command Palette", section: "Tools", scope: "global", palette: true, shortcut: "Mod+K" },
@@ -1129,6 +1245,22 @@
       styles: { emacs: "off" }
     }
   ];
+  var HOME_TOO = [
+    "project.new",
+    "file.import-folder",
+    "nav.anywhere",
+    "view.theme",
+    "account.sign-in",
+    "account.sign-out",
+    "sync.now",
+    "sync.review",
+    "sync.review-offline",
+    "app.reload",
+    "app.report-issue",
+    "tools.palette",
+    "tools.commands"
+  ];
+  var CATALOG = ROWS2.map((row) => Object.assign({ pages: HOME_TOO.includes(row.id) ? "both" : "editor" }, row));
 
   // js/commands/command-shadows.mjs
   var STYLE_TAKES = {
@@ -1355,6 +1487,14 @@
   var order = [];
   var byId = /* @__PURE__ */ Object.create(null);
   var version = 0;
+  function currentPage() {
+    const routes = global.Routes;
+    if (!routes || typeof routes.pageOf !== "function" || !global.location) return null;
+    return routes.pageOf(global.location) === "edit" ? "editor" : "home";
+  }
+  function runsOn(cmd, page) {
+    return !page || cmd.pages === "both" || cmd.pages === page;
+  }
   function normalize(record) {
     const id = String(record.id);
     return Object.assign({}, record, {
@@ -1362,6 +1502,7 @@
       title: titleFor(id, record.title),
       section: record.section || "",
       scope: record.scope || "global",
+      pages: record.pages === "home" || record.pages === "both" ? record.pages : "editor",
       keybindable: !!record.keybindable,
       palette: !!record.palette,
       cmdline: record.cmdline === false ? false : true,
@@ -1376,7 +1517,13 @@
     if (!id) return false;
     const prev = byId[id];
     if (!prev) order.push(id);
-    byId[id] = normalize(Object.assign({}, prev || {}, desc, { id }));
+    const next = normalize(Object.assign({}, prev || {}, desc, { id }));
+    if (!runsOn(next, currentPage())) {
+      delete next.run;
+      delete next.when;
+      delete next.preview;
+    }
+    byId[id] = next;
     version += 1;
     return true;
   }
@@ -1428,6 +1575,7 @@
       if (f.cmdline === true && !cmd.cmdline) continue;
       if (f.runnable === true && typeof cmd.run !== "function") continue;
       if (f.scope && cmd.scope !== f.scope) continue;
+      if (f.page && !runsOn(cmd, f.page)) continue;
       if (f.section && cmd.section !== f.section) continue;
       if (f.available === true && !isAvailable(cmd, f.ctx)) continue;
       out.push(cmd);
@@ -1535,6 +1683,13 @@
     run,
     styleFor,
     idsWithStyle,
+    /** 'home' | 'editor', or null with no page (tests). */
+    page: currentPage,
+    /** Whether `id` runs on this page (its `pages` in the catalogue). */
+    runsHere(id) {
+      const cmd = get(id);
+      return !!cmd && runsOn(cmd, currentPage());
+    },
     // The preference table, so the editor's `:set` resolves through the same
     // source as the palette rows without importing across the bundle seam.
     settings: {

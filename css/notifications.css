@@ -60,7 +60,7 @@
   flex: 0 0 auto;
   min-width: 1.05rem;
   padding: 0.02rem 0.28rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--notif-recess-bg);
   font-size: 0.6rem;
   font-weight: 600;
@@ -499,9 +499,14 @@
    ⛔ Resting toasts only: this outranks `.is-leaving`, and a leaving toast it
    caught held at the dim level and then vanished. The dim stays well above
    zero and quick so it reads as stepping back, not as a stalled dismiss. */
+/* ⛔ Every toast lets clicks through, leaving ones too: one fading out over the
+   account menu took the click meant for Sign in (found 2026-10-01). */
+:root:has(.menu-root .menu) .toast-stack .toast {
+  pointer-events: none;
+}
+
 :root:has(.menu-root .menu) .toast-stack .toast:not(.is-leaving) {
   opacity: 0.35;
-  pointer-events: none;
   transition:
     transform 340ms var(--ease-out),
     opacity 140ms var(--ease-out);

@@ -91,6 +91,7 @@ export { formatProofBody } from './format/proof-format.mjs';
 export { captureHarpoonAnchor, assessHarpoonAnchor, textFingerprint, holeKeyFromHit } from './harpoon/harpoon-anchor.mjs';
 export {
   proveProgram,
+  withoutSynthesizedMeasure,
   theoremUnderProof,
   theoremDeclRange,
   candidateMoves,
@@ -229,6 +230,12 @@ import {
   listDocumentProblems, revealBinder, revealInInspector, peekRange,
 } from './ide/ide-actions.mjs';
 import { holeAt, canIntro, splitTargetsOf, runIntro, runFill, runSplit } from './prover/hole-actions.mjs';
+import { createCaseFillScheduler } from './prover/case-fill-scheduler.mjs';
+import { subscribe as subscribeCaseFill } from './prover/case-fill-store.mjs';
+import {
+  caseGhosts, bindCaseGhosts, refreshCaseGhosts, caseFillWorkerUrl, declineCaseFill,
+  acceptFilledCase, fillCaseNow, dismissFilledCase, caseCommandState,
+} from './ide/case-ghosts.mjs';
 import { openLocalGraphWindow, openGlobalGraphWindow, graphLive } from './graph/graph-view.mjs';
 
 export function openDependencyGraphForView(view, pos) {
@@ -1050,7 +1057,7 @@ export function mount(parentEl, options = {}) {
   parentEl.replaceChildren();
   if (isCfgFile) return mountAuxEditor(parentEl, options, docId, docPath);
 
-  const ph = options.placeholder ?? 'Write Beluga code here...';
+  const ph = options.placeholder ?? 'Write Beluga code here…';
   const themeCompartment = new Compartment();
   const chromeCompartment = new Compartment();
   const ideCompartment = new Compartment();
@@ -1064,6 +1071,9 @@ export function mount(parentEl, options = {}) {
   const editorPrefs = readEditorPrefs();
 
   let semanticView = null;
+  // Case completion (docs/case-completion.md): bound once the view exists; the
+  // settlement and typing hooks below reach it through this name.
+  let caseFill = null;
   let semanticEngine = null;
   let refreshIdeStatusRef = () => {};
 
@@ -1093,6 +1103,7 @@ export function mount(parentEl, options = {}) {
     getScopeKey: currentScopeKey,
     onTypeObserved: () => {
       noteTypingVelocity();
+      if (caseFill) caseFill.noteEdit();
       const perf = getCheckTrace();
       if (perf.enabled) perf.beginEdit();
       if (options.persist && typeof options.persist.scheduleCheckpointSave === 'function') {
@@ -1106,7 +1117,10 @@ export function mount(parentEl, options = {}) {
       }
     },
     getSettleDelay: checkHost.getSettleDelay,
-    onSettlement: checkHost.handleSettlement,
+    onSettlement: (snap) => {
+      checkHost.handleSettlement(snap);
+      if (caseFill) caseFill.onSettlement(snap);
+    },
     onSettlementChecking: checkHost.handleSettlementChecking,
   });
 
@@ -1446,6 +1460,7 @@ export function mount(parentEl, options = {}) {
     themeCompartment.of(cmThemeExtensions(initialDark)),
     chromeCompartment.of(buildEditorChromeTheme(editorPrefs)),
     ideCompartment.of(buildToggleableExtensions(editorPrefs, { semanticEngine })),
+    caseGhosts(),
   ];
   if (editorPrefs.foldGutter && docId) {
     extensions.push(foldPersistence(docId));
@@ -1469,6 +1484,25 @@ export function mount(parentEl, options = {}) {
     state,
   });
   semanticView = view;
+  caseFill = createCaseFillScheduler({
+    makeWorker: () => new Worker(caseFillWorkerUrl()),
+    runtimeUrl: () => (g.BelugaClient && g.BelugaClient.runtimeScriptUrl
+      ? g.BelugaClient.runtimeScriptUrl(readSetting('belugaMode'))
+      : ''),
+    getFileId: () => docId || null,
+    getDocText: () => view.state.doc.toString(),
+    getProgram: () => holeActionContext(),
+    readSetting: () => readSetting('caseFill'),
+    isHarpoonBusy: () => !!(g.StatusStrip && g.StatusStrip.isOrcaRunning && g.StatusStrip.isOrcaRunning()),
+    declined: declineCaseFill,
+  });
+  bindCaseGhosts({ fileId: () => docId || null, scheduler: caseFill });
+  const stopCaseFillStore = subscribeCaseFill((fileId) => { if (fileId === (docId || null)) refreshCaseGhosts(view); });
+  const stopCaseFillSetting = g.Settings && typeof g.Settings.subscribe === 'function'
+    ? g.Settings.subscribe(({ ids }) => {
+      if (ids && ids.includes('caseFill')) caseFill.onSettingChanged(readSetting('caseFill'));
+    })
+    : null;
   if (g.BelugaClient?.setIntelKeepWarm) g.BelugaClient.setIntelKeepWarm(true);
   activeEditorView = view;
   // Let the IDE action layer reach the engine straight off the view, before the
@@ -1880,8 +1914,18 @@ export function mount(parentEl, options = {}) {
       if (semanticEngine.scheduler && semanticEngine.scheduler.stop) {
         semanticEngine.scheduler.stop();
       }
+      caseFill.dispose();
+      stopCaseFillStore();
+      if (stopCaseFillSetting) stopCaseFillSetting();
       view.destroy();
     },
+
+    // Case completion: the row whose ghost hangs from the caret's line, else the whole
+    // proof under the caret. `caseCommandState` is what the commands' `when` asks.
+    acceptFilledCase(pos) { return acceptFilledCase(view, pos ?? view.state.selection.main.head); },
+    fillCaseNow(pos) { return fillCaseNow(view, pos ?? view.state.selection.main.head); },
+    dismissFilledCase(pos) { return dismissFilledCase(view, pos ?? view.state.selection.main.head); },
+    caseCommandState(pos) { return caseCommandState(view.state, pos ?? view.state.selection.main.head); },
 
     // Edit-menu commands — these work even when the editor isn't focused.
     undo() { return runEditHistoryUndo(); },

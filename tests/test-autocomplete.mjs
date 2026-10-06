@@ -1326,6 +1326,16 @@ function mkState(src) {
 }
 
 {
+  // A `;` closes the datatype: no `|` after it, on its line or the next.
+  for (const src of ['LF o : type =\n| a : o\n;', 'LF o : type =\n| a : o\n;\n', 'LF o : type =\n| a : o;\n']) {
+    const store = mkStore(src);
+    const site = classifyCompletionSite(mkState(src), src.length, mkEngine(store));
+    expect(site.structure !== 'ctor-line',
+      `after the closing ; is not ctor-line (${JSON.stringify(src)}), got ${site.structure}`);
+  }
+}
+
+{
   // Recursive call boost: `plus` outranks a far peer inside its own body.
   const src = [
     'LF nat : type =',

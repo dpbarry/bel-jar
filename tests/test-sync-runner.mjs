@@ -229,4 +229,89 @@ const OPTS = { quietMs: 5000, maxWaitMs: 30000, pollMs: 60000, backoff: [5000, 1
   r.stop();
 }
 
-console.log(`OK sync runner (${n} checks: one tab, quiet spell, longest wait, poll, no overlap, backoff, hand-over, held)`);
+// ── a change heard during a round waits out its quiet spell, not the poll ────
+{
+  const c = clock();
+  const store = storeStub();
+  const e = engineStub();
+  const r = createSyncRunner({ engine: e, store, locks: lockManager(), timers: c.timers, now: c.now, ...OPTS });
+  r.start();
+  await flush();
+  await flush();
+  expect(e.calls === 1 && r.status().state === 'idle', 'the first round is done');
+  let open;
+  e.gate = new Promise((res) => { open = res; });
+  const inFlight = r.syncNow();
+  await flush();
+  expect(e.active === 1, 'a round is in flight');
+  store.emit({ key: 'beljar/p/p1/f/f1', cls: 'work', origin: 'local' });
+  e.gate = null;
+  open();
+  await inFlight;
+  await flush();
+  expect(e.calls === 2 && r.status().pending === true, 'a change heard during it is not carried by it: it still waits');
+  await c.advance(OPTS.quietMs - 1);
+  expect(e.calls === 2, 'for its quiet spell');
+  await c.advance(1);
+  expect(e.calls === 3 && r.status().pending === false, 'and then its round runs: after the quiet spell, not after the poll a minute on');
+  await c.advance(OPTS.pollMs - 1);
+  expect(e.calls === 3, 'after which the poll is the poll again');
+  await c.advance(1);
+  expect(e.calls === 4, 'and comes when it is due');
+  r.stop();
+}
+
+// ── what the runner is told to ignore is not a change ───────────────────────
+{
+  const c = clock();
+  const store = storeStub();
+  const e = engineStub();
+  let own = 0;
+  const ignore = () => own > 0;
+  const r = createSyncRunner({ engine: e, store, ignore, locks: lockManager(), timers: c.timers, now: c.now, ...OPTS });
+  r.start();
+  await flush();
+  await flush();
+  own = 1;
+  store.emit({ key: 'beljar/p/p1/tree', cls: 'work', origin: 'local' });
+  store.emit({ key: TOMBSTONES_KEY, cls: 'device', origin: 'local' });
+  own = 0;
+  expect(r.status().pending === false, 'what the engine wrote settling a round (a project forgotten, a deletion settled) is not a change waiting');
+  await c.advance(OPTS.quietMs);
+  expect(e.calls === 1, 'and neither starts a round');
+  store.emit({ key: 'beljar/p/p1/f/f1', cls: 'work', origin: 'local' });
+  expect(r.status().pending === true, 'the person\'s own work still is');
+  await c.advance(OPTS.quietMs);
+  expect(e.calls === 2, 'and syncs');
+  r.stop();
+}
+
+// ── signing out: stopped, and the lock held until the page goes ─────────────
+{
+  const c = clock();
+  const locks = lockManager();
+  const store = storeStub();
+  const e1 = engineStub();
+  const e2 = engineStub();
+  const r1 = createSyncRunner({ engine: e1, store, locks, timers: c.timers, now: c.now, ...OPTS });
+  const r2 = createSyncRunner({ engine: e2, store, locks, timers: c.timers, now: c.now, ...OPTS });
+  r1.start();
+  r2.start();
+  await flush();
+  await r1.stop({ hold: true });
+  await flush();
+  await flush();
+  expect(r1.status().state === 'stopped' && !r1.status().leader, 'stopped holding the lock: this tab runs no more rounds');
+  store.emit({ key: 'beljar/p/p1/f/f1', cls: 'work', origin: 'local' });
+  await c.advance(120000);
+  expect(e1.calls === 1, 'not for a change, not at a poll');
+  expect(!r2.status().leader && e2.calls === 0 && !!locks.holder(),
+    'and no other tab takes over: the lock is still here (another tab would sync for a session that is ending)');
+  r1.stop();
+  await flush();
+  await flush();
+  expect(r2.status().leader && e2.calls === 1, 'stopped outright (the page goes): the lock moves on');
+  r2.stop();
+}
+
+console.log(`OK sync runner (${n} checks: one tab, quiet spell, longest wait, poll, no overlap, backoff, hand-over, held, heard mid-round, ignored, stopped holding the lock)`);

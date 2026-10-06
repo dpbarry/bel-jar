@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <!-- What BelJar keeps (plan v6 c4): what is stored, where, who can read it,
+       and how to delete it. Linked from home's foot and beside its sign-in.
+       ⛔ It says what the code does: what Delete account removes is
+       server/deletion.mjs ACCOUNT_ROWS, and tests/test-privacy-page.mjs holds
+       the page to it. Change one, change the other. -->
+  <script src="js/boot/early-boot.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>What BelJar keeps</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.png">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/privacy.css">
+</head>
+
+<body class="doc-page">
+  <main class="doc">
+    <a class="doc-home" href="./?home">
+      <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M 25 65 Q 37.5 50, 50 60 T 75 55 V 80 H 25 Z" fill="currentColor" fill-opacity="0.2" stroke="none" />
+        <path d="M 25 72 Q 40 60, 55 68 T 75 62 V 80 H 25 Z" fill="currentColor" fill-opacity="0.15" stroke="none" />
+        <path d="M 25 65 Q 37.5 50, 50 60 T 75 55" stroke-width="3" />
+        <path d="M 44 20 V 14 C 44 9, 56 9, 56 14 V 20 Z" fill="currentColor" fill-opacity="0.15" />
+        <path d="M 25 80 V 45 A 25 25 0 0 1 75 45 V 80" />
+        <path d="M 33 45 A 17 17 0 0 1 42 30" stroke-width="4" opacity="0.4" />
+        <path d="M 18 80 V 86 C 18 94, 30 96, 50 96 C 70 96, 82 94, 82 86 V 80 Z" fill="currentColor" fill-opacity="0.15" />
+        <circle cx="58" cy="44" r="3.5" stroke-width="2.5" />
+      </svg>
+      <span>BelJar</span>
+    </a>
+
+    <h1>What BelJar keeps</h1>
+    <p class="doc-lede">Without an account, your projects live only in this browser, and BelJar’s server keeps
+      nothing of them. Signing in with GitHub puts them in the cloud, so they are on every device you sign
+      in on. This is everything that keeps, where it is, who can read it, and how to delete it.</p>
+
+    <section>
+      <h2>What is kept</h2>
+      <ul>
+        <li><strong>Who you are on GitHub:</strong> your account’s number, your handle and name, and the address
+          of your picture, read once each time you sign in. BelJar asks GitHub for no permissions and keeps no
+          GitHub token, so it cannot act for you there. It never asks for your email address.</li>
+        <li><strong>Your projects:</strong> every version of each project you have synced: its name, its files and
+          folders, and the text of every file. The cloud keeps history, so a file or project you delete stays in
+          its earlier versions until you delete your account. For BelJar’s limits, it also counts how many projects
+          you have and how much text you have stored.</li>
+        <li><strong>Your settings,</strong> while Sync settings is on (Settings, Account).</li>
+        <li><strong>Where you are signed in:</strong> for each browser, a rough name for it (“Chrome on Windows”),
+          when you signed in, and when it was last used, to the hour. Signing in puts a random key in a cookie only
+          this site can read; the server keeps only a fingerprint of it, which cannot sign anyone in. A sign-in
+          lasts 90 days. When a browser is signed out from another one, or the account is deleted, the server
+          keeps why under that fingerprint until the 90 days are up, so the browser can do the right thing with
+          its copies when it next visits.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Where</h2>
+      <p>On Cloudflare, which runs BelJar’s server: a database and file storage, both in eastern North America.
+        On your device: your projects and settings, in this browser’s storage for this site, and the sign-in
+        cookie.</p>
+    </section>
+
+    <section>
+      <h2>Who can read it</h2>
+      <p>You, from any browser you sign in on. Nobody else through BelJar: nothing is shared or published, and
+        there are no ads or analytics. Dean Barry, who runs BelJar, can read the database and storage, and does
+        so only to fix a fault or to answer you. Cloudflare holds them under its
+        <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener noreferrer">own privacy policy</a>.
+        Your GitHub picture is shown from GitHub’s own address.</p>
+    </section>
+
+    <section>
+      <h2>Logs and backups</h2>
+      <p>Cloudflare logs each request to BelJar’s server for up to 7 days, to find faults: what was asked for,
+        when, how it went, and details of the connection, which can include your network address. The database
+        can be restored to any minute of the last 30 days, and a copy of it is saved each week and kept for four
+        weeks. The text of your files is not in those copies.</p>
+    </section>
+
+    <section>
+      <h2>Deleting it</h2>
+      <ul>
+        <li><strong>Everything:</strong> Settings, Account, Delete account. Your GitHub details, every browser’s
+          sign-in, your projects with all their versions, and your settings are deleted at once, and the text of
+          your files with them, or within a day if there is a great deal of it. A note that the account is being
+          deleted, holding only its random number, goes within a day too. Every device is signed out, and the
+          projects in your browsers stay there, as each browser’s own. What the logs and backups hold goes as
+          their time runs out, within 30 days.</li>
+        <li><strong>One device:</strong> Settings, Account, Devices: Sign out beside it.</li>
+        <li><strong>This browser’s copies:</strong> delete a project from home, or clear this site’s data in your
+          browser’s settings.</li>
+      </ul>
+    </section>
+
+    <p class="doc-foot">Changed on 4 October 2026. Questions or corrections:
+      <a href="https://github.com/dpbarry/bel-jar/issues" rel="noopener noreferrer">report an issue</a>.</p>
+  </main>
+</body>
+
+</html>

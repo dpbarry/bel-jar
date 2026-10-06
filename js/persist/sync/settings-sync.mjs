@@ -104,8 +104,20 @@ export function createSettingsSync(o) {
     return { version: raw.version, values: cleanSyncedValues(raw.values) };
   }
 
-  async function sync() {
+  /**
+   * One pass. `hint.head`: the settings version the round's list gave (null:
+   * not said). When it is this device's own and nothing changed here, the pass
+   * asks nothing more: an idle round is one request.
+   */
+  async function sync(hint) {
     if (!o.settings.get('syncSettings')) return { status: 'off' };
+    const told = hint && Number.isInteger(hint.head) ? hint.head : null;
+    if (told !== null) {
+      const rec = readRecord(store, account);
+      const mine = local();
+      if (rec && !rec.pending && rec.version === told && sameValues(mine, rec.values)) return { status: 'clean' };
+      if (!rec && told === 0 && !Object.keys(mine).length) return { status: 'clean' };
+    }
     for (let i = 0; i < attempts; i++) {
       const rec = readRecord(store, account);
       if (rec && rec.pending) {

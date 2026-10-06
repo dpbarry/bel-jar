@@ -16,6 +16,8 @@
 import { openReviewDifferences, refreshReviewDifferences, resolveDifference } from '../ui/review-differences.mjs';
 import { openReviewOffline } from '../ui/review-offline.mjs';
 import { cloudLook, cloudSvg } from './cloud-glyphs.mjs';
+import { QUOTA } from '../persist/sync/protocol.mjs';
+import { createFailureWatch } from './sync-watch.mjs';
 
 export { cloudLook };
 
@@ -38,6 +40,31 @@ export function ago(ms, now = Date.now()) {
   return 'at ' + new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+/**
+ * Why a round could not sync, in a sentence, from the reason the runner gives
+ * (`status-<code>` the server's answer, `refused-<code>` its refusal of one
+ * project). Null for one with no words of its own.
+ */
+export function failureWords(reason) {
+  const m = /^status-(\d+)$/.exec(reason || '');
+  if (m) {
+    const code = Number(m[1]);
+    if (code === 429) return 'BelJar’s server is busy (429). It tries again on its own; nothing here is lost.';
+    if (code >= 500) return 'BelJar’s server had a problem (' + code + '). It tries again on its own; nothing here is lost.';
+    if (code === 413) return 'A change was too large for the server to take (413). It stays here.';
+    if (code === 401) return 'This browser’s session has ended. Sign in again to sync.';
+    return 'BelJar’s server refused the request (' + code + '). It tries again on its own; nothing here is lost.';
+  }
+  if (reason === 'refused-quota-projects') {
+    return 'Your account has ' + QUOTA.projects.toLocaleString('en') + ' projects, BelJar’s limit. Delete projects you no longer need, and new ones sync.';
+  }
+  if (reason === 'refused-quota-texts') {
+    return 'Your account has stored as much text as BelJar allows (' + Math.round(QUOTA.textBytes / (1024 * 1024 * 1024)) + ' GB), which usually means something has gone wrong. Report an issue; nothing here is lost.';
+  }
+  if (reason === 'refused-too-many' || reason === 'refused-bad-manifest') return 'The server refused a change it could not take. It stays here.';
+  return null;
+}
+
 /** The cloud's words for a summary: its tooltip, and the popover's first row. */
 export function cloudWords(s, now = Date.now()) {
   switch (s.state) {
@@ -50,7 +77,7 @@ export function cloudWords(s, now = Date.now()) {
     case 'held':
       return { tip: 'Changes made offline', title: 'Changes made offline', detail: 'They wait for you to upload them, or use the cloud’s version.', tone: 'warning' };
     case 'error':
-      return { tip: 'Couldn’t sync', title: 'Couldn’t sync', detail: 'BelJar keeps trying.', tone: 'error' };
+      return { tip: 'Couldn’t sync', title: 'Couldn’t sync', detail: failureWords(s.reason) || 'BelJar keeps trying.', tone: 'error' };
     case 'syncing':
     case 'pending':
       return { tip: 'Syncing', title: 'Syncing', detail: s.lastSync ? 'Last synced ' + ago(s.lastSync, now) : null };
@@ -110,6 +137,8 @@ function menuItems() {
 // Files changed in two places, marked in the explorer by id: rules rather than
 // classes, so a re-render of the tree keeps them without being told.
 function markExplorer(s) {
+  // The editor only: home has no explorer, and no project to ask about.
+  if (!g.Routes || g.Routes.pageOf(g.location) !== 'edit') return;
   if (!marks) {
     marks = document.createElement('style');
     marks.id = 'sync-differs-marks';
@@ -149,10 +178,60 @@ function notices() {
   return !g.Settings || g.Settings.get('syncNotices') !== false;
 }
 
+/**
+ * A refusal the person must act on (an account at its limit) is kept where it
+ * can be found again, once: the cloud says it while it lasts, the
+ * notifications after.
+ */
+export function noteRefusal(s) {
+  const reason = s && s.state === 'error' ? s.reason : null;
+  if (!reason || !/^refused-quota-/.test(reason)) return;
+  const N = g.Notifications;
+  if (!N || typeof N.emit !== 'function') return;
+  N.emit({
+    kind: 'error',
+    category: 'ops',
+    origin: 'local',
+    source: 'sync.quota',
+    dedupeKey: 'sync.' + reason,
+    title: reason === 'refused-quota-projects' ? 'Too many projects to sync' : 'Your account is full',
+    body: failureWords(reason),
+  });
+}
+
+/**
+ * Rounds failing for ten minutes, kept findable (plan v6 phase 04, n4;
+ * sync-watch.mjs): one card with the reason, taken away by the round that goes
+ * through. `N`: the notifications (the page's own unless a test hands one in).
+ */
+export function noteFailing(action, s, N = g.Notifications) {
+  if (!N || typeof N.emit !== 'function') return;
+  if (action === 'emit') {
+    N.emit({
+      kind: 'error',
+      category: 'ops',
+      origin: 'local',
+      source: 'sync.failing',
+      dedupeKey: 'sync.failing',
+      title: 'Couldn’t sync for ten minutes',
+      body: failureWords(s && s.reason) || 'BelJar keeps trying. Everything stays in this browser meanwhile.',
+    });
+  } else if (action === 'clear') {
+    const card = (typeof N.list === 'function' ? N.list() : []).find((r) => r.dedupeKey === 'sync.failing' && !r.dismissedAt);
+    if (card && typeof N.dismiss === 'function') N.dismiss(card.id);
+  }
+}
+
+// `BELJAR_SYNC_FAILING_MS` lowers the ten minutes for the probe that checks it (probe-sync-failing.mjs).
+const failing = createFailureWatch({ after: typeof g.BELJAR_SYNC_FAILING_MS === 'number' ? g.BELJAR_SYNC_FAILING_MS : undefined });
+
 function update(s) {
   if (applyPreference(s)) return; // the summary moves again, and comes back here
   const before = summary;
   summary = s;
+  noteRefusal(s);
+  const act = failing.observe(s);
+  if (act) noteFailing(act, s);
   if (s.state === 'offline') wasOffline = true;
   else if (wasOffline && s.state === 'synced') {
     wasOffline = false;

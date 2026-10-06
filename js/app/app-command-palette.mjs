@@ -6,13 +6,13 @@
  * title, and a new command's metadata belongs in the catalogue, not below.
  */
 import { Commands } from '../commands/command-registry.mjs';
-import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-settings.mjs';
+import { runSetOn } from '../commands/command-settings.mjs';
+import { attachSharedCommands } from '../commands/shared-commands.mjs';
 
   export function create(deps) {
     var getPersist = deps.getPersist;
     var toggleSidePanel = deps.toggleSidePanel;
     var revealActiveFile = deps.revealActiveFile;
-    var toggleTheme = deps.toggleTheme;
     var newProject = deps.newProject;
     var newFile = deps.newFile;
     var fileInputEl = deps.fileInputEl;
@@ -49,13 +49,10 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
         if (typeof BelEditor !== 'undefined' && BelEditor.applyEditorPrefs) BelEditor.applyEditorPrefs();
       };
 
-      /** A `set.*` chord or palette row: toggle a boolean, cycle an enum. */
-      const toggleSetting = (spec) => {
-        const res = applyValue(Settings, spec, undefined);
-        if (res.applied) reapplyPrefs();
-        say(res.message);
-        return res.ok;
-      };
+      // What both pages run (the account and sync, the theme, the palette, an
+      // issue, and every `set.*` preference): js/commands/shared-commands.mjs.
+      // Here a preference lands in the open editor at once, and the strip says it.
+      attachSharedCommands({ say, applied: reapplyPrefs });
 
       /** `:set nu` · `:set nolist` · `:set ts=4`, from the bar or from Vim. */
       const runSet = (argText) => {
@@ -115,26 +112,8 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
       on('file.import-folder', () => folderInputEl.click());
       on('file.download', downloadCurrentFile);
       on('project.download', () => downloadProject(), () => (Persist.listFiles() || []).length > 0);
+      on('project.history', () => window.VersionHistory.open(), () => !!window.VersionHistory && window.VersionHistory.available());
 
-      // The account and sync (js/account/), each only where it works: no server,
-      // no sign-in; signed out, nothing to sync; nothing changed in two places,
-      // nothing to review.
-      const account = () => (typeof Account !== 'undefined' ? Account : null);
-      const syncState = () => (typeof Persist.syncSummary === 'function' ? Persist.syncSummary() : null);
-      on('account.sign-in', () => account().signIn(), () => !!account() && account().available() && !account().user());
-      on('account.sign-out', () => account().signOut(), () => !!account() && !!account().user());
-      on('sync.now', () => Persist.confirmSynced(), () => {
-        const s = syncState();
-        return !!s && s.signedIn && s.state !== 'offline' && s.state !== 'held';
-      });
-      on('sync.review', () => SyncUI.review(), () => {
-        const s = syncState();
-        return !!s && s.differs.length > 0;
-      });
-      on('sync.review-offline', () => SyncUI.reviewOffline(), () => {
-        const s = syncState();
-        return !!s && s.state === 'held';
-      });
       on('tab.next', () => stepTab(1), () => openTabIds().length > 1);
       on('tab.prev', () => stepTab(-1), () => openTabIds().length > 1);
       on(
@@ -255,6 +234,13 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
       onEditor('prover.hole-fill', (e) => e.runHoleFill(), holeAtCaret);
       onEditor('prover.open-in-harpoon', (e) => e.openHoleInHarpoon(), holeAtCaret);
 
+      // Case completion: offered only when there is a filled case to act on, or (for
+      // filling) a proof with a case under the caret.
+      const caseState = (e) => (typeof e.caseCommandState === 'function' ? e.caseCommandState() : null);
+      onEditor('prover.case-accept', (e) => e.acceptFilledCase(), (e) => !!caseState(e)?.hasFilled);
+      onEditor('prover.case-fill', (e) => e.fillCaseNow(), (e) => !!caseState(e)?.inProof);
+      onEditor('prover.case-dismiss', (e) => e.dismissFilledCase(), (e) => !!caseState(e)?.hasFilled);
+
       // ── driving the Harpoon lab ───────────────────────────────────────────
       // The lab is a shell surface, so these attach here rather than in
       // `editor-commands.mjs`. Every one resolves the session the user is
@@ -315,11 +301,8 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
       onLab('harpoon.orca-pause', (s) => { s.toggleOrcaPause(); return true; }, searching);
       onLab('harpoon.orca-absorb', (s) => { s.backToManual(); return true; }, searching);
 
-      // Preferences: one attach per generated `set.*` command, plus the one
-      // command line verb that reaches all of them by name.
-      for (const spec of SETTINGS) {
-        on(settingId(spec.slug), () => toggleSetting(spec));
-      }
+      // The one command line verb that reaches every preference by name (each
+      // has its own `set.*` command too, attached above with the shared ones).
       on('settings.set', (ctx) => runSet(ctx && ctx.argText));
 
       on('cmdline.open', () => StatusStrip.openCommandLine(''));
@@ -339,7 +322,6 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
       on('cmdline.repeat', () => StatusStrip.repeatLastCommand(),
         () => !!(typeof StatusStrip !== 'undefined' && StatusStrip.lastCommandLine
           && StatusStrip.lastCommandLine()));
-      on('tools.palette', () => CommandPalette.open());
       // These three ship a chord that another layer handles — CodeMirror's
       // keymap for Ctrl-Space, the palette's own opener for Mod+K. Without a
       // `run` the chord worked but `M-x`, the palette and the line could not
@@ -374,12 +356,13 @@ import { SETTINGS, settingId, applyValue, runSetOn } from '../commands/command-s
       // `location.reload()`, but relying on it here means the one command whose
       // whole job is to throw the page away trusts a handler to have run — and
       // an exception anywhere in that chain would take the buffers with it.
+      // Home, with what is typed saved first (js/account/account.mjs owns the leaving).
+      on('app.home', () => Account.goHome());
       on('app.reload', () => {
         try { flushEverythingToStorage(false); } catch (_) { /* reload anyway */ }
         window.location.reload();
       });
 
-      on('view.theme', toggleTheme);
       on('view.explorer', () => toggleSidePanel('explorer'));
       on('view.reveal-file', () => revealActiveFile(), () => !!Persist.getActiveFileId());
       on('view.library', () => toggleSidePanel('library'));

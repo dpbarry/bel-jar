@@ -58,6 +58,15 @@
       return resolveRows(rows, {});
     }
   }
+  function readBootRecord(storage, schema, key) {
+    try {
+      if (storage.getItem("beljar/schema") !== String(schema)) return null;
+      const env = JSON.parse(storage.getItem(key) || "null");
+      return env && env.data && typeof env.data === "object" ? env.data : null;
+    } catch (_) {
+      return null;
+    }
+  }
 
   // js/persist/settings-schema.mjs
   var SETTINGS_KEY = "beljar/settings";
@@ -147,6 +156,8 @@
     { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
     { id: "autosolveFocusNext", section: "harpoon", default: ON },
     { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // Case completion: fill a proof's missing cases when typing pauses, or only on a command.
+    { id: "caseFill", section: "harpoon", default: "auto", values: ["auto", "ask"] },
     // ── REPL ────────────────────────────────────────────────────────────────
     { id: "replAutoscroll", section: "repl", default: ON },
     { id: "replWelcome", section: "repl", default: ON },
@@ -159,9 +170,17 @@
     // Where this browser keeps history: a shared computer is not your laptop.
     { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
     // ── Workspace ───────────────────────────────────────────────────────────
-    { id: "inspectorFollow", section: "workspace", default: ON },
+    // What a plain arrival at BelJar opens: home, or the project last opened, the
+    // way an IDE reopens its last window. Early boot decides, before first paint
+    // (js/boot/early-boot-core.mjs `startTarget`).
+    { id: "startPage", section: "workspace", default: "home", values: ["home", "last"] },
+    { id: "inspectorFollow", section: "workspace", default: OFF },
     { id: "restorePanels", section: "workspace", default: ON },
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Tips seen once on any computer stay seen on all of them (js/ui/hint-seen.mjs):
+    // one row per tip, so two computers that each saw a different one never disagree.
+    { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },
@@ -218,6 +237,7 @@
     if (!Array.isArray(raw)) return void 0;
     return [...new Set(raw.filter((id) => typeof id === "string" && id !== ""))];
   }
+  var idList = accountIds;
   var PANEL_W = { group: "layout", default: 250, min: 160, max: 512, integer: true, boot: true };
   var PANEL_H = { group: "layout", default: 190, min: 96, max: 384, integer: true, boot: true };
   var DEVICE = [
@@ -230,6 +250,16 @@
     // here, usable signed out and never adopted by another account (work.mjs
     // `isVisible`). Each leaves the list when it signs in again.
     { id: "keptAccounts", type: "json", default: [], normalize: accountIds },
+    // Signed out with "Remove": the account whose projects are still to leave
+    // this browser ('' none). They go when the next page loads (work.mjs
+    // `finishSignOut`), never under the page that signed out, which is still live.
+    { id: "leftAccount", type: "string", default: "" },
+    // And the projects of it that stay, kept for it: a session that ended
+    // elsewhere leaves behind nothing the cloud lacks (account.mjs `sessionEnded`).
+    { id: "leftKeep", type: "json", default: [], normalize: idList },
+    // Why this browser was signed out without asking ('' none): 'elsewhere' or
+    // 'ended'. Said once, by the page that loads next (account.mjs).
+    { id: "signedOutNote", type: "string", default: "" },
     // Signing in again: the account whose work this browser should come back
     // to, and the project it had open when it signed out here ('' the newest).
     // Used once, by the first load that finds a blank placeholder open
@@ -275,6 +305,9 @@
   function projectPrefix(pid) {
     return "beljar/p/" + pid + "/";
   }
+  function metaKey(pid) {
+    return projectPrefix(pid) + "meta";
+  }
   function sessionKey(pid) {
     return projectPrefix(pid) + "session";
   }
@@ -289,7 +322,132 @@
     }
   }
 
+  // js/frame/routes.mjs
+  var g = typeof window !== "undefined" ? window : globalThis;
+  var PROJECT_ID = /^p_[0-9a-hjkmnp-tv-z]{26}$/;
+  var EDIT_SHORT = /(?:^|\/)edit\/?$/;
+  var EDIT_ANY = /(?:^|\/)edit(?:\.html)?\/?$/;
+  var PRIVACY_ANY = /(?:^|\/)privacy(?:\.html)?\/?$/;
+  function short() {
+    if (g.BELJAR_DEPLOYED) return true;
+    const path = g.location && typeof g.location.pathname === "string" ? g.location.pathname : "";
+    return EDIT_SHORT.test(path);
+  }
+  function query(pairs) {
+    const parts = [];
+    for (const [k, v] of pairs) if (v) parts.push(k + "=" + encodeURIComponent(v));
+    return parts.length ? "?" + parts.join("&") : "";
+  }
+  function startsOnLast() {
+    const S = g.Settings;
+    try {
+      return !!S && typeof S.get === "function" && S.get("startPage") === "last";
+    } catch (_) {
+      return false;
+    }
+  }
+  function homeUrl(opts) {
+    const base = short() ? "/" : "index.html";
+    if (opts && opts.open) return base + query([["open", opts.open]]);
+    return base + (startsOnLast() ? "?home" : "");
+  }
+  function editUrl(pid) {
+    return (short() ? "/edit" : "edit.html") + query([["p", pid]]);
+  }
+  function privacyUrl() {
+    return short() ? "/privacy" : "privacy.html";
+  }
+  function signInUrl(loc) {
+    const l = loc || g.location;
+    const back = l ? String(l.pathname || "/") + String(l.search || "") : "/";
+    return "/api/auth/github/start" + query([["return", back]]);
+  }
+  function pageOf(loc) {
+    const p = String(loc && loc.pathname || "");
+    if (EDIT_ANY.test(p)) return "edit";
+    return PRIVACY_ANY.test(p) ? "privacy" : "home";
+  }
+  function projectParam(loc, name) {
+    const pairs = String(loc && loc.search || "").replace(/^\?/, "").split("&");
+    for (const pair of pairs) {
+      const eq = pair.indexOf("=");
+      if (eq === -1 || pair.slice(0, eq) !== name) continue;
+      let v = pair.slice(eq + 1);
+      try {
+        v = decodeURIComponent(v);
+      } catch (_) {
+        return null;
+      }
+      return PROJECT_ID.test(v) ? v : null;
+    }
+    return null;
+  }
+  function projectOf(loc) {
+    return pageOf(loc) === "edit" ? projectParam(loc, "p") : null;
+  }
+  function pendingOf(loc) {
+    return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
+  }
+  var ISSUES_URL = "https://github.com/dpbarry/bel-jar/issues";
+  function reportIssue() {
+    if (typeof g.open === "function") g.open(ISSUES_URL, "_blank", "noopener");
+  }
+  function go(url, opts) {
+    if (!g.location) return;
+    if (opts && opts.replace) g.location.replace(url);
+    else g.location.assign(url);
+  }
+  function settle(url) {
+    const h = g.history;
+    const l = g.location;
+    if (!h || !l || typeof h.replaceState !== "function") return false;
+    h.replaceState(h.state, "", url + String(l.hash || ""));
+    return true;
+  }
+  function nameProject(pid) {
+    const l = g.location;
+    if (!l || pageOf(l) !== "edit" || projectOf(l) === pid) return false;
+    return settle(editUrl(pid));
+  }
+  var Routes = {
+    PROJECT_ID,
+    ISSUES_URL,
+    homeUrl,
+    editUrl,
+    privacyUrl,
+    signInUrl,
+    pageOf,
+    projectOf,
+    pendingOf,
+    go,
+    settle,
+    nameProject,
+    reportIssue
+  };
+  g.Routes = Routes;
+
+  // js/boot/boot-project.mjs
+  function showableProject(storage, device, pid) {
+    if (!pid) return null;
+    const meta = readBootRecord(storage, SCHEMA, metaKey(pid));
+    if (!meta) return null;
+    const owner = meta.owner == null ? null : meta.owner;
+    const account = device && device.account || null;
+    const kept = device && Array.isArray(device.keptAccounts) ? device.keptAccounts : [];
+    if (owner !== null && owner !== account && !(!account && kept.includes(owner))) return null;
+    return meta;
+  }
+
   // js/boot/panel-restore-core.mjs
+  function paintProjectName(document2, storage, loc) {
+    const el = document2.getElementById("header-context-name");
+    if (!el) return null;
+    const device = readBootDevice(storage, SCHEMA);
+    const meta = showableProject(storage, device, projectOf(loc) || device.activeProject);
+    if (!meta || typeof meta.name !== "string" || !meta.name) return null;
+    el.textContent = meta.name;
+    return meta.name;
+  }
   var PANEL_CONFIG = {
     harpoon: {
       workspaceClass: "is-harpoon-open",
@@ -342,6 +500,10 @@
   // js/boot/panel-restore.mjs
   try {
     restorePanelState(document, localStorage);
+  } catch (_) {
+  }
+  try {
+    paintProjectName(document, localStorage, location);
   } catch (_) {
   }
 })();

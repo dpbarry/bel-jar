@@ -108,7 +108,7 @@ function proseBlockContaining(pos, blocks) {
 }
 
 function normalizeGapTrailingPragmas(gap) {
-  if (!gap) return gap;
+  if (!gap || !gap.includes('\n')) return gap;
   const lines = gap.split('\n');
   let i = lines.length - 1;
   while (i >= 0) {
@@ -145,11 +145,48 @@ function declarationHasRiskyDoubleDash(src, node) {
   return false;
 }
 
+export const keptAsWritten = (src, inner) =>
+  subtreeHasNonRecoveryError(inner) ||
+  declarationUsesPercentBlockMacro(src, inner) ||
+  declarationHasRiskyDoubleDash(src, inner);
+
 function isRecoverAbbrevNoise(inner, src) {
   if (inner.name !== 'AbbrevPragma') return false;
   if (!subtreeHasError(inner)) return false;
   const head = src.slice(inner.from, inner.to).trimStart();
   return !head.startsWith('--abbrev');
+}
+
+function programOf(node, src) {
+  const tokens = [];
+  const comments = [];
+  const norm = (n) => src.slice(n.from, n.to).replace(/\s+/g, ' ').trim();
+  node.cursor().iterate((n) => {
+    if (n.name === 'LineComment' || n.name === 'BlockComment') {
+      comments.push(norm(n));
+      return false;
+    }
+    if (!n.node.firstChild && n.to > n.from) tokens.push(`${n.name} ${norm(n)}`);
+    return undefined;
+  });
+  return { tokens, comments: comments.sort().join('\n') };
+}
+
+const SUPPLIED_BAR_AFTER = /^(?:= =|OfKeyword |FunKeyword )/;
+
+/** Same tokens in the same order and the same comments; the printer may only supply a leading `|`. */
+function sameProgram(a, b) {
+  if (a.comments !== b.comments) return false;
+  let i = 0;
+  let j = 0;
+  while (i < a.tokens.length || j < b.tokens.length) {
+    if (a.tokens[i] === b.tokens[j]) {
+      i++;
+      j++;
+    } else if (b.tokens[j] === '| |' && SUPPLIED_BAR_AFTER.test(b.tokens[j - 1] ?? '')) j++;
+    else return false;
+  }
+  return true;
 }
 
 function errorProseClusterEnd(decls, src, start) {
@@ -212,18 +249,19 @@ export function formatString(src, tree, opts = {}) {
       di = clusterEnd;
       continue;
     }
-    const verbatim =
-      subtreeHasNonRecoveryError(inner) ||
-      declarationUsesPercentBlockMacro(src, inner) ||
-      declarationHasRiskyDoubleDash(src, inner);
-    if (verbatim) {
-      out.push(normalizeNewlines(src.slice(wrap.from, wrap.to)));
-    } else {
-      let rendered = render(pp(inner), width);
-      rendered = rendered.replace(/[ \t]+(?=\n|$)/gm, '');
-      out.push(rendered);
-    }
+    const verbatim = keptAsWritten(src, inner);
+    const asWritten = normalizeNewlines(src.slice(wrap.from, wrap.to));
     cursor = wrap.to;
+    if (verbatim) {
+      out.push(asWritten);
+    } else {
+      const rendered = render(pp(inner), width).replace(/[ \t]+(?=\n|$)/gm, '');
+      const kept = sameProgram(programOf(inner, src), programOf(parser.parse(rendered).topNode, rendered));
+      if (!kept) opts.onRefuse?.({ from: wrap.from, to: wrap.to, rendered });
+      out.push(kept ? rendered : asWritten);
+      // Whitespace a recovered node swallowed at its end is the gap to the next declaration.
+      if (kept) while (cursor > wrap.from && /\s/.test(src[cursor - 1])) cursor--;
+    }
     di++;
   }
   const tailGap = src.slice(cursor, src.length);
@@ -252,18 +290,31 @@ export function formatString(src, tree, opts = {}) {
   return result;
 }
 
-function resolvePrintWidth(opts = {}) {
+export function resolvePrintWidth(opts = {}) {
   return opts.printWidth
     ?? readSetting('editorFormatWidth')
     ?? 80;
+}
+
+function warnRefused(count) {
+  if (count === 0) return;
+  showFormatToast(
+    count === 1
+      ? 'One declaration was left as written: printing it would have changed its code.'
+      : `${count} declarations were left as written: printing them would have changed their code.`,
+    'warn',
+  );
 }
 
 /** Format source text without a CodeMirror view. Returns formatted text, or null if refused. */
 export function formatSource(src, opts = {}) {
   const oldText = String(src ?? '');
   const printWidth = resolvePrintWidth(opts);
+  let refused = 0;
   try {
-    return formatString(oldText, parser.parse(oldText), { ...opts, printWidth });
+    const out = formatString(oldText, parser.parse(oldText), { ...opts, printWidth, onRefuse: () => refused++ });
+    if (!opts.quiet) warnRefused(refused);
+    return out;
   } catch (e) {
     if (!opts.quiet) {
       if (e && e.code === 'FORMAT_SHRINK_GUARD') {
@@ -280,8 +331,10 @@ export function formatDocument(state, opts = {}) {
   const oldText = state.doc.toString();
   const printWidth = resolvePrintWidth(opts);
   let newText;
+  let refused = 0;
   try {
-    newText = formatString(oldText, parser.parse(oldText), { ...opts, printWidth });
+    newText = formatString(oldText, parser.parse(oldText), { ...opts, printWidth, onRefuse: () => refused++ });
+    warnRefused(refused);
   } catch (e) {
     if (e && e.code === 'FORMAT_SHRINK_GUARD') {
       showFormatToast('Format refused. The result would drop too much content.', 'warn');

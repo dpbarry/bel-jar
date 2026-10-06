@@ -3,7 +3,9 @@ import {
   applySplitVars,
   applyStoredSettings,
   installEarlyBoot,
+  startTarget,
 } from '../js/boot/early-boot-core.mjs';
+import { metaKey } from '../js/persist/keys.mjs';
 import { createTable } from '../js/persist/table.mjs';
 import { DEVICE, DEVICE_KEY } from '../js/persist/device-schema.mjs';
 import { UI_FONT_SCALES, UI_TEXT_CONTRAST } from '../js/persist/settings-apply.mjs';
@@ -157,5 +159,61 @@ assert.equal(applyActivePanel(fakeDoc, 'library'), true);
 assert.ok(fakeDoc.nodes.workspace.classList.classes.has('is-library-open'));
 assert.equal(fakeDoc.nodes['library-panel'].attrs['aria-hidden'], 'false');
 assert.equal(fakeDoc.nodes['btn-library'].attrs['aria-pressed'], 'true');
+
+
+
+// ── the start page (Settings > Workspace): a plain arrival may go on to the last project ──
+{
+  const A = 'p_01m3xq1ph808nx8xjd4jj1rhcx';
+  const meta = (owner) => JSON.stringify({ at: 1, data: { name: 'Thesis', createdAt: 1, owner } });
+  const storage = (extra) => ({
+    data: Object.assign({ 'beljar/schema': String(SCHEMA), [metaKey(A)]: meta(null) }, extra || {}),
+    getItem(k) { return this.data[k] ?? null; },
+  });
+  const home = { pathname: '/', search: '', hash: '' };
+  const base = { settings: { startPage: 'last' }, device: { activeProject: A, account: '', keptAccounts: [] }, storage: storage(), loc: home, navType: 'navigate' };
+  const target = (o) => startTarget(Object.assign({}, base, o));
+
+  assert.equal(target({}), A, 'Last project, a bare home address, a fresh navigation: on to the last project');
+  assert.equal(target({ settings: { startPage: 'home' } }), null, 'Home (the default): home is shown');
+  assert.equal(target({ loc: { pathname: '/index.html', search: '', hash: '' } }), A, 'the file form of home is home too');
+  for (const search of ['?home', '?open=' + A, '?signin=failed&why=denied', '?keep=1']) {
+    assert.equal(target({ loc: { pathname: '/', search, hash: '' } }), null, 'anything in the address says what was asked for (' + search + '): home is shown');
+  }
+  assert.equal(target({ loc: { pathname: '/', search: '', hash: '#x' } }), null, 'a fragment too');
+  assert.equal(target({ loc: { pathname: '/edit', search: '', hash: '' } }), null, 'the editor is never sent anywhere');
+  for (const pathname of ['/privacy', '/privacy.html', '/bel-jar/privacy.html']) {
+    assert.equal(target({ loc: { pathname, search: '', hash: '' } }), null, 'nor the page on what BelJar keeps (' + pathname + '): it is read, not passed through');
+  }
+  assert.equal(target({ navType: 'reload' }), null, 'a reload shows the page that was there');
+  assert.equal(target({ navType: 'back_forward' }), null, 'and so does Back: it must not send you forward again');
+  assert.equal(target({ device: { activeProject: '', account: '', keptAccounts: [] } }), null, 'no project opened yet: home');
+  assert.equal(target({ storage: storage({ [metaKey(A)]: undefined }) }), null, 'the last project is gone: home, not an editor that would come straight back');
+  assert.equal(target({ storage: storage({ [metaKey(A)]: meta('u_ana') }) }), null, 'it belongs to an account that is not signed in: home');
+  assert.equal(target({ storage: storage({ [metaKey(A)]: meta('u_ana') }), device: { activeProject: A, account: 'u_ana', keptAccounts: [] } }), A, 'signed in as its owner: it opens');
+  assert.equal(target({ storage: storage({ [metaKey(A)]: meta('u_ana') }), device: { activeProject: A, account: '', keptAccounts: ['u_ana'] } }), A, 'kept on sign-out: it opens');
+  assert.equal(target({ storage: storage({ 'beljar/schema': '1' }) }), null, 'data in another format is not read');
+
+  // The whole of early boot: it replaces the address, hides the page, and says the page is leaving.
+  const went = [];
+  const had = globalThis.location;
+  globalThis.location = Object.assign({}, home, { replace: (url) => went.push(url), assign: (url) => went.push('assign ' + url) });
+  const el = { classList: { toggle() {} }, style: { props: {}, setProperty(k, v) { this.props[k] = v; }, removeProperty(k) { delete this.props[k]; } } };
+  const win = { matchMedia: () => ({ matches: false }), location: globalThis.location, performance: { getEntriesByType: () => [{ type: 'navigate' }] } };
+  const mem = storage({ 'beljar/settings': JSON.stringify({ at: 1, data: { values: { startPage: 'last' } } }), 'beljar/device': JSON.stringify({ at: 1, data: { values: { activeProject: A } } }) });
+  try {
+    installEarlyBoot({ document: { documentElement: el }, window: win, localStorage: mem });
+    assert.deepEqual(went, ['edit.html?p=' + A], 'early boot replaces the address with the last project (one history entry)');
+    assert.equal(win.BELJAR_LEAVING, true, 'says the page is leaving, so home starts nothing');
+    assert.equal(el.style.display, 'none', 'and shows nothing of home on the way');
+    went.length = 0;
+    const stay = { matchMedia: () => ({ matches: false }), location: Object.assign({}, globalThis.location, { search: '?home' }), performance: win.performance };
+    installEarlyBoot({ document: { documentElement: el }, window: stay, localStorage: mem });
+    assert.equal(went.length, 0, 'the explicit way home is left alone');
+    assert.equal(stay.BELJAR_LEAVING, undefined);
+  } finally {
+    globalThis.location = had;
+  }
+}
 
 console.log('OK test-early-boot.mjs');

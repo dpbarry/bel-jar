@@ -1,9 +1,9 @@
-/* -- Inspector header control bar (home · nav · label · search/sync) -- */
+/* -- Inspector header: the label first, as every panel's is, then home, back and
+   forward, search and follow at the end (docs/UI.md §7) -- */
 
 .inspector-header-bar {
   position: relative;
   justify-content: flex-start;
-  --panel-header-pad-start: var(--panel-header-pad-control);
   --panel-header-pad-end: var(--panel-header-pad-control);
 }
 
@@ -27,21 +27,24 @@
 }
 
 .inspector-header-bar .hsearch.is-open {
-  width: calc(100% - var(--panel-header-pad-start) - var(--panel-header-pad-end) - var(--icon-btn));
+  width: calc(100% - var(--panel-header-pad-start, var(--pad-inline)) - var(--panel-header-pad-end) - var(--icon-btn));
 }
 
 .inspector-panel-label {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: calc(100% - 7rem);
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-right: auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: center;
   pointer-events: none;
   z-index: 0;
   transition: opacity 170ms ease;
+}
+
+/* The search sits, placed absolutely, between forward and follow: keep its slot. */
+.inspector-header-bar .inspector-nav-group {
+  margin-right: var(--icon-btn);
 }
 
 .inspector-header-bar.is-search-open .inspector-panel-label {
@@ -120,7 +123,7 @@
 }
 .inspector-search-ac::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--base-mid) 50%, transparent);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .inspector-search-ac-item {

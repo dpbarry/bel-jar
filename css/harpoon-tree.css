@@ -166,7 +166,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 0.1rem 0.45rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid currentColor;
 }
 .hpt-kind--synth { color: var(--hpt-synth); }
@@ -219,7 +219,7 @@
   align-items: center;
   gap: 0.28rem;
   padding: 0.1rem 0.45rem 0.1rem 0.28rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--chain-accent) 32%, transparent);
   background: color-mix(in srgb, var(--chain-accent) 9%, transparent);
 }
@@ -230,7 +230,7 @@
   min-width: 1.05em;
   height: 1.05em;
   padding: 0 0.12em;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.58rem;
   font-variant-numeric: tabular-nums;
   color: color-mix(in srgb, var(--chain-accent) 90%, var(--base-highest));
@@ -289,7 +289,7 @@
   display: inline-flex;
   align-items: center;
   padding: 0.04rem 0.38rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--facet-accent) 32%, transparent);
   background: color-mix(in srgb, var(--facet-accent) 9%, transparent);
 }

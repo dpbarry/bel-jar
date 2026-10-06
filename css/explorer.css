@@ -300,7 +300,7 @@
   margin: 0;
   padding: 0.05rem 0.2rem;
   border: 1px solid var(--accent-mid);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: light-dark(hsl(220, 10%, 98%), hsl(220, 8%, 12%));
   color: inherit;
   font: inherit;

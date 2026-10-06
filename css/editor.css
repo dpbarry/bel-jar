@@ -434,7 +434,7 @@ html.light .output-header-progress {
   font-weight: 600;
   font-family: var(--mono);
   padding: 0.18rem 0.26rem;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   line-height: 1;
   transition: background 100ms ease, color 100ms ease;
@@ -479,7 +479,7 @@ html.light .output-header-progress {
   width: 1.3rem;
   height: 1.3rem;
   border: none;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted-higher);
   cursor: pointer;
@@ -584,7 +584,7 @@ html.light .output-header-progress {
   display: inline-block;
   background: var(--accent-lowest);
   border: 1px solid var(--accent-low);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--accent-high);
   padding: 0 0.4rem;
   margin: 0 0.2rem;
@@ -654,5 +654,46 @@ html.light .output-header-progress {
   #editor.editor-cm-host .cm-lineNumbers .cm-diagRow-error,
   #editor.editor-cm-host .cm-lineNumbers .cm-diagRow-warning {
     transition: none;
+  }
+}
+
+/* Case completion (js/editor-src/ide/case-ghosts.mjs): a proof's missing cases drawn as
+   faint arms where they belong. Same type as the code so a ghost reads as the line it
+   would be; faint, so it never competes with what was written. A filled ghost darkens
+   on hover because a click accepts it. */
+#editor.editor-cm-host .cm-case-ghost {
+  color: var(--ui-fg-faint);
+  white-space: pre;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#editor.editor-cm-host .cm-case-ghost__row {
+  padding-left: 6px;
+}
+
+#editor.editor-cm-host .cm-case-ghost__row[data-state="filled"] {
+  font-style: italic;
+  cursor: pointer;
+}
+
+#editor.editor-cm-host .cm-case-ghost__row[data-state="none"] {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--ui-fg-faint) 60%, transparent);
+}
+
+#editor.editor-cm-host .cm-case-ghost__row .beljar-tip-shimmer {
+  --shimmer-accent: var(--repl-holes-accent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  #editor.editor-cm-host .cm-case-ghost__row[data-state="filled"]:hover {
+    color: var(--ui-fg-muted);
+  }
+
+  #editor.editor-cm-host .cm-case-ghost__row:not([data-state="filled"]):not([data-state="searching"]):hover {
+    color: var(--ui-fg-muted);
+    cursor: pointer;
   }
 }

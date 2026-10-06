@@ -180,7 +180,7 @@ function buildComputingBody() {
   body.className = 'beljar-tip-body beljar-tip-body--computing';
   const label = document.createElement('span');
   label.className = 'beljar-tip-shimmer';
-  label.textContent = 'Recalculating...';
+  label.textContent = 'Recalculating…';
   setShimmerPhase(label);
   body.appendChild(label);
   return body;
@@ -820,7 +820,7 @@ function makeAsyncTooltip(range, label, headName, textPromise, options = {}) {
     create(view) {
       const dom = document.createElement('div');
       dom.className = 'jar-type-tip beljar-tip';
-      const head = buildTipHead(label, headName, 'Recalculating...');
+      const head = buildTipHead(label, headName, 'Recalculating…');
       const initialText = options.initialText || null;
       const body = initialText ? buildTypeBody(initialText, label) : buildComputingBody();
       dom.appendChild(head);

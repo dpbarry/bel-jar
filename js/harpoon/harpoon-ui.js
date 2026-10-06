@@ -4208,6 +4208,26 @@
     };
   }
 
+  // js/harpoon/orca-notice.mjs
+  var LONG_MS = 1e4;
+  function harpoonInView(session, sidePanelOpen) {
+    if (!session || session.disposed) return false;
+    if (session.host && session.host.kind === "float") return !!session.win;
+    return !!sidePanelOpen;
+  }
+  function orcaNotice(o) {
+    const reason = o.stuck && o.stuck.reason;
+    if (!o.complete && (reason === "stopped" || reason === "cancelled")) return null;
+    if (!(o.elapsedMs >= (o.longMs != null ? o.longMs : LONG_MS))) return null;
+    if (o.panelOpen && !o.hidden) return null;
+    const name = o.name ? o.name : "a hole";
+    const notice = o.complete ? { kind: "success", title: "Orca proved " + name, body: "The proof waits in Harpoon for you to place it." } : { kind: "warn", title: "Orca gave up on " + name, body: "Harpoon shows how far it got." };
+    notice.category = "ops";
+    notice.source = "orca.finished";
+    if (o.link && o.link.fileId) notice.links = o.link;
+    return notice;
+  }
+
   // js/harpoon/harpoon-lab.mjs
   var global8 = globalThis;
   function E() {
@@ -4418,6 +4438,34 @@
     var col = before.length - (lastNl < 0 ? 0 : lastNl + 1) + 1;
     var off = bodyStart + qIdx;
     return { hole: { line, col, name: null }, from: off, to: off + 1 };
+  }
+  function noteOrcaFinished(session, complete, stuck, startedAt) {
+    var N = global8.Notifications;
+    if (!N || typeof N.emit !== "function") return;
+    var now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    var fileId = session.fileId || session.anchor && session.anchor.fileId || null;
+    var link = null;
+    if (fileId) {
+      var text = liveFileText(fileId);
+      var hit = text ? findHoleHitInText(text, session.anchor, E()) : null;
+      var P2 = global8.Persist;
+      var file = P2 && P2.getFileById ? P2.getFileById(fileId) : null;
+      if (hit) link = { fileId, path: file ? file.name : "", from: hit.from, to: hit.to };
+    }
+    var notice = orcaNotice({
+      complete: !!complete,
+      stuck,
+      name: session.nativeAuto && session.nativeAuto.declName || session.anchor && session.anchor.declName || "",
+      elapsedMs: now - startedAt,
+      panelOpen: harpoonInView(
+        session,
+        !!(typeof document !== "undefined" && document.querySelector(".workspace.is-harpoon-open"))
+      ),
+      hidden: typeof document !== "undefined" && document.visibilityState === "hidden",
+      link,
+      longMs: typeof global8.BELJAR_ORCA_NOTICE_MS === "number" ? global8.BELJAR_ORCA_NOTICE_MS : LONG_MS
+    });
+    if (notice) N.emit(notice);
   }
   var displayApi = null;
   var commitApi = null;
@@ -5026,6 +5074,7 @@
       startedAt: typeof performance !== "undefined" ? performance.now() : Date.now()
     };
     var orcaToken = claimOrcaRun(this);
+    var orcaStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     this.render();
     if (!this._goalTierListener) {
       this._goalTierListener = function() {
@@ -5133,6 +5182,7 @@
       });
     }).then(function(r) {
       if (self.disposed) return false;
+      if (r && ed.withoutSynthesizedMeasure) r = ed.withoutSynthesizedMeasure(r, thm);
       self.probeAnchor();
       if (self._retireOrca) {
         self._retireOrca = false;
@@ -5164,6 +5214,7 @@
       self.render();
       self.refreshTreeExplorer();
       if (self.manual) self.absorbOrcaResult(r);
+      noteOrcaFinished(self, !!(r && r.complete), stuck, orcaStartedAt);
       return !!(r && r.complete);
     }).catch(function(err) {
       if (self.disposed) return false;
@@ -5182,6 +5233,7 @@
       };
       self.render();
       self.refreshTreeExplorer();
+      noteOrcaFinished(self, false, self.nativeAuto.stuck, orcaStartedAt);
       return false;
     }).finally(function() {
       var stillMine = self._orcaToken === orcaToken;

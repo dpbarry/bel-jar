@@ -441,6 +441,7 @@
       const input = el2("input", "jar-name-prompt__input");
       input.type = "text";
       input.value = initialValue;
+      input.autofocus = true;
       input.spellcheck = false;
       input.autocomplete = "off";
       if (opts.mono) input.classList.add("is-mono");
@@ -524,11 +525,9 @@
         if (!settled) finish(null);
       });
       openDialog(dialogEl);
-      requestAnimationFrame(() => {
-        input.focus();
-        input.setSelectionRange(sel.start, sel.end);
-        showError(validate(currentNormalized()));
-      });
+      if (document.activeElement !== input) input.focus();
+      input.setSelectionRange(sel.start, sel.end);
+      showError(validate(currentNormalized()));
     });
   }
   var NamePrompt = {

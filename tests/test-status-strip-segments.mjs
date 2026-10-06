@@ -28,7 +28,8 @@ expect(find(inHole, 'goal').render === 'type', 'the goal is rendered as syntax-h
 expect(find(inHole, 'goal').grow === true, 'the goal takes the slack');
 expect(find(inHole, 'goal').action === 'open-harpoon', 'clicking the goal opens Harpoon');
 expect(find(inHole, 'holes').text === '+2 more', 'standing in a hole, the counter shows the rest');
-expect(find({ ...base, inHole: true, goal: 'x', holes: 1 }, 'holes').text === 'last hole', 'the final hole says so');
+expect(find({ ...base, inHole: true, goal: 'x', holes: 1 }, 'holes') === undefined,
+  'standing in the only hole: no count, and no button that goes nowhere');
 expect(find({ ...base, holes: 4 }, 'holes').text === '4 holes', 'outside a hole it is a plain count');
 expect(find(base, 'holes') === undefined, 'no holes, no hole segment');
 
@@ -207,7 +208,7 @@ expect(seg({ ...pending, goalPending: false }, 'goal').title.indexOf('has not ch
 
 // The count beside it keys on the same fact, or it counts the hole you are in.
 expect(seg(pending, 'holes').text === '+1 more', 'the hole count knows you are standing in one');
-expect(seg({ ...pending, holes: 1 }, 'holes').text === 'last hole', 'even with the goal still computing');
+expect(seg({ ...pending, holes: 1 }, 'holes') === undefined, 'even with the goal still computing');
 
 // ── sync: only what needs the person (docs/UI.md; the cloud says the rest) ──
 const syncOf = (x) => ({ ...base, sync: { signedIn: true, state: 'synced', differs: [], notices: true, ...x } });
@@ -255,6 +256,14 @@ const suBad = find(suiteOf({ upstreamErrors: ['a.bel'] }), 'suite');
 expect(suBad.tone === 'warning' && suBad.title.indexOf('An earlier file has errors: a.bel') >= 0,
   'a failing earlier member is this file\'s problem too');
 expect(find(suiteOf({ count: 1, index: 0 }), 'suite').sub === '', 'a one-file suite has no place to state');
+const holesTip = (holes, elsewhere) => find({ ...suiteOf({ elsewhere }), holes }, 'suite').title.split('\n')[1];
+expect(holesTip(2, [{ name: 'a.bel', holes: 3 }, { name: 'b.bel', holes: 2 }])
+  === '7 holes in the suite: 2 here, 3 in a.bel and 2 in b.bel', 'holes across the suite, file by file');
+expect(holesTip(0, [{ name: 'a.bel', holes: 1 }]) === '1 hole in the suite: 1 in a.bel', 'none here, so here is not named');
+expect(holesTip(4, []) === '4 holes in the suite, all here', 'all in this file');
+expect(holesTip(0, []) === 'No holes in the suite', 'a finished suite says so');
+expect(find({ ...suiteOf({}), holes: 3 }, 'suite').title.indexOf('hole') < 0,
+  'with the other members unknown, it says nothing rather than undercount');
 expect(find(base, 'suite') === undefined, 'no suite, no segment');
 expect(find({ ...suiteOf({}), hasFile: false }, 'suite') === undefined, 'no file, no suite');
 const suKeys = keys({ ...suiteOf({}), undoDepth: 1 });

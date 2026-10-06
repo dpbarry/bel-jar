@@ -138,6 +138,12 @@ html.light .jar-dialog::backdrop {
   padding: 0;
 }
 
+/* Settings' search icon is centred on the placeholder's capital, measured in
+   painted pixels (scratch/probes/probe-icon-text.mjs): it was drawn half a pixel high. */
+.jar-settings__search-slot .library-find__icon svg {
+  transform: translateY(0.5px);
+}
+
 .jar-settings__search-slot {
   position: relative;
   flex: 1 1 auto;

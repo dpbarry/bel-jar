@@ -31,6 +31,21 @@ const order = [];
 const byId = Object.create(null);
 let version = 0;
 
+/**
+ * The page this is: 'home' or 'editor' (js/frame/routes.mjs), or null where
+ * there is no page at all (the tests, a worker): then nothing is held back.
+ */
+function currentPage() {
+  const routes = global.Routes;
+  if (!routes || typeof routes.pageOf !== 'function' || !global.location) return null;
+  return routes.pageOf(global.location) === 'edit' ? 'editor' : 'home';
+}
+
+/** Whether a command (by its `pages`) runs on `page`. */
+function runsOn(cmd, page) {
+  return !page || cmd.pages === 'both' || cmd.pages === page;
+}
+
 function normalize(record) {
   const id = String(record.id);
   return Object.assign({}, record, {
@@ -38,6 +53,7 @@ function normalize(record) {
     title: titleFor(id, record.title),
     section: record.section || '',
     scope: record.scope || 'global',
+    pages: record.pages === 'home' || record.pages === 'both' ? record.pages : 'editor',
     keybindable: !!record.keybindable,
     palette: !!record.palette,
     cmdline: record.cmdline === false ? false : true,
@@ -54,7 +70,16 @@ function define(desc) {
   if (!id) return false;
   const prev = byId[id];
   if (!prev) order.push(id);
-  byId[id] = normalize(Object.assign({}, prev || {}, desc, { id }));
+  const next = normalize(Object.assign({}, prev || {}, desc, { id }));
+  // ⛔ Behaviour is kept only on a page the command declares. An editor command
+  // wired on home by mistake would be a palette row and a chord that do nothing;
+  // without a `run` it is simply not there.
+  if (!runsOn(next, currentPage())) {
+    delete next.run;
+    delete next.when;
+    delete next.preview;
+  }
+  byId[id] = next;
   version += 1;
   return true;
 }
@@ -110,6 +135,7 @@ function isAvailable(cmd, ctx) {
  *   runnable                      has a `run`
  *   available                     `when()` passes (pass a ctx to widen it)
  *   scope / section               exact match
+ *   page                          runs on that page ('home' | 'editor')
  */
 function list(filter) {
   const f = filter || {};
@@ -122,6 +148,7 @@ function list(filter) {
     if (f.cmdline === true && !cmd.cmdline) continue;
     if (f.runnable === true && typeof cmd.run !== 'function') continue;
     if (f.scope && cmd.scope !== f.scope) continue;
+    if (f.page && !runsOn(cmd, f.page)) continue;
     if (f.section && cmd.section !== f.section) continue;
     if (f.available === true && !isAvailable(cmd, f.ctx)) continue;
     out.push(cmd);
@@ -283,6 +310,13 @@ export const Commands = {
   run,
   styleFor,
   idsWithStyle,
+  /** 'home' | 'editor', or null with no page (tests). */
+  page: currentPage,
+  /** Whether `id` runs on this page (its `pages` in the catalogue). */
+  runsHere(id) {
+    const cmd = get(id);
+    return !!cmd && runsOn(cmd, currentPage());
+  },
   // The preference table, so the editor's `:set` resolves through the same
   // source as the palette rows without importing across the bundle seam.
   settings: {

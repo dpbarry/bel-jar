@@ -9,6 +9,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { SETTINGS } from '../js/persist/settings-schema.mjs';
+import { SEEN_SETTING } from '../js/ui/hint-seen.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 let n = 0;
@@ -49,6 +50,11 @@ for (const rel of walk('js')) {
 // The frame repaints boot settings from Settings.values(); count those as used.
 for (const row of SETTINGS.filter((r) => r.boot)) {
   if (!used.has(row.id)) used.set(row.id, new Set(['js/frame/frame.mjs (repaint)']));
+}
+
+// A tip's seen row is read and written by js/ui/hint.mjs through hint-seen.mjs's table.
+for (const row of Object.values(SEEN_SETTING)) {
+  if (!used.has(row)) used.set(row, new Set(['js/ui/hint.mjs (hint-seen.mjs)']));
 }
 
 const undeclared = [...used.keys()].filter((id) => !declared.has(id));

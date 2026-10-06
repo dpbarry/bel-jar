@@ -1,5 +1,9 @@
 // Lightweight coachmark balloons. One at a time; optional once-ever via id.
 // Hint.show({ id, anchor, text, duration?, onClick? })
+// Once-ever follows the account: a tip seen on one computer is seen on all of
+// them (hint-seen.mjs).
+import { seenSetting, wasSeen, carryForward, settingsKnown } from './hint-seen.mjs';
+
 const global = globalThis;
 const DEFAULT_DURATION_MS = 10000;
   const GAP_PX = 10;
@@ -22,13 +26,23 @@ const DEFAULT_DURATION_MS = 10000;
   let resizeBound = false;
   let actionFn = null;
 
+  function setting(row) {
+    return typeof Settings !== 'undefined' && Settings.get ? Settings.get(row) : undefined;
+  }
+
   function wasDismissed(id) {
-    if (!id || typeof Device === 'undefined') return false;
-    return Device.get('dismissedHints').indexOf(id) !== -1;
+    if (!id) return false;
+    return wasSeen(id, { setting: setting, deviceList: typeof Device !== 'undefined' ? Device.get('dismissedHints') : [] });
   }
 
   function persistDismissed(id) {
-    if (!id || typeof Device === 'undefined') return;
+    if (!id) return;
+    var row = seenSetting(id);
+    if (row && typeof Settings !== 'undefined') {
+      if (Settings.get(row) !== true) Settings.set(row, true);
+      return;
+    }
+    if (typeof Device === 'undefined') return;
     var list = Device.get('dismissedHints');
     if (list.indexOf(id) !== -1) return;
     list.push(id);
@@ -239,6 +253,38 @@ const DEFAULT_DURATION_MS = 10000;
     leaveTimer = setTimeout(finish, LEAVE_MS + 40);
   }
 
+  /** Whether the account has answered what it has seen (hint-seen.mjs settingsKnown). */
+  function accountAnswered() {
+    var P = global.Persist;
+    var summary = P && typeof P.syncSummary === 'function' ? P.syncSummary() : null;
+    return settingsKnown(summary, setting('syncSettings') !== false);
+  }
+
+  // Tips waiting for the first round on this device, by id; the first whose
+  // anchor is still on screen shows when the round lands.
+  var waiting = new Map();
+  var waitUnsub = null;
+
+  function release() {
+    if (waitUnsub) { waitUnsub(); waitUnsub = null; }
+    var queued = Array.from(waiting.values());
+    waiting.clear();
+    for (var i = 0; i < queued.length; i++) {
+      var a = queued[i].anchor;
+      var box = a && a.isConnected ? a.getBoundingClientRect() : null;
+      if (box && box.width > 0 && box.height > 0 && show(Object.assign({}, queued[i], { waited: true }))) return;
+    }
+  }
+
+  function waitForAccount(o) {
+    waiting.set(String(o.id), o);
+    if (waitUnsub) return;
+    var P = global.Persist;
+    if (P && typeof P.onSyncSummary === 'function') {
+      waitUnsub = P.onSyncSummary(function () { if (accountAnswered()) release(); });
+    }
+  }
+
   function show(opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
     const id = o.id != null ? String(o.id) : null;
@@ -249,6 +295,10 @@ const DEFAULT_DURATION_MS = 10000;
 
     if (!anchor || !text) return false;
     if (once && id && wasDismissed(id)) return false;
+    if (once && id && seenSetting(id) && !o.waited && !accountAnswered()) {
+      waitForAccount(o);
+      return false;
+    }
     if (!ensureDom()) return false;
 
     if (visible || dismissing) {
@@ -295,6 +345,20 @@ const DEFAULT_DURATION_MS = 10000;
   function onResize() {
     if (!visible || dismissing) return;
     place();
+  }
+
+  // Seen on another computer while this one shows it: the round that brings
+  // the news closes it.
+  if (typeof Settings !== 'undefined' && typeof Settings.subscribe === 'function') {
+    Settings.subscribe(function (e) {
+      if (!visible || dismissing || !activeId) return;
+      var row = seenSetting(activeId);
+      if (row && e && Array.isArray(e.ids) && e.ids.indexOf(row) !== -1 && setting(row) === true) dismiss();
+    });
+  }
+  // What this device saw before the rows existed reaches the cloud.
+  if (typeof Settings !== 'undefined' && typeof Device !== 'undefined') {
+    carryForward(Device.get('dismissedHints'), setting).forEach(function (row) { Settings.set(row, true); });
   }
 
   global.Hint = {

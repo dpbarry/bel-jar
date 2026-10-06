@@ -14,7 +14,7 @@
   top: 0;
   min-width: 10rem;
   max-width: min(18rem, calc(100vw - 1rem));
-  padding: var(--menu-pad);
+  padding: var(--menu-pad) 0;
   font-family: var(--sans);
   background: var(--menu-bg);
   border: 1px solid var(--menu-border);
@@ -69,9 +69,9 @@
   justify-content: flex-start;
   gap: 0.3rem;
   width: 100%;
-  padding: 0.34rem 0.7rem 0.34rem 0.65rem;
+  padding: 0.34rem calc(0.7rem + var(--menu-pad)) 0.34rem calc(0.65rem + var(--menu-pad));
   border: none;
-  border-radius: var(--menu-item-radius);
+  border-radius: 0;
   background: transparent;
   color: var(--menu-item-fg);
   font-size: 0.78rem;
@@ -159,13 +159,13 @@
 /* Non-interactive rows */
 .menu-separator {
   height: 1px;
-  margin: 0.3rem 0.45rem;
+  margin: 0.3rem 0;
   background: var(--menu-separator);
   pointer-events: none;
 }
 
 .menu-section {
-  padding: 0.5rem 0.6rem 0.25rem;
+  padding: 0.5rem calc(0.6rem + var(--menu-pad)) 0.25rem;
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -187,7 +187,7 @@
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  padding: 0.4rem 0.7rem 0.45rem 0.65rem;
+  padding: 0.4rem calc(0.7rem + var(--menu-pad)) 0.45rem calc(0.65rem + var(--menu-pad));
   pointer-events: none;
   user-select: none;
 }
@@ -238,7 +238,7 @@
   min-width: 1.9rem;
   text-align: center;
   padding: 0.04rem 0.28rem;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-size: 0.6rem;
   font-weight: 600;
   letter-spacing: 0.04em;

@@ -10,6 +10,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 const TYPES = {
   '.js': 'text/javascript',
@@ -44,13 +45,32 @@ export async function openProbe(opts = {}) {
   fs.mkdirSync(outDir, { recursive: true });
 
   const server = http.createServer((req, res) => {
+    // A probe that needs an API on the same origin answers it (`opts.api(req, res)`: true when it did).
+    if (opts.api && opts.api(req, res)) return;
     let p = decodeURIComponent(req.url.split('?')[0]);
     if (p === '/') p = '/index.html';
+    // As the deployed site answers them: /edit is edit.html (js/frame/routes.mjs).
+    else if (!path.extname(p) && fs.existsSync(path.join(root, p + '.html'))) p += '.html';
     fs.readFile(path.join(root, p), (err, data) => {
       if (err) { res.writeHead(404); res.end(); return; }
       // The editor's worker needs cross-origin isolation, same as production.
       res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
       res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+      // Validators, as the deployed site sends them (Cloudflare's static assets:
+      // an ETag, and revalidate every time). Without any, nothing a page fetches
+      // ahead can be kept for the next one, and home's preload of the editor
+      // (js/home/preload-editor.mjs) could never be seen to work here.
+      const etag = '"' + data.length.toString(16) + '-' + createHash('sha1').update(data).digest('hex').slice(0, 16) + '"';
+      // ⛔ Not the Beluga runtime (24 MB and more): the deployed site does not serve
+      // it at all (it comes from R2), and a browser context's in-memory cache cannot
+      // hold it: offered as cacheable, its load was reported as a failed cache write.
+      if (data.length < 8 * 1024 * 1024) {
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+        if (req.headers['if-none-match'] === etag) { res.writeHead(304); res.end(); return; }
+      } else {
+        res.setHeader('Cache-Control', 'no-store');
+      }
       res.writeHead(200, { 'Content-Type': TYPES[path.extname(p)] || 'application/octet-stream' });
       res.end(data);
     });
@@ -71,7 +91,8 @@ export async function openProbe(opts = {}) {
   page.on('pageerror', (e) => errors.push(String(e && e.message || e)));
   page.on('console', (m) => { if (m.type() === 'error' && !isNoServer404(m)) errors.push(m.text()); });
 
-  await page.goto(`http://localhost:${port}/index.html`, { waitUntil: 'domcontentloaded' });
+  // The editor, unless the probe is of home (`page: 'index.html'`).
+  await page.goto(`http://localhost:${port}/${opts.page || 'edit.html'}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(
     opts.waitFor || (() => window.Commands && window.StatusStrip),
     { timeout: 60000 },

@@ -36,7 +36,10 @@ export function declaredFamilies(code) {
     // form the corpus is mostly written in (`oft : term -> tp -> type.`) reports
     // kind `lf` with NO name, and its constructors are separate top-level decls.
     // Both are families; only the first announces itself.
-    if (d.kind !== 'inductive' && d.kind !== 'lf') continue;
+    // `stratified` is the other computation-level former (logical relations). Codata
+    // is left out on purpose: it is not analysed by constructor, and the engine scopes
+    // coinduction out.
+    if (d.kind !== 'inductive' && d.kind !== 'lf' && d.kind !== 'stratified') continue;
     if (d.name && isFamilyDecl(d.text)) out.push(d.name);
     else if (!d.name) { const h = familyHeadOf(d.text); if (h) out.push(h); }
     for (const m of mutualMembers(d.text) || []) {
@@ -49,7 +52,8 @@ export function declaredFamilies(code) {
 /** The declared type of a declaration: everything between `:` and `=`/terminator. */
 function declaredTypeOf(declText) {
   let s = String(declText == null ? '' : declText).trim();
-  s = s.replace(/^(?:and\s+)?(?:LF|inductive|rec)\s+/, '');
+  // Whatever keyword opens the declaration (`LF`, `inductive`, `and rec`…), its type
+  // starts at the first colon: no keyword contains one.
   const colon = s.indexOf(':');
   if (colon < 0) return '';
   s = s.slice(colon + 1);
@@ -64,7 +68,12 @@ function declaredTypeOf(declText) {
   return s.replace(/[.;]\s*$/, '');
 }
 
-/** A family is a declaration whose result is literally `type`. */
+/**
+ * A family is a declaration whose result is literally `type`, or `ctype` for a
+ * computation-level inductive (`inductive Sn : [ |- tm] -> ctype = …`). The second
+ * matters: proofs by induction on those are the logical-relations and
+ * strong-normalisation developments, and without it they resolve to no judgment.
+ */
 function isFamilyDecl(declText) {
   const t = declaredTypeOf(declText);
   if (!t) return false;
@@ -75,8 +84,11 @@ function isFamilyDecl(declText) {
     if (c === '(' || c === '[' || c === '{') depth += 1;
     else if (c === ')' || c === ']' || c === '}') depth -= 1;
     else if (depth === 0 && c === '-' && t[i + 1] === '>') last = i + 2;
+    // ⛔ And the glyph arrow the editor writes (`oft : tm → tp → type`): reading only
+    // `->` found no family in any signature typed in BelJar (2026-10-05).
+    else if (depth === 0 && c === '→') last = i + 1;
   }
-  return /^\s*type\s*[.;]?\s*$/.test(t.slice(last));
+  return /^\s*c?type\s*[.;]?\s*$/.test(t.slice(last));
 }
 
 /** The head identifier of a nameless (Twelf-form) declaration, when it is a family. */
@@ -98,25 +110,52 @@ export function ruleIndex(code) {
 }
 
 /**
- * Index of the top-level `=>` that separates an arm's pattern from its body, or -1.
- * Depth-aware: a `=>` inside a box or a parenthesised type is not the separator.
+ * The top-level arrow that separates an arm's pattern from its body:
+ * `{ index, length }`, or null. Depth-aware: an arrow inside a box or a
+ * parenthesised type is not the separator.
+ *
+ * ⛔ BOTH SPELLINGS. Beluga takes `=>` and `⇒`, and the corpus uses the second in
+ * 222 arms across 76 proofs. They differ in WIDTH, so the body does not start at
+ * `index + 2`; that is why this returns a length and why `splitArm` is the only
+ * place that slices.
  */
-export function armArrowIndex(armText) {
+export function armArrow(armText) {
   const s = String(armText == null ? '' : armText);
   let depth = 0;
-  for (let i = 0; i < s.length - 1; i += 1) {
+  for (let i = 0; i < s.length; i += 1) {
     const c = s[i];
     if (c === '(' || c === '[' || c === '{') depth += 1;
     else if (c === ')' || c === ']' || c === '}') depth -= 1;
-    else if (depth === 0 && c === '=' && s[i + 1] === '>') return i;
+    else if (depth === 0 && c === '=' && s[i + 1] === '>') return { index: i, length: 2 };
+    else if (depth === 0 && c === '⇒') return { index: i, length: 1 };
   }
-  return -1;
+  return null;
 }
 
-/** Everything left of the arm's top-level `=>`. */
+/** Index of that arrow, or -1. */
+export function armArrowIndex(armText) {
+  const a = armArrow(armText);
+  return a ? a.index : -1;
+}
+
+/**
+ * One arm as `{ pattern, body }`, or null when it has no top-level arrow.
+ * The pattern keeps its type annotation; a leading bar is dropped.
+ */
+export function splitArm(armText) {
+  const s = String(armText == null ? '' : armText);
+  const a = armArrow(s);
+  if (!a) return null;
+  return {
+    pattern: s.slice(0, a.index).replace(/^\s*\|/, '').trim(),
+    body: s.slice(a.index + a.length).trim(),
+  };
+}
+
+/** Everything left of the arm's top-level arrow. */
 function splitArmPattern(armText) {
-  const i = armArrowIndex(armText);
-  return i < 0 ? armText : armText.slice(0, i);
+  const a = armArrow(armText);
+  return a ? armText.slice(0, a.index) : armText;
 }
 
 /**
@@ -139,8 +178,16 @@ export function armRuleHead(armText) {
   // boxes. ⚠ Unpinned: once the body is cut off, no real pattern in the corpus has a
   // second turnstile, so `indexOf` vs `lastIndexOf` is not observable here. Correct by
   // construction, not by test — do not read the suite as evidence for it.
-  const turn = term.indexOf('|-');
-  if (turn >= 0) term = term.slice(turn + 2);
+  // ⛔ Only for a BOXED pattern: a computation-level pattern (`M_dot sigma' [h |- M]`)
+  // carries boxes in its arguments, and stripping up to their turnstile read its head
+  // as `M` (2026-10-03).
+  // ⛔ BOTH SPELLINGS, as with the arrow: the editor's alias expansion writes `⊢`, so a
+  // person's file reads `[ ⊢ e_succ S]` while the corpus reads `|-`. Reading only the
+  // second found no head in any arm typed in BelJar (2026-10-05).
+  if (boxed) {
+    const turn = /\|-|⊢/.exec(term);
+    if (turn) term = term.slice(turn.index + turn[0].length);
+  }
   term = term.trim();
   // A head is a leading identifier. A lambda, a parenthesised term, a projection or a
   // parameter variable is not a constructor application we can name.
@@ -184,13 +231,13 @@ export function authoredPieces(code, arms) {
     if (!rule) { unreadable += 1; continue; }
     const fam = idx.get(rule) || null;
     if (fam) votes.set(fam, (votes.get(fam) || 0) + 1);
-    const eq = armArrowIndex(armText);
+    const sp = splitArm(armText);
     pieces.push({
       id: `the ${rule} case`,
       rule,
       family: fam,
-      pattern: (eq >= 0 ? armText.slice(0, eq) : armText).replace(/^\s*\|/, '').trim(),
-      body: eq >= 0 ? armText.slice(eq + 2).trim() : '',
+      pattern: sp ? sp.pattern : armText.replace(/^\s*\|/, '').trim(),
+      body: sp ? sp.body : '',
     });
   }
 

@@ -27,6 +27,8 @@ _rebuild
 tests
 scripts
 scratch
+# the kit page: every component on one page, for looking at (dev/kit.html)
+dev
 results
 docs
 .cursor

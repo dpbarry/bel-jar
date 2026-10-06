@@ -59,6 +59,7 @@ js/editor-src/ide/
 |---|---|
 | `id` | stable, dotted, domain-first. The **only** thing the two halves share. |
 | `scope` | `global` (window keydown listener) or `editor` (CodeMirror keymap). |
+| `pages` | which page runs it: `editor` (the default), `home` or `both`. BelJar is two pages (PERSIST §5.11) and the registry is on both. A command home runs too is named in the catalogue's `HOME_TOO`; a generated preference says `pages: 'both'` on its row in `command-settings.mjs`. ⛔ The registry keeps no `run` for a command on a page it does not declare. |
 | `palette` | appears in the palette's `>` list. Motions set this `false` — nobody searches a palette for "move left". |
 | `keybindable` | appears in the Keybindings sheet and can take a chord. |
 | `cmdline` | default `true`; set `false` to stay off the `:` line. |
@@ -69,6 +70,9 @@ js/editor-src/ide/
 **2. Behaviour → wherever the action lives.**
 
 - Shell-side: `js/app/app-command-palette.mjs`, via `on(id, run, when)`.
+- On both pages: `js/commands/shared-commands.mjs` (the account, sync, the theme, the palette, the
+  preferences). Home's own two are in `js/home/home-commands.mjs`. `tests/test-page-commands.mjs`
+  holds that what home attaches is exactly what the catalogue declares for it.
 - Editor-side: `js/editor-src/ide/editor-commands.mjs` — add to `EDITOR_COMMANDS` (a plain
   CodeMirror command) or `CUSTOM_COMMANDS` (anything needing the semantic model).
 
@@ -551,6 +555,7 @@ one style can reach the others must be able to reach as well — through their o
 | Which-key on a pending prefix | no prefixes exist | `g`, `]`, `[`, the leader | `C-x`, `C-c`, `M-g` |
 | The style's own keys, listed | the Keybindings sheet | ⚠ not listable — the package publishes no keymap | Available Keys reads the package's 62 |
 | **Keyboard macros** | ✔ bindable `macro.record` / `macro.replay` | ✔ `q{reg}` / `@{reg}` / `@@` | ✔ `C-x (` `C-x )` `C-x e` |
+| **A filled case** ([case completion](case-completion.md)): accept / fill / dismiss | `Tab` at the end of the line a ghost hangs from (accept only); the palette; bindable | `Tab` in Insert mode; `<leader>a` / `<leader>c` / `<leader>x` | `Tab`; `C-c a` / `C-c c` / `C-c k` |
 
 ⛔ **Three of those rows used to be blank for Standard and two for Emacs**, and every one was
 a defect rather than a decision:

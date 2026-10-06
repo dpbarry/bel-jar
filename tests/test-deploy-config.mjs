@@ -59,6 +59,7 @@ expect(prod.observability && prod.observability.enabled === true, 'the Worker\'s
 expect(!('routes' in prod) && !('route' in prod) && !('workers_dev' in prod),
   'the deploy leaves the domain and workers.dev as they are (a listed route would switch workers.dev off)');
 expect(!('DEV_ACCOUNT_HEADER' in vars), 'production never lets a request name its own account (no DEV_ACCOUNT_HEADER)');
+expect(!('DEV_RUNTIME_ORIGIN' in vars), 'nor passes the runtime on from a local file server (no DEV_RUNTIME_ORIGIN): it comes from R2');
 expect(!Object.keys(vars).some((k) => /SECRET|TOKEN|PASSWORD/i.test(k)), 'no secret is a plain var (GITHUB_CLIENT_SECRET goes in with wrangler secret put)');
 expect(/^Ov23[A-Za-z0-9]+$/.test(vars.GITHUB_CLIENT_ID || ''), 'the live GitHub app\'s client id is set');
 expect(fs.existsSync(path.join(root, prod.main)), `the Worker exists (${prod.main})`);
@@ -78,6 +79,14 @@ expect(db.migrations_dir && fs.existsSync(path.join(root, db.migrations_dir, '00
   'wrangler d1 migrations apply --remote finds server/migrations');
 expect(prod.r2_buckets[0].bucket_name !== dev.r2_buckets[0].bucket_name && db.database_name !== dev.d1_databases[0].database_name,
   'production and local development never share a database or a bucket');
+// The daily job (server/deletion.mjs): finishes account deletions, lets go of sessions past their time.
+const crons = (prod.triggers && prod.triggers.crons) || [];
+expect(crons.length === 1 && /^\d+ \d+ \* \* \*$/.test(crons[0]), `production runs the daily job once a day (${JSON.stringify(crons)})`);
+const workerSrc = fs.readFileSync(path.join(root, prod.main), 'utf8');
+expect(/async scheduled\(controller, env, ctx\)/.test(workerSrc) && /dailySweep\(/.test(workerSrc), 'and the Worker answers it');
+const migrations = fs.readdirSync(path.join(root, db.migrations_dir)).filter((f) => f.endsWith('.sql')).sort();
+expect(migrations.every((f, i) => f.startsWith(String(i + 1).padStart(4, '0') + '_')),
+  `migrations are numbered in order, one each (${migrations.join(', ')}): wrangler applies them by name`);
 
 // ── the upload ────────────────────────────────────────────────────────────
 const patterns = ['/.assetsignore', '/_redirects', '/_headers',
@@ -99,7 +108,7 @@ const uploaded = [];
 const up = new Set(uploaded);
 
 const privatePaths = [/^\.git\//, /^\.git[a-z]*$/, /(^|\/)\.dev\.vars/, /^server\//, /^\.wrangler\//, /^node_modules\//,
-  /^Beluga-W\//, /^tests\//, /^scripts\//, /^scratch\//, /^docs\//, /^wrangler\.jsonc$/, /\.md$/, /^package(-lock)?\.json$/];
+  /^Beluga-W\//, /^tests\//, /^scripts\//, /^scratch\//, /^dev\//, /^docs\//, /^wrangler\.jsonc$/, /\.md$/, /^package(-lock)?\.json$/];
 for (const re of privatePaths) {
   const hit = uploaded.find((p) => re.test(p));
   expect(!hit, `nothing matching ${re} is uploaded (found ${hit})`);
@@ -109,13 +118,26 @@ const big = uploaded.find((p) => fs.statSync(path.join(root, p)).size > 25 * 102
 expect(!big, `no file is over the 25 MiB asset cap (${big})`);
 expect(uploaded.length < 20000 * 0.5, `the upload is well under the 20,000-file limit (${uploaded.length})`);
 
-// Everything the page loads goes up.
-const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-const refs = [...html.matchAll(/(?:src|href)="([^"#:?]+)(?:\?[^"]*)?"/g)].map((m) => m[1].replace(/^\.\//, ''))
-  .filter((r) => !r.startsWith('/') && !/^beluga_web\./.test(r));
+// Everything the two pages load goes up: home (index.html) and the editor (edit.html).
+const DOCUMENTS = ['index.html', 'edit.html'];
+const refs = [];
+for (const doc of DOCUMENTS) {
+  const html = fs.readFileSync(path.join(root, doc), 'utf8');
+  const own = [...html.matchAll(/(?:src|href)="([^"#:?]+)(?:\?[^"]*)?"/g)].map((m) => m[1].replace(/^\.\//, ''))
+    .filter((r) => !r.startsWith('/') && !/^beluga_web\./.test(r));
+  expect(own.length > 4, `${doc} names the files it loads (${own.length})`);
+  refs.push(...own);
+}
 const css = fs.readFileSync(path.join(root, 'css', 'style.css'), 'utf8');
 for (const m of css.matchAll(/@import\s+(?:url\()?["']([^"']+)["']/g)) refs.push(path.posix.join('css', m[1]));
-expect(refs.length > 10, `index.html and style.css name the files the page loads (${refs.length})`);
-for (const r of ['index.html', 'sw.js', ...refs]) expect(up.has(r), `the page's ${r} is uploaded`);
+expect(refs.length > 10, `the documents and style.css name the files the pages load (${refs.length})`);
+for (const r of new Set([...DOCUMENTS, 'sw.js', ...refs])) expect(up.has(r), `the pages' ${r} is uploaded`);
+// Cloudflare answers /edit with edit.html (its default html handling): the
+// short address js/frame/routes.mjs uses on the deployed site depends on it.
+expect(!('html_handling' in (prod.assets || {})) || prod.assets.html_handling === 'auto-trailing-slash',
+  'the site keeps the html handling that serves edit.html at /edit');
+// ⛔ Home loads no editor and no Beluga: the document boundary is the guarantee.
+const home = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+expect(!/editor-cm\.bundle|beluga-client|harpoon-client|shell\.js/.test(home), 'home loads neither the editor bundle, the Beluga client nor the shell');
 
 console.log(`OK deploy-config (${n} checks: no dev switch or secret in production, /api/* only, ${uploaded.length} files uploaded, none private, all the page loads)`);

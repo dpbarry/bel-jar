@@ -3,11 +3,12 @@
 // docs/PERSIST.md §5). The memory server is the reference a real server is
 // held to, so its rules are pinned here one by one.
 import {
-  canonicalJson, sha256, isHash, emptyManifest, normalizeManifest, manifestOf, sameManifest,
+  canonicalJson, sha256, isHash, emptyManifest, normalizeManifest, manifestOf, sameManifest, versionsLimit, VERSIONS_PAGE, VERSIONS_MAX,
 } from '../js/persist/sync/protocol.mjs';
+import fs from 'node:fs';
 import { createMemoryServer } from '../js/persist/sync/memory-server.mjs';
 import { sha256Now } from './_sync-env.mjs';
-import { serverRules } from './_sync-protocol-suite.mjs';
+import { serverRules, quotaRules } from './_sync-protocol-suite.mjs';
 
 let n = 0;
 function expect(cond, msg) {
@@ -45,5 +46,23 @@ const server = createMemoryServer({ hash: (t) => Promise.resolve(sha256Now(t)) }
 await serverRules({ dean: server.transport('u_dean'), other: server.transport('u_other') }, expect);
 const hist = server.history('p1');
 expect(hist.owner === 'u_dean' && hist.versions.map((v) => `${v.version}/${v.base}`).join() === '1/0,2/1,3/2,4/3', 'history is a line');
+
+// What an account may hold, on a server made with small limits (plan v6 c10).
+{
+  const small = createMemoryServer({ hash: (t) => Promise.resolve(sha256Now(t)), quota: { projects: 2, textBytes: 20 } });
+  await quotaRules({ dean: small.transport('u_dean'), other: small.transport('u_other') }, expect);
+  const u = small.usage('u_dean');
+  expect(u.projects === 2 && u.textBytes === 10, `and the count is what the account holds: two projects, ten bytes (${JSON.stringify(u)})`);
+}
+
+// A history page is bounded, whatever a client asks (Version history, plan v6 c6),
+// and both servers ask the one rule for it.
+expect(VERSIONS_PAGE === 50 && VERSIONS_MAX === 200 && versionsLimit(undefined) === 50 && versionsLimit(-3) === 50 && versionsLimit(1.5) === 50
+  && versionsLimit(7) === 7 && versionsLimit(1000) === 200, 'a page of history is 50 by default, never more than 200');
+for (const f of ['js/persist/sync/memory-server.mjs', 'server/sync-store.mjs']) {
+  const src = fs.readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+  const at = src.indexOf('async versions(');
+  expect(at > 0 && src.slice(at, at + 1200).includes('versionsLimit(o && o.limit)'), `${f} bounds its pages by that rule`);
+}
 
 console.log(`OK sync protocol (${n} checks: canonical JSON, hashes, manifests, and every server rule)`);

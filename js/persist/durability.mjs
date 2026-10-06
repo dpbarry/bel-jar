@@ -149,8 +149,13 @@ export function createDurability(o) {
     },
 
     /** { persisted: true | false | null (not known yet), workToLose, asked, warned } */
+    /**
+     * `atRisk`: Safari may delete what is here (its 7-day rule applies, there
+     * is work to lose, and the browser has not agreed to keep the storage).
+     * That is state, not news: home shows it for as long as it holds.
+     */
     status() {
-      return Object.assign({}, state);
+      return Object.assign({ atRisk: !!o.sevenDayRule && state.workToLose && !state.persisted }, state);
     },
 
     dispose() {

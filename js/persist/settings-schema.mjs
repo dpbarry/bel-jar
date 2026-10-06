@@ -10,6 +10,8 @@
  * A row is a table row (table.mjs) plus `section`, the Settings dialog
  * category it resets with, and `sync: false` on a row that only makes sense
  * on one device (settings sync never carries it: sync/settings-sync.mjs).
+ * `reset: false` keeps a row through Reset and Reset all: it records what the
+ * person has seen, not a preference.
  * `values` are listed in the order `:set` and a palette chord cycle through
  * them.
  */
@@ -118,6 +120,8 @@ export const SETTINGS = [
   { id: 'harpoonVerifyMoves', section: 'harpoon', default: ON },
   { id: 'autosolveFocusNext', section: 'harpoon', default: ON },
   { id: 'autosolveShowStats', section: 'harpoon', default: ON },
+  // Case completion: fill a proof's missing cases when typing pauses, or only on a command.
+  { id: 'caseFill', section: 'harpoon', default: 'auto', values: ['auto', 'ask'] },
 
   // ── REPL ────────────────────────────────────────────────────────────────
   { id: 'replAutoscroll', section: 'repl', default: ON },
@@ -132,9 +136,17 @@ export const SETTINGS = [
   { id: 'replHistoryPersist', section: 'repl', default: 'local', values: ['local', 'session', 'none'], sync: false },
 
   // ── Workspace ───────────────────────────────────────────────────────────
-  { id: 'inspectorFollow', section: 'workspace', default: ON },
+  // What a plain arrival at BelJar opens: home, or the project last opened, the
+  // way an IDE reopens its last window. Early boot decides, before first paint
+  // (js/boot/early-boot-core.mjs `startTarget`).
+  { id: 'startPage', section: 'workspace', default: 'home', values: ['home', 'last'] },
+  { id: 'inspectorFollow', section: 'workspace', default: OFF },
   { id: 'restorePanels', section: 'workspace', default: ON },
   { id: 'libraryExpandDefault', section: 'workspace', default: OFF },
+  // Tips seen once on any computer stay seen on all of them (js/ui/hint-seen.mjs):
+  // one row per tip, so two computers that each saw a different one never disagree.
+  { id: 'hintSeenLibrary', section: 'workspace', default: OFF, reset: false },
+  { id: 'hintSeenInspectorCursor', section: 'workspace', default: OFF, reset: false },
 
   // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
   // Signed in, settings follow you between devices; off here, this device keeps its own.
@@ -209,8 +221,9 @@ export function writeSetting(id, value) {
 
 /**
  * The values early boot paints with, read straight from browser storage before
- * the store exists. A missing or different schema reads as defaults: the store
- * is about to wipe that data anyway, and painting from it would flash.
+ * the store exists. A missing or different schema reads as defaults: that data
+ * is in another format (the store is about to migrate it, or leave it alone),
+ * and painting from it would flash.
  */
 export function readBootSettings(storage, schema) {
   return readBootRows(storage, schema, SETTINGS_KEY, SETTINGS);

@@ -27,7 +27,7 @@ const MAY_NAME = new Set([
 const MAY_CALL = new Set([
   'js/persist/store.mjs',
   'js/persist/persist.mjs', // only to probe that an area is usable at all
-  'js/persist/table.mjs', // readBootRows: early boot's read of a table
+  'js/persist/table.mjs', // readBootRows, readBootRecord: early boot's reads of a table and of one record
   'js/persist/keys.mjs', // readBootSession: early boot's read of the session
 ]);
 

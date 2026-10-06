@@ -70,6 +70,20 @@ function nameList(names, max = 3) {
 
 const runVisible = (s) => !!(s.run && s.run.elapsedMs >= RUN_QUIET_MS);
 
+/**
+ * "7 holes in the suite: 2 here, 3 in defs and 2 in lemmas", from the other
+ * members' counts in `elsewhere`. Unknown (null) says nothing rather than guess.
+ */
+export function suiteHoles(here, elsewhere) {
+  if (!elsewhere) return '';
+  const total = here + elsewhere.reduce((n, x) => n + x.holes, 0);
+  if (!total) return 'No holes in the suite';
+  const head = plural(total, 'hole', 'holes') + ' in the suite';
+  if (!elsewhere.length) return head + ', all here';
+  const parts = (here ? [here + ' here'] : []).concat(elsewhere.map((x) => x.holes + ' in ' + x.name));
+  return head + ': ' + nameList(parts);
+}
+
 function plural(n, one, many) {
   return n + ' ' + (n === 1 ? one : many);
 }
@@ -275,10 +289,13 @@ const BUILDERS = {
     // is still being computed is still standing in a hole — keyed on the text,
     // this said "2 holes" beside a chip reading `Computing…`, counting the very
     // hole the caret was in.
+    // The only hole, and you are in it: there is nowhere else to go, and the
+    // goal chip already says where you are.
     const rest = s.inHole ? n - 1 : n;
+    if (!rest) return null;
     return {
       key: 'holes',
-      text: s.inHole ? (rest > 0 ? '+' + rest + ' more' : 'last hole') : plural(n, 'hole', 'holes'),
+      text: s.inHole ? '+' + rest + ' more' : plural(n, 'hole', 'holes'),
       title: 'Go to the next hole',
       tone: 'holes',
       action: 'next-hole',
@@ -409,6 +426,7 @@ const BUILDERS = {
     const lines = [
       placed ? 'File ' + (x.index + 1) + ' of ' + x.count + ' in suite ' + x.name : 'Suite ' + x.name,
       upstream.length ? (upstream.length === 1 ? 'An earlier file has errors: ' : 'Earlier files have errors: ') + nameList(upstream) : '',
+      suiteHoles(s.holes || 0, x.elsewhere),
       'Reveal in Explorer',
     ];
     return {
@@ -439,8 +457,8 @@ const BUILDERS = {
   },
 
   /**
-   * The way into the edit-history panel. A waiting redo branch is a tone
-   * change, spelled out in the panel — not a number beside the icon.
+   * The way into the edit-history panel. A waiting redo branch is spelled out
+   * in the panel — not a tone change or a number beside the icon.
    */
   history(s) {
     const undo = s.undoDepth || 0;
@@ -453,7 +471,7 @@ const BUILDERS = {
       // bright pink, which read as an error badge sitting next to the checker.
       icon: 'history',
       title: 'Edit history',
-      tone: redo ? 'branched' : 'plain',
+      tone: 'plain',
       action: 'edit-history',
       pressed: !!s.historyOpen,
     };

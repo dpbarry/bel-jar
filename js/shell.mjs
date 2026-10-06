@@ -7,6 +7,7 @@
  * tests/test-shell-boot.mjs catches ReferenceError from wrong order after typeof burns.
  */
 import './repl/run-progress.mjs';
+import './frame/routes.mjs';
 import './persist/persist.mjs';
 import './persist/install-edit-history.mjs';
 import './persist/tab-guard.mjs';
@@ -18,6 +19,7 @@ import './workspace/workspace.mjs';
 import './ui/tooltips.mjs';
 import './ui/hint.mjs';
 import './ui/menu.mjs';
+import './ui/menu-trigger.mjs';
 import './ui/command-palette.mjs';
 import './ui/floating-window.mjs';
 import './ui/available-macros.mjs';
@@ -48,5 +50,6 @@ import './harpoon/harpoon-ui.mjs';
 import './beluga/beluga-run-boot.mjs';
 import './account/account.mjs';
 import './account/sync-ui.mjs';
+import './ui/version-history.mjs';
 import './app/app.mjs';
 import './compat/beljar-window-aliases.mjs';

@@ -46,7 +46,9 @@ export function freePort() {
 /**
  * @param {{ vars?: Record<string, string>, site?: boolean }} [o]
  *   vars: --var overrides (DEV_ACCOUNT_HEADER, GITHUB_*); site: serve the static site too
- * @returns {Promise<{ url: string, logs(): string, stop(): void, persist: string }>}
+ * @returns {Promise<{ url: string, logs(): string, stop(o?: { keep?: boolean }): void, persist: string }>}
+ *   stop({ keep: true }) leaves the local D1 and R2 on disk, for a test to read
+ *   them afterwards (getPlatformProxy over `persist`); it removes them itself.
  */
 export async function startWorker(o = {}) {
   const persist = fs.mkdtempSync(path.join(os.tmpdir(), 'beljar-worker-'));
@@ -69,12 +71,13 @@ export async function startWorker(o = {}) {
   const child = spawn(process.execPath, args, { env: ENV, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.on('data', (d) => { logs += d; });
   child.stderr.on('data', (d) => { logs += d; });
-  const stop = () => {
+  const stop = (o) => {
     if (child.exitCode === null) {
       // wrangler starts workerd beneath it: stop the whole tree it made, nothing else.
       if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
       else child.kill('SIGTERM');
     }
+    if (o && o.keep) return;
     try { fs.rmSync(persist, { recursive: true, force: true }); } catch (_) { /* workerd may hold a file briefly */ }
   };
   for (let i = 0; i < 600; i++) {

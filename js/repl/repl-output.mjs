@@ -1185,7 +1185,7 @@ var output = document.getElementById('output');
 
   function appendProjectOpened(info) {
     info = info || {};
-    var name = String(info.name != null ? info.name : 'Untitled Project');
+    var name = String(info.name != null ? info.name : 'Untitled project');
     var belCount = Number(info.belCount) || 0;
     var elfCount = Number(info.elfCount) || 0;
     var cfgCount = Number(info.cfgCount) || 0;
@@ -1224,7 +1224,7 @@ var output = document.getElementById('output');
 
     var lead = document.createElement('div');
     lead.className = 'repl-banner-line';
-    lead.appendChild(document.createTextNode('Beluga 1.1.3 — '));
+    lead.appendChild(document.createTextNode('Beluga 1.1.3. Type '));
 
     var kHelp = document.createElement('span');
     kHelp.className = 'repl-banner-cmd';

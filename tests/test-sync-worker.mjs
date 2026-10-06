@@ -10,7 +10,7 @@ import { getPlatformProxy } from 'wrangler';
 import { createHttpTransport } from '../js/persist/sync/http-transport.mjs';
 import { createSyncStore } from '../server/sync-store.mjs';
 import worker from '../server/worker.mjs';
-import { serverRules } from './_sync-protocol-suite.mjs';
+import { serverRules, quotaRules } from './_sync-protocol-suite.mjs';
 import { makeDevice, sha256Now, projectState, addFile, fileId } from './_sync-env.mjs';
 import { startWorker, testConfig, ROOT as root } from './_worker-env.mjs';
 
@@ -166,9 +166,12 @@ console.log(`  (the Worker logged ${served} sync requests)`);
   const proxy = await getPlatformProxy({ configPath: testConfig(persist2), persist: { path: persist2 } });
   try {
     const db = proxy.env.DB;
-    const sql = fs.readFileSync(path.join(root, 'server', 'migrations', '0001_sync.sql'), 'utf8')
-      .split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
-    for (const stmt of sql.split(';')) if (stmt.trim()) await db.prepare(stmt).run();
+    // Every migration, as the real database has them.
+    for (const f of fs.readdirSync(path.join(root, 'server', 'migrations')).filter((x) => x.endsWith('.sql')).sort()) {
+      const sql = fs.readFileSync(path.join(root, 'server', 'migrations', f), 'utf8')
+        .split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
+      for (const stmt of sql.split(';')) if (stmt.trim()) await db.prepare(stmt).run();
+    }
     const texts = proxy.env.TEXTS;
     // Every batch waits until \`count\` batches are waiting, then they all go.
     const held = (count) => {
@@ -200,9 +203,19 @@ console.log(`  (the Worker logged ${served} sync requests)`);
     expect(head.version === 2 && results.find((r) => r.ok) && head.commit === 'r' + (results.findIndex((r) => r.ok) + 1),
       'the head is the one that moved');
 
+    // Three devices making the same new project at once: one lands, and the
+    // account's count (0005) moves once, with the head that moved.
+    const used = async () => (await db.prepare('SELECT projects FROM usage WHERE account = ?').bind('u_race2').first()).projects;
+    expect((await used()) === 1, 'one project, counted once');
+    const makers = createSyncStore({ db: held(3), texts }).transport('u_race2');
+    const made = await Promise.all(Array.from({ length: 3 }, (_, i) => makers.commit('p_new', { id: 'n' + i, base: 0, manifest: manifest('maker ' + i) })));
+    expect(made.filter((r) => r.ok).length === 1, `three first commits of one new project at once: one lands (${made.filter((r) => r.ok).length})`);
+    expect((await used()) === 2, `and it is counted once, not three times (${await used()})`);
+
     const deletes = createSyncStore({ db: held(2), texts }).transport('u_race2');
     const removed = await Promise.all(Array.from({ length: 2 }, (_, i) => deletes.remove('p_r', { id: 'd' + i, base: 2 })));
     expect(removed.filter((r) => r.ok).length === 1 && (await plain.head('p_r')).deleted, 'deletes race the same way: one deletion');
+    expect((await used()) === 1, `and the count goes down once (${await used()})`);
 
     await plain.commitSettings({ id: 'st0', base: 0, values: { theme: 'light' } });
     const sets = createSyncStore({ db: held(2), texts }).transport('u_race2');
@@ -211,6 +224,28 @@ console.log(`  (the Worker logged ${served} sync requests)`);
   } finally {
     await proxy.dispose();
     try { fs.rmSync(persist2, { recursive: true, force: true }); } catch (_) { /* a file may be held briefly */ }
+  }
+}
+
+// ── what an account may hold, on D1 (plan v6 c10) ───────────────────────────
+// The store with small limits on a real local D1, every migration applied: the
+// same rules the reference server keeps, and the count in its one row.
+{
+  const persist3 = fs.mkdtempSync(path.join(os.tmpdir(), 'beljar-quota-'));
+  const proxy3 = await getPlatformProxy({ configPath: testConfig(persist3), persist: { path: persist3 } });
+  try {
+    const db = proxy3.env.DB;
+    for (const f of fs.readdirSync(path.join(root, 'server', 'migrations')).filter((x) => x.endsWith('.sql')).sort()) {
+      const sql = fs.readFileSync(path.join(root, 'server', 'migrations', f), 'utf8').split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
+      for (const stmt of sql.split(';')) if (stmt.trim()) await db.prepare(stmt).run();
+    }
+    const small = createSyncStore({ db, texts: proxy3.env.TEXTS, quota: { projects: 2, textBytes: 20 } });
+    await quotaRules({ dean: small.transport('u_dean'), other: small.transport('u_other') }, expect);
+    const u = await db.prepare('SELECT projects, text_bytes FROM usage WHERE account = ?').bind('u_dean').first();
+    expect(u && u.projects === 2 && u.text_bytes === 10, `and D1 counts it in one row: two projects, ten bytes (${JSON.stringify(u)})`);
+  } finally {
+    await proxy3.dispose();
+    try { fs.rmSync(persist3, { recursive: true, force: true }); } catch (_) { /* a file may be held briefly */ }
   }
 }
 

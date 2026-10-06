@@ -274,6 +274,9 @@ function unwrapParens(node) {
 // each constructor's explicit-argument structure from the AST. Returns
 // [{ name, args:[{higherOrder, binders}] }] in source order, or null when the
 // family isn't found / isn't an LF datatype we can model.
+// The grammar node an LF type parses to. One spelling, used twice below.
+const LF_TYPE = 'LFType';
+
 export function enumerateLFConstructors(code, headName) {
   if (!headName) return null;
   const src = String(code == null ? '' : code);
@@ -282,6 +285,15 @@ export function enumerateLFConstructors(code, headName) {
   const doc = { sliceString: (from, to) => src.slice(from, to) };
 
   let found = null;
+  // TWELF FORM (2026-10-03). Most of the corpus declares a family's constructors as
+  // separate top-level declarations (`e_succ : step M M' -> step (succ M) (succ M').`),
+  // which no block holds. The typed enumerator already recognises those; their names
+  // pick out the declarations here, and the same argument reader describes them. Used
+  // only when no block form exists, so a block-form family is read exactly as before.
+  // Without this the split model had no constructors for these families and every
+  // split on them fell back to Beluga's own command.
+  let typedNames = null;
+  const flat = new Map();
   const cur = tree.cursor();
   do {
     if (cur.name !== 'LFDatatypeDeclaration' && cur.name !== 'LFDeclaration') continue;
@@ -293,19 +305,30 @@ export function enumerateLFConstructors(code, headName) {
         if (src.slice(c.from, c.to) === headName) { matches = true; break; }
       }
     }
-    if (!matches) continue;
+    if (!matches) {
+      if (typedNames === null) typedNames = new Set(enumerateConstructorsTyped(src, headName).map((t) => t.name));
+      const fid = typedNames.size ? firstIdentChild(node) : null;
+      const fname = fid ? src.slice(fid.from, fid.to) : null;
+      if (fname && typedNames.has(fname) && declaresName(node)) {
+        const typeNode = firstChildNamed(node, LF_TYPE);
+        // A later (shadowing) declaration of the same constructor wins, like Beluga.
+        flat.set(fname, { name: fname, args: typeNode ? argsOfLFType(typeNode, doc) : [] });
+      }
+      continue;
+    }
     const ctors = [];
     for (let c = node.firstChild; c; c = c.nextSibling) {
       if (c.name !== 'LFConstructor') continue;
       const id = firstIdentChild(c);
       if (!id) continue;
-      const typeNode = firstChildNamed(c, 'LFType');
+      const typeNode = firstChildNamed(c, LF_TYPE);
       const args = typeNode ? argsOfLFType(typeNode, doc) : [];
       ctors.push({ name: src.slice(id.from, id.to), args });
     }
     found = ctors;
     // Keep scanning: a later (shadowing) redefinition wins, matching Beluga.
   } while (cur.next());
+  if (found === null && flat.size) found = [...flat.values()];
   return found;
 }
 

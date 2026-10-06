@@ -7,7 +7,9 @@
 // network: every call waits in a queue until the schedule delivers it, drops
 // it before the server sees it, loses the answer after the server acted,
 // delivers it twice, or leaves it waiting while others overtake it. Devices
-// also go offline.
+// also go offline, and their pages go out of sight: what waits for the quiet
+// spell goes at once (engine.mjs `flush`), in the middle of a round or not,
+// its request as much at the network's mercy as any other.
 //
 // Every edit writes a unique token line. Afterwards the network heals, every
 // open conflict is settled with Keep both, and the devices sync until quiet.
@@ -68,6 +70,8 @@ const reach = {
   keptBoth: 0, deletedKnowingly: 0,
   // a pass that found its project changed while it waited, and started again
   moved: 0,
+  // projects sent at once as a page went out of sight
+  flushed: 0,
 };
 
 function simulate(seed, opts) {
@@ -99,10 +103,11 @@ function simulate(seed, opts) {
 
   for (let i = 0; i < opts.devices; i++) {
     const dev = { offline: false, running: null, tokens: 0, checked: new Set(), belugaMode: 'stable' };
+    dev.t = transportFor(dev);
     Object.assign(dev, makeDevice(server, {
       account: ACCOUNT,
       name: 'D' + i,
-      transport: transportFor(dev),
+      transport: dev.t,
       trace: (e) => { if (e.kind === 'moved') reach.moved += 1; },
     }));
     devices.push(dev);
@@ -319,6 +324,12 @@ function simulate(seed, opts) {
     resolve(res);
   }
 
+  /** The page goes out of sight. Offline it knows (navigator.onLine) and sends nothing. */
+  function hide(dev) {
+    if (dev.offline) return;
+    reach.flushed += dev.engine.flush((pid, body) => dev.t.commit(pid, body)).length;
+  }
+
   function settingsOp(dev) {
     const ids = ['theme', 'editorFontSize', 'keymapStyle', 'belugaMode'];
     const id = pick(ids);
@@ -335,7 +346,8 @@ function simulate(seed, opts) {
       const r = rand();
       if (r < 0.34) localOp(dev);
       else if (r < 0.37) settingsOp(dev);
-      else if (r < 0.52) startRound(dev);
+      else if (r < 0.49) startRound(dev);
+      else if (r < 0.52) hide(dev);
       else if (r < 0.97) {
         if (queue.length) {
           const call = queue.splice(Math.floor(rand() * queue.length), 1)[0];

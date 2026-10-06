@@ -4,6 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { CATALOG, HOME_TOO, PAGES } from '../js/commands/command-catalog.mjs';
 import {
   EMACS_OMIT_COMMAND_IDS,
   EMACS_YIELD_GLOBAL_IDS,
@@ -63,7 +64,7 @@ for (const cmd of all) {
 // the order BelJar has always shown; changing it is a UI change, not a refactor.
 
 const EXPECTED_PALETTE_ORDER = [
-  'project.new', 'file.new', 'file.upload', 'file.upload-folder', 'file.import-folder', 'file.download', 'project.download',
+  'project.new', 'file.new', 'file.upload', 'file.upload-folder', 'file.import-folder', 'file.download', 'project.download', 'project.history',
   'tab.next', 'tab.prev', 'tab.close', 'tab.close-others', 'tab.close-right',
   'file.save', 'suite.add-file', 'suite.remove-file',
   'edit.undo', 'edit.redo', 'edit.cut', 'edit.copy', 'edit.paste',
@@ -78,6 +79,7 @@ const EXPECTED_PALETTE_ORDER = [
   'nav.jump-back', 'nav.jump-forward',
   'nav.next-hole', 'nav.prev-hole', 'nav.next-problem', 'nav.prev-problem',
   'prover.hole-intro', 'prover.hole-split', 'prover.hole-fill', 'prover.open-in-harpoon',
+  'prover.case-accept', 'prover.case-fill', 'prover.case-dismiss',
   'prover.count-holes', 'prover.goal-at-cursor',
   'harpoon.next-goal', 'harpoon.prev-goal', 'harpoon.undo-move', 'harpoon.redo-move',
   'harpoon.orca-start', 'harpoon.orca-pause', 'harpoon.orca-absorb',
@@ -93,8 +95,10 @@ const EXPECTED_PALETTE_ORDER = [
   'set.occurrence-highlight', 'set.selection-matches', 'set.bracket-match',
   'set.auto-close-brackets', 'set.reindent-paste', 'set.format-on-save', 'set.trim-whitespace',
   'set.hole-gutter', 'set.hole-emphasis', 'set.quiet-typing', 'set.hover-sticky',
+  'set.start-page', 'set.sync-settings', 'set.sync-both-changed', 'set.sync-overlap', 'set.sync-reconnect',
+  'set.sync-notices', 'set.sign-out-keep',
   'account.sign-in', 'account.sign-out', 'sync.now', 'sync.review', 'sync.review-offline',
-  'keys.full-keyboard', 'keys.macros', 'app.reload', 'cmdline.repeat', 'cmdline.open',
+  'keys.full-keyboard', 'keys.macros', 'app.reload', 'app.home', 'app.report-issue', 'cmdline.repeat', 'cmdline.open',
   'tools.palette', 'tools.graph', 'tools.inspector',
 ];
 const paletteOrder = C.list({ palette: true }).map((c) => c.id);
@@ -183,6 +187,28 @@ for (const id of [...EMACS_OMIT_COMMAND_IDS, ...EMACS_YIELD_GLOBAL_IDS, ...VIM_A
   expect(C.has(id), `keymap-style names ${id}, which the catalogue does not define`);
 }
 
+// ── ⛔ every command says where it runs ───────────────────────────────────────
+// BelJar is two pages (docs/PERSIST.md §5.11). A command is the editor's, or
+// both pages'; the palette on home offers only the second kind, and the
+// registry holds the line (tests/test-page-commands.mjs).
+{
+  expect(PAGES.join() === 'editor,home,both', 'the three answers');
+  for (const cmd of all) expect(PAGES.indexOf(cmd.pages) >= 0, `${cmd.id} declares its pages (${cmd.pages})`);
+  for (const row of CATALOG) expect(PAGES.indexOf(row.pages) >= 0, `the catalogue row ${row.id} declares its pages`);
+  for (const id of HOME_TOO) expect(C.has(id), `HOME_TOO names ${id}, which the catalogue does not define`);
+  expect(new Set(HOME_TOO).size === HOME_TOO.length, 'and names nothing twice');
+  const onHome = all.filter((c) => c.pages !== 'editor');
+  const named = onHome.filter((c) => !/^set\./.test(c.id)).map((c) => c.id).sort().join(' ');
+  expect(named === HOME_TOO.slice().sort().join(' '), 'what runs on home, preferences aside, is exactly HOME_TOO: ' + named);
+  expect(onHome.filter((c) => /^set\./.test(c.id)).map((c) => c.id).join(' ')
+    === 'set.start-page set.sync-settings set.sync-both-changed set.sync-overlap set.sync-reconnect set.sync-notices set.sign-out-keep',
+    'and the preferences home offers are the start page and the account’s');
+  // A chord dispatched only inside the editor cannot belong to a page with no editor.
+  expect(onHome.every((c) => c.scope === 'global'), 'nothing home runs is scoped to the editor: '
+    + onHome.filter((c) => c.scope !== 'global').map((c) => c.id).join(', '));
+  expect(!C.get('app.home') || C.get('app.home').pages === 'editor', 'Go Home is the editor’s: on home there is nowhere to go');
+}
+
 // ── one registry in the product bundle ────────────────────────────────────────
 // keybindings, the palette and app.js each import the registry. esbuild must
 // dedupe them into a single module instance inside shell.js — two copies would
@@ -192,5 +218,8 @@ for (const id of [...EMACS_OMIT_COMMAND_IDS, ...EMACS_YIELD_GLOBAL_IDS, ...VIM_A
 const shell = readFileSync(join(here, '..', 'js', 'shell.js'), 'utf8');
 const copies = (shell.match(/title: "Show Autocomplete"/g) || []).length;
 expect(copies === 1, `shell.js must bundle exactly one command registry, found ${copies}`);
+const home = readFileSync(join(here, '..', 'js', 'home.js'), 'utf8');
+const homeCopies = (home.match(/title: "Show Autocomplete"/g) || []).length;
+expect(homeCopies === 1, `home.js must bundle exactly one command registry too, found ${homeCopies}`);
 
 console.log(`OK command catalog (${all.length} commands, ${paletteOrder.length} in the palette, policy tables agree)`);

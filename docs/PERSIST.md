@@ -41,15 +41,31 @@ second place things are saved.
 
 Every key starts with `beljar/`. `beljar/schema` holds the format version (now 4).
 
-- **Older** than the code: each registered migration runs in order (`migrations[n]` turns format n
-  into n + 1). With no migration for the gap, the store deletes every BelJar key and starts empty,
-  including anything left under the older `beljar-*` / `beljar:` names. That is the policy while no
-  one's work depends on it; the day users exist, `onMissingMigration: 'refuse'` opens read-only instead.
-  A migration that throws is never followed by a wipe: the data may be half-way.
-  ⛔ It has happened once on the live site: the first deploy of this store (2026-09-29) found the old
-  `beljar-*` keys with no `beljar/schema` (the old code never wrote one), took the storage for fresh,
-  and deleted them in every browser that opened it. Accounts and sync exist now, so the next format
-  change on the live site ships a migration, or `refuse`, never the wipe.
+- **Older** than the code: each migration runs in order (`js/persist/migrations.mjs`: `MIGRATIONS[n]`
+  turns format n into n + 1, in place). ⛔ **Older data is migrated or left alone, never deleted**
+  (2026-10-01): the app opens its store with `onMissingMigration: 'refuse'`, so with no step for the
+  gap, or a step that throws, nothing in the browser is touched. The page cannot run on records it
+  does not understand, so it runs on memory, as it does where the browser refuses storage: it
+  works, it says once that nothing is being saved, and the older data waits for a BelJar that
+  reads it. That is a release nobody can use, so it must not ship: **bumping `SCHEMA` means adding
+  the step in the same change**, and `tests/test-migrations.mjs` fails until every format the live
+  site has stored (`FIRST_LIVE_SCHEMA`, 4) has its step to the next. The store's own default is
+  still `wipe`, for a store of conveniences (the tab store: undo, REPL history).
+  **The steps run in one place**, `store.mjs migrateStorage`: every step must exist before any
+  runs (a gap left half-migrated data before 2026-10-05), and the new format is stamped only once
+  all of them have. ⛔ **Early boot migrates before it reads anything** (plan v6 c12): read in the
+  older format, every setting was the default for the first paint after a format change (a light
+  theme painted dark, then light). The store then finds the format current.
+  **Rehearsed in Chrome** (`npm run probe:migration`, part of `npm run probe`, kept for the next
+  format change): a profile with work in it in format 4, an old tab left open, and the next BelJar
+  (this one served with format 5 and a step from 4 that does nothing) loaded beside it. The new
+  tab's first paint shows the person's settings, it carries every project, file and setting
+  forward, and saves; the old tab goes read-only, says so, and saves nothing over the new format;
+  the old BelJar loaded again opens it read-only and leaves it exactly as it was.
+  ⛔ The wipe happened once on the live site: the first deploy of this store (2026-09-29) found the
+  old `beljar-*` keys with no `beljar/schema` (the old code never wrote one), took the storage for
+  fresh, and deleted them in every browser that opened it. Storage with no version on it is still
+  cleared (nothing unversioned is readable by any BelJar since); storage with one never is.
 - **Newer** than the code: the data belongs to a newer BelJar (another tab updated). **Nothing is
   touched**; the page is read-only and asks to be reloaded.
 - A running tab that sees another tab stamp a newer version goes read-only at once, so it can never
@@ -246,8 +262,16 @@ What belongs to this browser and never syncs. Two shapes:
 **The device table** (`device-schema.mjs`): small values, declared once, like the settings (both are
 tables, `table.mjs`). `Device.get(id)` / `Device.set(id, v)` / `Device.reset(pick)`, one record,
 only non-defaults stored. It holds the active project, the signed-in account, when the browser was last asked to keep BelJar's storage and when Safari's 7 days were said (§5.9), the editor split and every panel size, the
-Harpoon details rail, the graph panel's preferences, dismissed hints, the command-line history, the
-run-time estimator's model and the jump-log flag. Numbers are clamped to their row's range on the
+Harpoon details rail, the graph panel's preferences, the hints dismissed before they followed the
+account, the command-line history, the run-time estimator's model and the jump-log flag.
+⛔ **A tip seen on one computer is seen on all of them** (Dean, 2026-10-06; `js/ui/hint-seen.mjs`):
+each tip that shows once has a synced setting of its own (`hintSeen*`, `reset: false` so no Reset
+brings it back), one row per tip because settings sync merges a setting at a time and two computers
+that each saw a different tip would fight over one list. The device's old `dismissedHints` still
+counts and is carried into the rows at boot. Signed in on a computer whose first round has not
+landed, a tip waits for that round however long it takes, and one showing closes when a round says
+it was seen (`tests/test-hint-seen.mjs`, `scratch/probes/probe-hints.mjs`: two computers, the
+second held offline for 25 s). Numbers are clamped to their row's range on the
 way in, so a drag past the edge stores the edge. Rows with `group: 'layout'` are what *Reset panel
 layout* puts back; rows with a `cssVar` are painted by early boot before first paint
 (`readBootDevice`). Editor code that also runs under Node reads through `readDevice` /
@@ -337,7 +361,12 @@ Zip stays the format for people (download, upload), not the wire format.
 
 **The wire** (`sync/protocol.mjs`): `heads`, `head`, `blobs`, `missing`, `putBlobs`, `commit`,
 `remove`, `settings`, `commitSettings`, every one async; a transport that cannot reach the server
-throws, which is never an answer. **`sync/memory-server.mjs` is the reference server**: every rule
+throws, which is never an answer. A `commit` may carry the texts it names (`texts`): **a push is
+one request** (plan v6 c2, 2026-10-03). The server checks each against its hash, keeps only those
+the manifest names, and answers `missing` with what it still lacks. `versions` and `version` read
+the history back (plan v6 c6): a page of summaries newest first (D1 reads them with its JSON
+functions, no manifest travels), and one version whole; its texts come from `blobs`, since a text,
+once kept, is never removed while the account lasts. **`sync/memory-server.mjs` is the reference server**: every rule
 a real one must follow, pinned one by one in `tests/test-sync-protocol.mjs` (§5.7).
 
 ### 5.2 What a device keeps
@@ -365,6 +394,40 @@ is not mistaken for another device's change.
 | deleted it | forget it here, unless it changed here: then it goes back up over the deletion |
 | has it, and this device does not | download it |
 | has it, and it was deleted here | delete it there, unless another device changed it since: then it comes back |
+
+⛔ **A commit is never sent for a project deleted while its texts were going up**: `push` checks
+right before it records the commit as pending. A commit landing after the tombstone was written
+reads, next round, as another device's edit, which beats the deletion: the project would come back.
+(A push carries its texts in the commit itself, after it is recorded, so this only arises for one
+too big to carry them, whose texts go up ahead in batches; deleted while the commit is in flight,
+the tombstone names it and the deletion stands.)
+
+**A push is one request.** The commit carries the texts its last synced version did not have (the
+ones the server most likely lacks), up to 200 texts and 512 KB; more go up ahead in batches. When
+the round's list already says the server is where this device left it, no head is asked for: the
+commit's compare-and-swap is the check. A round that sends one edit is `heads`, `commit` (and
+`settings`), where it was six requests in a row.
+
+⛔ **At most one commit of a project is in flight, and it is sent again exactly as it went.** The
+texts a commit carries are kept with it in the sync record. Sent again bare, after the first had
+been given up on and while it was still on its way, it came back "missing", the record let it go,
+the first landed after, and the device was asked to choose against its own commit (seed 8 of the
+simulator, 2026-10-03). A pass that finds a commit pending settles it first; `push` re-reads the
+record right before it records its own and stands back if one appeared (the page hid while it
+hashed).
+
+**What you typed is in the cloud when the tab closes** (`engine.flush`). As the page goes (a tab
+closed fires `pagehide` first, then goes out of sight; a tab switched away from or a phone switching
+apps only goes out of sight), the tab that syncs sends every project changed since its last round
+at once, each in one request sent with `keepalive`, which the browser finishes after the page has
+gone (`http-transport.mjs` `commitOnHide`). ⛔ Synchronously up to the send: a closing page may get
+no later turn, so the hash is computed in JavaScript (`sha256Sync`, the same value as Web Crypto's).
+What was typed in the last moment is written to storage first (`document.mjs` `flushPending`). Each
+commit is recorded as pending before it is sent, so one that never lands is sent again at the next
+open. The browser lets a closing page's keepalive requests carry 64 KB between them: what does not
+fit (the open project goes first) waits for the next round, as before. Nothing is sent offline, by a
+tab that does not hold the lock, or while rounds are held for the person (Back online: Ask me
+first). A project with a commit already in flight is left alone. The quiet spell is unchanged.
 
 Per file (`sync/merge-project.mjs`):
 
@@ -405,6 +468,29 @@ online, and when the tab comes back into view. A round that cannot reach the ser
 (5 s, 15 s, 60 s, then 5 min). Rounds never overlap. Changing projects reloads the page, and the
 next page syncs as it starts.
 
+What counts as a change is what the person did. ⛔ What the engine writes itself settling a round
+(a project forgotten, a deletion settled) does not: the engine marks those writes with `own`, and
+`persist.mjs` tells the runner to `ignore` them. Heard as changes, they left the cloud saying
+"waiting" after every such round. ⛔ A change heard
+*during* a round keeps its own quiet-spell timer: the round used to put the 60 s poll in its place
+when it finished, so the change, and the cloud saying "waiting", sat for a minute (2026-10-01).
+
+**What a round costs someone typing** (measured 2026-10-01, real Chrome, the real Worker, an
+account of 6 projects, 180 files, 1.09 M characters; `scratch/probes/measure-sync-typing.mjs`). A
+round with nothing to send takes 29 ms and holds the main thread about 11 ms in all, never more
+than 8 ms at once; with one file edited, 97 ms and about 50 ms in all, never more than 13 ms at
+once: under a frame. Typing with a round forced every 0.7 s (some forty times the real rate)
+against the same typing with none: frame gaps p95 18 to 24 ms and p99 24 to 36 ms on both sides,
+no long task from sync, and the long frames that do occur (4 with rounds, 5 without, over a
+minute of typing each) are the editor's own measure and mutation passes, the same either way.
+Every round reads and hashes every project of the account, so the cost grows with the account,
+not with the open file: measure again if accounts grow tenfold.
+⛔ Compare the main thread (timer gaps, frame gaps, long tasks, handler time), never Event
+Timing's `duration` in headless Chrome: it runs to the next *presented* frame, headless presents
+on its own schedule, and the number followed whether anything on the page was animating (hiding
+the cloud's animation made it ten times worse with the main thread unchanged; a control whose
+cloud happened to animate looked fast).
+
 `Persist.startSync({ transport })` starts it for the signed-in account and returns the runner:
 `status()`, `subscribe(fn)`, `syncNow()`, `stop()`.
 
@@ -435,7 +521,21 @@ like any stored value. Device state never syncs.
 **The server** (`server/`, step 1 of going online, 2026-09-28): a Worker answering
 `POST /api/sync/<method>` with `{ args }` → `{ result }` (`worker.mjs`), the rules above on D1 and
 R2 (`sync-store.mjs`, schema in `migrations/`), and the client's side,
-`js/persist/sync/http-transport.mjs`. A head moves in one D1 transaction: the UPDATE moves it only
+`js/persist/sync/http-transport.mjs`. ⛔ Every call there has a time limit (30 s; 120 s for the two
+that carry texts), body included: rounds never overlap, so one request that never answered (a
+connection that stalls without closing) held its round open and every round after it, and sync
+stopped with nothing to say so until the page reloaded (2026-10-01). A call that runs out ends its
+round as offline, and the runner backs off and tries again; a commit sent twice is answered as the
+version it already made. ⛔ **A refused request is not offline** (plan v6 c9, 2026-10-05): one the
+server answered with a status that is not an answer (429 busy, a 5xx, 413 too large) stops the
+round like a network failure (`err.stopsRound`: it does not go on project by project against a
+busy server), but the summary says `error`, with `reason` `status-<code>`, and the cloud says
+"Couldn’t sync" and why (`sync-ui.mjs failureWords`): "BelJar’s server is busy (429). It tries
+again on its own; nothing here is lost." A project the server refused on its own (`refused-<code>`,
+a quota) says so too. Read as offline, a 429 put a person's edits in "Changes made offline" when
+the setting asks first, though the network was fine. Only a request that never reached the server
+is offline. `tests/test-sync-refused.mjs`: the page's own Persist against a server answering 429,
+both tabs saying why, nothing lost, everything pushed after. A head moves in one D1 transaction: the UPDATE moves it only
 where it is still `base`, and the version row goes in only if that UPDATE changed a row; the key on
 (project, version) is a second, independent guard. Texts are checked against their hash, stored in
 R2 under `t/<account>/<hash>`, and indexed in D1 only once R2 holds them. Same-site JSON posts
@@ -568,12 +668,130 @@ the same two words, never a code, token or secret. The page shows a toast and pu
 the notifications (`signInFailure`; `tests/test-account.mjs` reads every step out of
 `server/auth.mjs` and holds that each has its own sentence).
 
+**Where you are signed in, and deleting the account** (plan v6 c3, 2026-10-04; schema
+`migrations/0003_sessions_and_deletions.sql`, additive).
+
+- **Devices.** A session keeps a coarse name for its browser, read from the User-Agent at sign-in
+  ("Chrome on Windows", `auth.mjs deviceOf`; the header itself is never kept), and when it was last
+  used, moved at most once an hour (one write an hour for a session in use; a session from before
+  names itself then). Settings > Account > Devices lists them, this browser first, each other one
+  with Sign out (`GET /api/auth/sessions`, `POST /api/auth/sessions/end`). ⛔ Not this browser's own:
+  Sign out ends that one, once its work is in the cloud.
+- **A session that ends without its browser signing out** (Sign out there, Delete account, or
+  time): `ended_sessions` keeps why ('elsewhere', 'deleted') by the session's hash alone, until
+  the session would have expired, and `/api/auth/me` answers it (`ended`). The browser follows
+  when it next asks: as a page loads, or at its next round, whose 401 the transport tells the page
+  (`http-transport.mjs onSignedOut`, `account.mjs followEndedSession`). ⛔ Deleted, the account's
+  projects stay as the browser's own (`work.releaseAccount`: no owner, and no sync record, tombstone
+  or mark left; a record still naming the deleted account's versions would read, at a later
+  sign-in, as the cloud having deleted them). Otherwise as the browser's own sign-out would (Projects
+  in this browser), except that nothing the cloud lacks leaves: `Persist.unsyncedProjects` reads,
+  from this browser alone, the projects with work since their last round or a commit still on its
+  way, and `leaveAccount(uid, keep)` keeps those for the account (they sync when it signs in again).
+  The page that loads next says why, once (device `signedOutNote`). A session is read beside its
+  account: one whose account is gone is nobody's.
+- **Delete account** (`POST /api/auth/delete`, `server/deletion.mjs`). Asked once (the dialog
+  names the account, what goes and what stays); sync stops first, so nothing this browser sends
+  lands after. One transaction removes every row that names the account and every session (each
+  browser to hear 'deleted'), and records the deletion; then the stored texts go a thousand at a
+  time while the request lasts (carried on with `waitUntil` if the page goes). ⛔ What names an
+  account is listed once (`ACCOUNT_ROWS`): `tests/test-account-deletion.mjs` fails for a table the
+  migrations make that is neither listed nor said to name none. ⛔ The session cookie stays: if the
+  answer is lost, the page asks `me`, hears 'deleted', and goes on as if it had come. The **daily
+  job** (cron 07:00 UTC, the Worker's `scheduled`) finishes the texts a closed tab left, sweeps up
+  what a request already under way wrote after the account went, and lets the record go once an
+  hour has passed; it also lets go of sessions past their time and the reasons kept for them.
+  Projects in the browser that deleted stay, as its own.
+- **What BelJar keeps** (`privacy.html` at `/privacy`, `Routes.privacyUrl`; plan v6 c4): one page,
+  linked from home's foot (Privacy) and beside the sign-in ("What BelJar keeps"): what is stored,
+  where (Cloudflare D1 and R2, eastern North America), who can read it, logs and backups, and how
+  to delete it. ⛔ It says what the code does: `tests/test-privacy-page.mjs` fails for a table the
+  migrations make that the page does not name, for a number the page gives that the code does not
+  have (90 days, to the hour, within a day), and for a Delete account that removes less than the
+  page says. The page is not home: `Routes.pageOf` says 'privacy', so a start page of "Last
+  project" never sends it on, and the transition is a plain cut both ways (it does not opt in).
+  The words are Dean's to approve.
+- **Backups** (plan v6 c5). D1 Time Travel restores the database to any minute of the last 7 days
+  (30 on the paid plan). Outside Cloudflare, once a week: `npm run backup:export` (the live
+  database, only read, to `~/beljar-backups`, the newest four kept) and `npm run backup:restore`
+  (the newest restored into a scratch local D1 and checked table by table against the rows in the
+  file; first run 2026-10-04, 55 rows in 9 tables). The texts in R2 are not in it: each is named
+  by its content and never overwritten, and only Delete account removes them.
+  `tests/test-d1-backup.mjs` holds the count, the four kept, and that the live database is only
+  ever exported from.
+- **What sync costs, measured** (plan v6 c7, `tests/test-sync-budget.mjs`, which prints these and
+  holds them as ceilings: a change that makes sync dearer fails there). Requests, through the real
+  runner and engine on a fake clock: an hour of typing (a keystroke saved every 2 s) is 121 rounds
+  (one every 30 s, the longest a change waits) and 241 requests; an hour idle is 60 rounds and 60
+  requests; an hour with the page hidden, none. Rows written, as D1 itself counts them on a real
+  local database: an edit 5, a new project 8, a setting 4, an idle round 0 (an edit's five: its
+  text, its version, the version's commit id, the head, and the account's count for the quota).
+  A lab of 25 typing for two hours is then about 6,000 rounds and 30,000 rows, under a third of
+  the free plan's 100,000 rows a day.
+- **Waste less, wait no longer** (plan v6 c8, 2026-10-05). Before: typing 362 requests an hour,
+  idle 120, an edit 6 rows, a new project 9, a setting 6. Three changes, none to when a change
+  syncs: (1) the settings' version rides with the project list (`heads({ settings: true })`), and
+  the settings pass asks nothing more when it is this device's own and nothing changed here: an
+  idle round is ONE request; (2) a tab nobody can see does not poll (`createSyncRunner` `visible`:
+  a change still goes up, and so does a retry; a tab seen again asks for a round at once, and a
+  seen tab that does not hold sync asks the one that does for the minute's round, so polling
+  lasts as long as any tab of the browser is in view); (3) migration 0004 stores the tables by
+  their key (`WITHOUT ROWID`), so a row is written once and not again in its key's index.
+  `tests/test-migration-0004.mjs` runs it on data: every row survives, every key refuses what it
+  did. Applied to the live database 2026-10-05, after `npm run backup:rehearse` kept every row of
+  a fresh export of it.
+- **Watching it grow** (plan v6 c11, `npm run usage`, `scripts/usage.mjs`, read only): accounts,
+  versions, the database's size beside D1's limit (500 MB free, 10 GB paid; `BELJAR_PLAN=paid`),
+  and the text stored beside R2's free 10 GB, with the last day's rows read and written. Old
+  versions are not pruned, and pruning is not built, until the database or the text reaches half
+  its limit: the script says "past half: build pruning" then. On 2026-10-05: 1 account, 23
+  versions, 120 kB, 3.9 kB of text. ⛔ What must hold before anything is ever pruned, and does
+  now: a merge whose base text the server no longer has keeps both versions for a person to
+  choose (`merge-project.mjs`, a base read as `null`), where it used to stop the project with an
+  error on every round. A text the server's own head names is still required: missing, that is
+  damage, not pruning. `tests/test-sync-growth.mjs`.
+- **What an account may hold** (plan v6 c10, migration 0005, `protocol.mjs QUOTA`): 1,000 projects
+  that are not deleted, and 1 GB of stored text. Counted in one row per account (`usage`): the
+  project count moves in the same transaction as the head that makes, deletes or brings back a
+  project; the text count with every text the account did not hold (a text sent again is neither
+  stored nor counted twice). Past either limit the server refuses, and says which
+  ('quota-projects': deleting projects frees room; 'quota-texts': far past what a class writes,
+  so it means something went wrong). The page says it in the cloud, and once in the
+  notifications (`sync-ui.mjs noteRefusal`). ⛔ The count is not trusted to stay exact: the daily
+  job recounts every account from what it holds (`deletion.mjs RECOUNT_SQL`), so writes by a
+  Worker from before the count, or two requests at once, are right again by the next day. Held on
+  both servers by `quotaRules` in the protocol suite (small limits), on the page by
+  `tests/test-sync-refused.mjs`; 0005's count of what was already there by
+  `tests/test-server-migrations.mjs`.
+- **Version history and restore** (plan v6 c6, `js/ui/version-history.mjs`; Project > Version
+  history, and the palette, signed in on one of the account's projects only). A floating window:
+  the versions down the left, newest first, a page of 50 at a time; the one before the current
+  open, set beside the project as it is now (what restoring would change, file by file); Restore
+  this version. Restoring deletes nothing and asks nothing: `engine.restoreVersion` writes the
+  version's contents as sync writes them (an open editor follows), and the tab that syncs is asked
+  for a round at once (`Persist.restoreVersion`), which commits it over the head like any edit:
+  other devices merge it, and an edit made meanwhile on another device beats the restore's
+  deletion of that file. ⛔ Only when this browser has nothing the cloud lacks and nothing waits in
+  Review differences: the window syncs first, and the engine refuses otherwise ('unsynced',
+  'review'), or what was not sent would be gone from everywhere. Tests:
+  `tests/test-sync-history.mjs` (a restore reaching the other device, a file coming back and one
+  going, concurrent edits, the refusals), `tests/test-version-history.mjs` (the window's words),
+  the protocol suite on both servers, and `scratch/probes/probe-history.mjs` (two devices in
+  Chrome: three drafts, the window, Restore, the other device's open editor following).
+
 Locally: `npm run dev` (`scripts/dev-server.mjs`: migrations, then wrangler dev) and open
 `http://127.0.0.1:8787` (127.0.0.1, not localhost: the local GitHub app's callback is registered
 there). ⛔ The local database lives outside the repository (`~/.beljar-dev`): wrangler dev watches
 the repository it serves, so state written inside it reloads the server forever. The GitHub client id and
-secret come from `server/.dev.vars` (never committed). The Beluga runtime is not served locally, so
-checks do not run there; sign-in, editing and sync do.
+secret come from `server/.dev.vars` (never committed). Everything works there, Beluga checks too
+(2026-10-01): the runtime's two files are not assets (`.assetsignore`; live they come from R2), so
+the dev server serves them from the working tree on 127.0.0.1:8788 and the dev Worker passes them on
+(`DEV_RUNTIME_ORIGIN`, set only in `server/wrangler.jsonc`: `tests/test-dev-runtime.mjs`,
+`tests/test-deploy-config.mjs`). A static server (Live Server, the probes) has no /api, so sign-in
+and sync stay off there, silently; on 127.0.0.1 or localhost the console says where they are.
+Two devices locally: a normal and a private window (or two browser profiles), each its own
+storage and cookies. Offline: DevTools, Network, Offline. A fresh start: delete `~/.beljar-dev`
+and clear the site's data.
 
 ### 5.8 Tests before the server exists
 
@@ -610,12 +828,38 @@ checks do not run there; sign-in, editing and sync do.
   unless someone deleted it knowingly, history is a line, nothing is left pending, and no device
   was ever asked to choose against its own commit. Each hard path has a floor on how often the
   schedule reached it, so a schedule that stopped reaching them fails.
-- `tests/test-sync-runner.mjs`: one tab, the quiet spell, the longest wait, the poll, backoff, no overlap.
+- `tests/test-sync-runner.mjs`: one tab, the quiet spell, the longest wait, the poll, backoff, no
+  overlap, a change heard mid-round, what the runner is told to ignore.
+- `tests/test-sync-round-writes.mjs`: no commit for a project deleted mid-push, the engine's own
+  writes marked, and the page's own Persist (the built bundle) telling its runner.
+- `tests/test-auth-worker.mjs` (c3): Devices, Sign out there, and Delete account in the Worker as
+  it runs; then, with wrangler dev stopped, every D1 table read and the whole R2 bucket listed:
+  nothing names the account, its old session is refused, late writes are swept by the daily job.
+  `tests/test-account-deletion.mjs`: every table accounted for, texts a thousand at a time, a
+  closed tab's deletion finished. `tests/test-account-ended.mjs`: on the page's own Persist, a
+  deleted account's projects kept as the browser's own (and going up whole to a later account),
+  only what the cloud has leaving with a session ended elsewhere. `scratch/probes/probe-devices.mjs`:
+  three devices in Chrome, the list, Sign out there followed by an open editor, Delete account.
+- `tests/test-sync-flush.mjs` (c2): a push is one request; the page going out of sight sends at
+  once, the commit recorded as pending before it is sent and settled once; a commit in flight left
+  to go on; the closing page's budget; a flush in the middle of a round, and while a round hashes;
+  a commit given up on and delivered late; only the tab that syncs, never held or offline; and the
+  built page bundle sending when hidden. The simulator's pages go out of sight too (2048 hide-time
+  pushes over 300 seeds, under the same hostile network).
+  `tests/test-http-transport.mjs`: every call's time limit, and a stalled round ending so sync
+  goes on. Every guard broken on purpose and seen to fail (2026-10-02).
 - `scratch/probes/probe-sync.mjs`: two devices in real Chrome (two browser contexts, one with two
   tabs) and the reference server in Node: the lock, a live edit, the conflict dialog naming another
-  device, a new file in the other explorer, a setting, a hand-over, a deleted project.
+  device, a new file in the other explorer, a setting, a hand-over, a deleted project. And a third
+  device speaking real HTTP to the probe's own server: it types, its tab is closed 50 ms after the
+  last key (the editor's own save timer still holding the text), and the other device has the text.
+  The probe's server answers that commit only after 700 ms and drops it if the client has gone, as a
+  Worker is cancelled when its client hangs up: only a request sent with `keepalive` survives.
 
 Every guard was broken on purpose and seen to fail its test (2026-09-24): 23 in Node, 2 in Chrome.
+The one-request push and the hide-time flush (2026-10-03): 14 in Node, 3 in Chrome.
+Devices, Sign out there and Delete account (2026-10-04): 20 in Node, 3 in Chrome. The privacy page
+and the backups: 10 in Node.
 
 ### 5.9 Durability (stage 7)
 
@@ -640,8 +884,7 @@ quotas and eviction criteria; check again when it matters. `durability.mjs`:
 - **Export is one step away:** Project > Download project, or *Download Project* in the palette.
   One zip holds every file and empty folder under a folder named after the project (in a form every
   filesystem takes), so unzipping it and choosing *Import folder as new project* gives the project
-  back. The Project menu says where the work lives, beside it: *Saved in this browser only*, or
-  *Saved in this browser and your account* for a project that belongs to one.
+  back.
 
 Not done, on purpose: making BelJar installable. A Home Screen or Dock web app is the one thing
 Safari exempts, but its storage is separate from Safari's (only cookies are copied when it is made),
@@ -655,17 +898,178 @@ purpose and seen to fail its test (2026-09-25): 13 in Node, 3 in Chrome.
 
 ### 5.10 Not built yet
 
-- **Home and the editor as two pages** (plan v5, phase 02): projects and the account on home,
-  "Keep in this browser only" per project there, the start page setting.
-- **Typing measured with a round in flight** (plan v5, p1-10): sync never runs on a keystroke, but
-  a round landing mid-typing has not been profiled.
-- **The sync preferences on `:set` and the palette**: they live in Settings > Account, shown only
-  where a server answers; the generated preference commands have no way yet to say "not here".
+- **Not built, on purpose** (2026-10-02): a per-project "keep in this browser only". It was built
+  and removed the next day: an action in the Project menu that only made sense to whoever wrote
+  the sync engine. Keeping work in the browser after signing out is one setting, Settings >
+  Account > Projects in this browser, and that is all of it.
 - **An installable BelJar**, if Safari's exemption is wanted (§5.9).
 
 Known limits: another tab's write in the very instant the syncing tab applies a merge is the one
 window left (the tab guard warns about two tabs on one project); one file open in two tabs while it
 is in conflict has two editors writing one record.
+
+### 5.11 Home and the editor: two pages (built 2026-10-02)
+
+BelJar is two documents. `index.html` is **home**: the list of projects, and where a person signs
+in. `edit.html` is **the editor**, on one project. Home loads `js/home.js`, its own bundle (about
+520 KB with the palette and the command registry, a sixth of the editor's): no editor, no Beluga
+worker. `tests/test-home.mjs` walks its import
+graph and fails when anything of the editor gets in.
+
+- **One owner of every address:** `js/frame/routes.mjs` (`homeUrl`, `editUrl(id)`, `signInUrl`,
+  `go`). The short forms (`/`, `/edit?p=ID`) where a server maps them (the deployed site, or a page
+  itself served at `/edit`, as `npm run dev` does); the files (`index.html`, `edit.html?p=ID`) on a
+  static server. Nothing else assigns `location` or opens a window: `tests/test-routes.mjs` scans
+  every module.
+- ⛔ **The editor's address names its project.** `persist.mjs` pins the page to `?p=` before anything
+  asks which project this is (`work.pinProject`). A project this browser cannot show (deleted,
+  another account's, not here yet) is never replaced by another one under that address: the page
+  runs on a memory store, touches nothing, and goes to home with `?open=ID`. Signed in, home asks
+  for a round now, from whichever tab syncs (`confirmSynced`), and waits for that one (8 s at
+  most): the summary's "a round has finished" is true at once in a tab that does not sync itself,
+  and read off it home gave up on a project that was one round away. Then it opens the project, or
+  says "That project isn't in this browser." A bare `/edit` opens the last project opened and
+  writes its id into the address.
+- **Switching is navigating.** Switch, New project, import, deleting the open project and coming
+  back after sign-in all end in `Routes.go(editUrl(id))`. The device row `activeProject` now means
+  only "the last project opened": home lists it first, a bare `/edit` opens it, and a tab coming to
+  the front claims it (`projectInUse`). Two tabs on two projects each survive a reload.
+- **Home makes nothing.** It reads `Persist.projects()`, never `listProjects()` (which makes a first
+  project when none is visible), and may delete the last project (`removeProject`). It follows
+  storage (`onProjectsChange`: this tab, another tab, sync), the sync summary and the account, and
+  draws the list again only when what it says has changed: a redraw takes the focus off a row. On
+  a timer, not an animation frame: a tab in the background gets no frames.
+- **An empty list waits to be sure** (`listArriving`, `homeMode`). "Nothing here" (the keyboard
+  on New project) is not said until the page knows who is signed in (2.5 s at most) and, signed
+  in, until the first round is back (8 s at most). Said early, it was wrong for a moment at every
+  sign-in, and its Browse examples made a project just before the real ones arrived.
+- **What home shows** is set out in `docs/UI.md` §0: one column with the name, the ways to start,
+  and every project as its name and when it was last touched (`projectStats().editedAt`).
+- ⛔ **The browser's back/forward cache**, both measured. A page brought back from it heard no
+  storage events while frozen, so every record it has cached may be stale: it reloads (`pageshow`
+  with `persisted`). A page going into it kept the sync lock, and Chrome did not hand the lock to
+  a tab already waiting for it: with two tabs open, going from the editor to home left no tab
+  syncing. A page that is left stops sync as it goes (`pagehide`).
+- **Signing in** is on home (the header's button, and one line under the name) and in the palette.
+  `/api/auth/github/start?return=PATH` brings the person back to the page they were on
+  (`server/auth.mjs` `safeReturn`: a same-site path and nothing else, kept in a cookie for the
+  trip). Signed out, the editor has no account button; a server that cannot be reached still shows.
+- **Signing out lands on home.** ⛔ The account's projects leave this browser as the NEXT page
+  loads, not under the page that signed out (`work.leaveAccount`, `finishSignOut`, device row
+  `leftAccount`). That page is live until the browser has left it, and anything in it that read the
+  project list with none visible made a blank project, which home then listed. Sync stops holding
+  its lock (`stopSync({ hold: true })`): let go at once, the lock went to another tab, which began
+  a round for a session that was ending.
+- **Signing in or out is for the browser, not for a tab** (`Persist.onAccountElsewhere`,
+  `account.mjs` `follow`). Another tab asks again who is signed in and becomes that, where it is. An
+  editor on one of the account's projects goes home with it (`work.ownerLeft`), and is never told
+  its project was "deleted".
+
+Tests: `tests/test-routes.mjs` (the forms, the scan, pinning, leaving, signing out),
+`tests/test-home.mjs` (the rules as pure functions, and the bundle), `tests/test-auth-worker.mjs`
+(the return path), `tests/test-sync-round-writes.mjs` and `tests/test-sync-runner.mjs` (a page that
+is left, and stopping while holding the lock), `tests/test-deploy-config.mjs` and
+`tests/test-canonical-redirect.mjs` (both documents). In Chrome: `scratch/probes/probe-home.mjs`
+(a static server: keyboard only from the site to typing, rename, download, delete, two tabs, Back,
+an unknown id) and `scratch/probes/probe-account.mjs` (the Worker: sign in on home and from the
+editor, a project made on another device appearing on home, a link to a project not here yet,
+deleting from home, sign out, two tabs following each other). `npm run check:build` holds
+`js/home.js` against every module it is built from. Every guard was broken on purpose and seen to
+fail its test (2026-10-02): 32 in Node, 9 in Chrome; four were silent at first and got the test
+they lacked.
+
+**The start page** (Settings > Workspace, `startPage`: Home, or Last project). With Last project a
+plain arrival at BelJar goes straight to the project last opened, as an IDE reopens its last
+window. Early boot decides (`early-boot-core.mjs` `startTarget`), before first paint, by REPLACING
+the address: home is never shown, and Back does not return to a page that would send you forward
+again. Only a bare home address is a plain arrival, and only a fresh navigation (a reload or Back
+shows the page that was there); only to a project this browser can show. ⛔ While the setting is
+on, every link to home says so (`Routes.homeUrl()` gives `/?home`): the brand, signing out, a
+deleted project. Without it the way home would lead straight back to the editor.
+
+**The palette is on both pages**, from the one registry (`docs/COMMANDS.md`). Every command says
+where it runs (`pages`: editor, home or both; the catalogue's `HOME_TOO` names the ones home runs,
+and a generated preference says so on its row). ⛔ The registry keeps no behaviour for a command on
+a page it does not declare, so an editor command wired on home is not a row or a chord that does
+nothing: it is not there. What both pages run is attached by one module
+(`js/commands/shared-commands.mjs`). On home the palette goes to a project where the editor goes
+to a file, and a mode nothing answers (symbols, project search, a line) is not listed, not hinted
+at, and its prefix is only text. The six sync preferences and the start page are commands
+(`set.sync-reconnect` and the rest), reachable by name on both pages and by `:set`; ⛔ the sync
+ones only where a server answers, as their panel is only there in Settings.
+
+**The navigation is animated by the browser** (cross-document view transitions;
+`css/page-transition.css`, `js/boot/page-transition-core.mjs`). A project's name on home becomes
+the name in the editor's header, the editor's working area grows out of its row (and shrinks back
+onto it), the strip stays where it is, and the rest cross-fades. Nothing depends on it: a browser
+without the feature navigates as before. ⛔ Everything here was measured in CHROME'S OWN FRAMES as
+it played (`scratch/film-live.mjs`, the screencast): a paused film stepped by hand
+(`scratch/film-transition.mjs`) lets Chrome draw every frame sharp and hides what a person sees.
+Each of these is ⛔:
+- **The strip does not travel** (filmed frame by frame, `scratch/film-transition.mjs`). It was the
+  editor's "band", grown out of the clicked row: the strip that was already on screen left its
+  place and came back, and home's words and the editor's menus crossed in it on the way. It is one
+  named picture on both pages (`app-header`) whose box is not animated.
+- **Nothing is stretched.** A box moved by transform scales what is in it. The working area was
+  once squeezed to the row's shape: laid out about 530 by 32 and scaled back up to the screen, its
+  lines came out as wavy bands on a real screen. It is scaled EVENLY, by the row's width
+  (`zoomFrames`), and its group paints nothing of its own (no corner to stretch).
+- **Nothing is blank.** A plain surface that grew and took the editor's picture half way was a
+  flash; the working area is itself what grows, seen from the first third.
+- **Opening waits for the editor to be built** (`holdUntil`). The editor is shown as soon as its
+  header has the name and builds from its scripts a moment later; with them not cached (a first
+  visit, a click before they were fetched ahead) the whole zoom played on an empty shell and the
+  code arrived after. Every animation of the transition waits on its first frame until the frame
+  is mounted with an editor in it (1.2 s at most), then runs whole. probe-home slows the scripts by
+  400 ms and measures how far the zoom had played when the editor was built: 0 ms.
+- **One balanced curve** (`--ease-in-out`, 300 ms). The house's sharp ease-out did nine tenths of
+  the way in the first third and crept the rest: it read as shuddering to a halt.
+- **Nothing pops at the end.** The row come back to carries the names as `data-landing`, which is
+  not washed; as `data-opening` its wash stayed to the end and went in one frame.
+- **Closing goes while it moves; it is not the mirror of opening.** Fading over the last two thirds,
+  the shrunk editor was still a third there when the curve had all but stopped it: a still picture
+  of the editor over the row, then gone. It holds while it sets off, fades through the fast part of
+  the curve and is gone by 55% of the time (83% of the way); the row fades in under it, and the name
+  lands in 0.8 of the time (at the full length it crept onto its row across the heading above it).
+- **The opt-in is in each document's head.** In the stylesheet, reached through `@import`, the
+  editor's was not seen in time and the transition was refused, with no error.
+- **The two travelling boxes move by transform alone.** The browser's own animation of a named
+  element changes its width and height, which only the main thread can do, and the editor's
+  scripts hold the main thread as it starts: the page cross-faded while the name and the band
+  (as it then was) stood still at the row, then jumped (frame by frame).
+  `compositeGroups` rewrites those two animations as a move and a scale when the transition is
+  ready.
+- **The first frame is a true one.** Each document holds its first paint (`rel="expect"`) until
+  home has drawn its list, and the editor has the project's name in its header
+  (`panel-restore-core.mjs` `paintProjectName`: the document ships a placeholder there, and every
+  load used to show it first).
+- **Held-back motion is a plain cut**, by the system's preference (the stylesheet) and by BelJar's
+  own setting (the script skips the transition, and answers the promises a skipped one rejects:
+  unanswered, each reached the error hook). A page nobody saw (home passing through to the last
+  project, an editor leaving because its project is not here) animates nothing.
+
+**The editor arrives fast.** Measured on this machine, a static server, a 180-line file
+(`scratch/probes/measure-open.mjs`, median of 9, 2026-10-02): from the click on home the editor is
+mounted at about 190 ms and takes a keystroke at about 230 ms, against a target of 400 ms. Its
+start is its own scripts, 3 MB of them, so home, once idle, asks the browser to fetch them ahead
+(`js/home/preload-editor.mjs`, `rel="prefetch"`; the addresses are read out of the editor's own
+document, so no list of them can fall behind): the first open in a browser cost 3 KB of network
+instead of 3 MB. ⛔ Fetched, never run: this is a preload and not a prerender, because a
+prerendered editor would start workers, take the sync lock and write, for a page nobody may look
+at. With the scripts in the cache the editor runs before it paints, so for that fifth of a second
+home is still on screen: the row says it is being opened at the click. The transition costs
+nothing measurable there (with the scripts coming over the network it cost about 50 ms of the
+time to the first keystroke). The live site's number is to be taken after the deploy:
+`BELJAR_URL=https://beljar.deanbarry.com/ node scratch/probes/measure-open.mjs`.
+
+Tests for these: `tests/test-early-boot.mjs` (the start page), `tests/test-page-commands.mjs` and
+`tests/test-command-catalog.mjs` (pages), `tests/test-page-transition.mjs`, `tests/test-home.mjs`
+(the preload), and in Chrome `scratch/probes/probe-home.mjs`. Every guard was broken on purpose and seen to
+fail its test (2026-10-02): 33 in Node, 9 in Chrome; one was silent at first (home wiring a command
+the catalogue does not declare, which the registry drops without a word) and got its test.
+
+Not built: the Settings dialog on home (it opens from the editor; on home the preferences that are
+not about an open file are in the palette).
 
 ## 6. Stages
 

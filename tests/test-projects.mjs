@@ -18,7 +18,7 @@ const keysOf = (storage) => [...storage.map.keys()].sort();
   const storage = makeBrowserStorage();
   const { P } = openTab(storage);
   const projects = P.listProjects();
-  expect(projects.length === 1 && projects[0].name === 'Untitled Project', 'a fresh browser has one untitled project');
+  expect(projects.length === 1 && projects[0].name === 'Untitled project', 'a fresh browser has one untitled project');
   expect(/^p_[0-9a-hjkmnp-tv-z]{26}$/.test(projects[0].id), `project ids are 128-bit, time-ordered and opaque (${projects[0].id})`);
   const files = P.listFiles();
   expect(files.length === 1 && files[0].name === 'main.bel', 'with one main.bel');
@@ -29,10 +29,11 @@ const keysOf = (storage) => [...storage.map.keys()].sort();
   expect(P.getFileText(files[0].id) === '', 'and empty');
 }
 
-// ── any older format is wiped, not migrated ─────────────────────────────────
+// ── leftovers no version was ever stamped on are cleared ────────────────────
+// (The names BelJar used before the store. Data with a version on it is another
+// matter: migrated or left alone, never deleted. tests/test-migrations.mjs.)
 {
   const storage = makeBrowserStorage({
-    'beljar/schema': '3',
     'beljar-editor-split': '0.3',
     'beljar-fold-local-v1': '{}',
     'beljar/device': JSON.stringify({ at: 1, data: { activeProject: 'p_old' } }),
@@ -43,10 +44,10 @@ const keysOf = (storage) => [...storage.map.keys()].sort();
     'unrelated-site-key': 'kept',
   });
   const { P } = openTab(storage);
-  expect(P.listProjects().length === 1 && P.listProjects()[0].name === 'Untitled Project', 'an older schema starts clean');
+  expect(P.listProjects().length === 1 && P.listProjects()[0].name === 'Untitled project', 'unversioned leftovers start clean');
   expect(!keysOf(storage).some((k) => /^beljar[-:]/.test(k)), `no old-format key survives (${keysOf(storage).join(', ')})`);
   expect(!storage.map.has('beljar/projects') && !P.listProjects().some((p) => p.id === 'p_old'),
-    'the previous format (schema 3, one shared project list) is gone too');
+    'nor a record in today\'s keyspace that no version vouches for');
   expect(storage.getItem('unrelated-site-key') === 'kept', 'keys that are not BelJar\'s are left alone');
 }
 
@@ -224,8 +225,8 @@ const keysOf = (storage) => [...storage.map.keys()].sort();
   const pid = P.createProject('Old Name');
   expect(P.renameProject(pid, 'New Name') === true, 'rename succeeds');
   expect(P.listProjects().find((p) => p.id === pid).name === 'New Name', 'the registry has the new name');
-  expect(P.renameProject(pid, '   ') === true && P.listProjects().find((p) => p.id === pid).name === 'Untitled Project',
-    'a blank name falls back to Untitled Project');
+  expect(P.renameProject(pid, '   ') === true && P.listProjects().find((p) => p.id === pid).name === 'Untitled project',
+    'a blank name falls back to Untitled project');
   expect(P.renameProject('p_nope', 'x') === false, 'an unknown id fails');
 }
 

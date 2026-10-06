@@ -14,7 +14,8 @@ function createInlineSpinner() {
   return s;
 }
 
-function createRecalcShimmer(text = 'Recalculating…') {
+// Exported for the case-completion ghosts: a forced search shows the same shimmer.
+export function createRecalcShimmer(text = 'Recalculating…') {
   const sh = el('span', 'harpoon-hole-recalc beljar-tip-shimmer', text);
   setShimmerPhase(sh);
   return sh;

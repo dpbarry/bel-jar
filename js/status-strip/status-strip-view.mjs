@@ -81,7 +81,7 @@ const state = {
   sync: null,
   /** `{ total, done, unfinished }` — the engine's `proofProgress()`. */
   proofs: null,
-  /** `{ name, index, count, upstreamErrors }` while the file is a suite member. */
+  /** `{ name, index, count, elsewhere, upstreamErrors }` while the file is a suite member. */
   suite: null,
   /** `{ label, elapsedMs }` while an explicit Run can be stopped. */
   run: null,
@@ -723,13 +723,14 @@ const sameProofs = (a, b) => proofKey(a) === proofKey(b);
 function suiteState() {
   if (!suiteBase) return null;
   const prev = state.suite;
-  const same = prev && prev.name === suiteBase.name && prev.index === suiteBase.index
-    && prev.count === suiteBase.count && prev.upstreamErrors.join('\n') === upstreamErrors.join('\n');
-  return same ? prev : { ...suiteBase, upstreamErrors: upstreamErrors.slice() };
+  const next = { ...suiteBase, upstreamErrors: upstreamErrors.slice() };
+  return prev && JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
 }
 
 function setSuite(next) {
-  suiteBase = next && next.name ? { name: next.name, index: next.index, count: next.count } : null;
+  suiteBase = next && next.name
+    ? { name: next.name, index: next.index, count: next.count, elsewhere: next.elsewhere || null }
+    : null;
   if (!suiteBase) upstreamErrors = [];
   setEditorState({ suite: suiteState() });
 }
@@ -811,11 +812,19 @@ global.StatusStrip = {
   closeCommandLine: closeLine,
   setOrca,
   /**
+   * Whether Orca is searching, as the lab last said. Read by the case-completion
+   * scheduler, which waits rather than search beside it; the lab stays the authority.
+   */
+  isOrcaRunning: () => !!state.orca,
+  /**
    * A second tab has this project open. The tab guard raises it when that tab
    * answers, and lowers it when the tab says goodbye.
    */
   setTabConflict: (on) => setEditorState({ tabConflict: !!on }),
-  /** `{ name, index, count }` while the active file is a member of a suite, else null. */
+  /**
+   * `{ name, index, count, elsewhere }` while the active file is a member of a
+   * suite, else null. `elsewhere` is `[{ name, holes }]` for the OTHER members.
+   */
   setSuite,
   /** `{ label }` while an explicit Run can be stopped, else null. */
   setRun,

@@ -13,6 +13,7 @@
  * without costing local work anything.
  */
 import { createStore, createMemoryStorage } from './store.mjs';
+import { MIGRATIONS } from './migrations.mjs';
 import { createSettings } from './settings.mjs';
 import { createTable } from './table.mjs';
 import { DEVICE, DEVICE_KEY } from './device-schema.mjs';
@@ -26,6 +27,7 @@ import { createSyncRunner } from './sync/runner.mjs';
 import { createSyncStatus } from './sync/sync-status.mjs';
 import { createHoldPolicy } from './sync/hold.mjs';
 import { createDurability } from './durability.mjs';
+import { Routes } from '../frame/routes.mjs';
 
 // ── a full disk: reported once, cleared when writes succeed again ──────────
 
@@ -109,36 +111,83 @@ function browserArea(name) {
 
 var sessionArea = browserArea('sessionStorage');
 
-var store = createStore({
-  storage: browserArea('localStorage') || createMemoryStorage(),
-  alsoWipe: [sessionArea].filter(Boolean),
-  onCapacity: function (state, detail) {
-    if (state === 'blocked') reportCapacityFailure(detail);
-    else clearCapacityFailure();
-  },
-  onVersionAhead: function () {
-    announceReadOnly('BelJar was updated in another tab. Reload to keep editing: changes here are not being saved.');
-  },
-  onCannotUpgrade: function () {
-    announceReadOnly('This BelJar can’t open what an older one saved, so it changed nothing. Changes here are not being saved.');
-  },
-});
+// ⛔ Older data is migrated or left alone, never deleted: people's work lives
+// here now. A format change ships its step in migrations.mjs.
+function openStore(storage, alsoWipe) {
+  return createStore({
+    storage: storage,
+    alsoWipe: alsoWipe,
+    migrations: MIGRATIONS,
+    onMissingMigration: 'refuse',
+    onCapacity: function (state, detail) {
+      if (state === 'blocked') reportCapacityFailure(detail);
+      else clearCapacityFailure();
+    },
+    onVersionAhead: function () {
+      announceReadOnly('BelJar was updated in another tab. Reload to keep editing: changes here are not being saved.');
+    },
+    onCannotUpgrade: function () {
+      announceReadOnly('This BelJar can’t open what an older one saved, so it changed nothing. Changes here are not being saved.');
+    },
+  });
+}
+
+var store = openStore(browserArea('localStorage') || createMemoryStorage(), [sessionArea].filter(Boolean));
+// Older data this code cannot migrate stays in the browser exactly as it was,
+// for a BelJar that can read it. The page cannot run on records it does not
+// understand, so it runs on memory, as it does when the browser refuses
+// storage: it works, and saves nothing here (the person has been told).
+if (store.resetReason === 'refused') {
+  store.dispose();
+  store = openStore(createMemoryStorage(), []);
+}
 
 // What outlives a reload but not the tab: the undo stack, and the REPL history
 // and folds when their setting says "this tab". A full tab store fails quietly:
 // everything in it is a convenience the tab is about to lose anyway.
 var tabStore = createStore({ storage: sessionArea || createMemoryStorage() });
 
-var Settings = createSettings(store);
-var Device = createTable(store, {
-  key: DEVICE_KEY,
-  rows: DEVICE,
-  unknown: function (id) { return 'device: no row "' + id + '" (declare it in device-schema.mjs)'; },
-});
-var work = createWork({ store: store, device: Device });
-var files = createWorkFiles({ work: work, settings: Settings });
-var documents = createDocuments({ work: work, settings: Settings, files: files });
-var records = createDeviceRecords({ store: store, tabStore: tabStore, work: work, settings: Settings });
+var Settings, Device, work, files, documents, records;
+function compose() {
+  Settings = createSettings(store);
+  Device = createTable(store, {
+    key: DEVICE_KEY,
+    rows: DEVICE,
+    unknown: function (id) { return 'device: no row "' + id + '" (declare it in device-schema.mjs)'; },
+  });
+  work = createWork({ store: store, device: Device });
+  files = createWorkFiles({ work: work, settings: Settings });
+  documents = createDocuments({ work: work, settings: Settings, files: files });
+  records = createDeviceRecords({ store: store, tabStore: tabStore, work: work, settings: Settings });
+}
+compose();
+
+// A sign-out that removes the account's projects does it here, as a page
+// loads, before anything asks which project this is (work.mjs `leaveAccount`).
+work.finishSignOut();
+
+// ── the editor's address names its project (js/frame/routes.mjs) ───────────
+// A page opened on ?p=ID is pinned to that project before anything asks which
+// project this is. ⛔ When this browser cannot show it (deleted, another
+// account's, not here yet), the page leaves for home, which waits for it or
+// lists what there is. It never opens another project under that address.
+// Until the browser has left, the rest of the page still runs: on memory, as
+// when storage is refused, so a page nobody will see writes nothing and makes
+// no project.
+var leaving = null;
+(function pinToAddress() {
+  var loc = globalThis.location;
+  if (!loc || Routes.pageOf(loc) !== 'edit') return;
+  var named = Routes.projectOf(loc);
+  if (!named || work.pinProject(named)) return;
+  leaving = named;
+  store.dispose();
+  tabStore.dispose();
+  store = openStore(createMemoryStorage(), []);
+  tabStore = createStore({ storage: createMemoryStorage() });
+  compose();
+  Routes.go(Routes.homeUrl({ open: named }), { replace: true });
+})();
 
 // ── this page's project, changed elsewhere ──────────────────────────────────
 // Another tab, or another device through sync. A new tree reaches the explorer
@@ -163,6 +212,12 @@ function noteTreeChanged() {
 function announceProjectGone() {
   if (projectGoneShown) return;
   projectGoneShown = true;
+  // Not deleted: its account signed out in another tab, and its projects left
+  // with it. This page follows it home, and says nothing.
+  if (work.ownerLeft()) {
+    Routes.go(Routes.homeUrl(), { replace: true });
+    return;
+  }
   var message = 'This project was deleted in another tab or on another device. Changes here can’t be saved.';
   whenPageReady(function () {
     var C = globalThis.ConfirmDialog;
@@ -190,6 +245,29 @@ store.subscribe(function (e) {
   if (k.kind === 'meta' && !work.hasProject(pid)) announceProjectGone();
   else if (k.kind === 'tree' || k.kind === 'meta') noteTreeChanged();
 });
+
+// ── back from the browser's page cache ──────────────────────────────────────
+// ⛔ Going Back can bring a page back exactly as it was frozen, without loading
+// it. While it was frozen other pages wrote (the editor it went to, another
+// tab, sync), and a frozen page hears none of it: storage events are not kept
+// for it. Every record it has cached may be stale, and an editor in that state
+// would save old text over new. With two pages, Back is an everyday way to
+// arrive, so a page that comes back this way starts again from storage.
+if (typeof globalThis.addEventListener === 'function') {
+  globalThis.addEventListener('pageshow', function (e) {
+    if (e && e.persisted && globalThis.location && typeof globalThis.location.reload === 'function') globalThis.location.reload();
+  });
+  // ⛔ And a page that is left lets go of sync as it goes. Kept in that cache, it
+  // keeps the sync lock it held, and Chrome does not hand the lock to a tab
+  // that was already waiting for it: with two tabs open, going from the editor
+  // to home left NO tab syncing, and signing out in the other tab said "Not
+  // everything is in the cloud yet" (measured 2026-10-02: navigator.locks
+  // .query() showed nobody holding the lock and both tabs waiting for it).
+  // ⛔ But first what waits for the quiet spell goes (sendOnHide): a tab being
+  // closed fires pagehide BEFORE it goes out of sight (measured 2026-10-03), so
+  // stopping here first left nothing to send by then.
+  globalThis.addEventListener('pagehide', function () { sendOnHide(); stopSync(); });
+}
 
 // ── sync ────────────────────────────────────────────────────────────────────
 // What sync did that a person may want to find again, in the notifications. A
@@ -251,7 +329,9 @@ function underSevenDayRule() {
 // Said once per device: a toast that stays until closed, saying what to do,
 // and the same in the notifications, where it can be found again.
 function announceSevenDays() {
-  if (globalThis.Toasts && typeof globalThis.Toasts.warn === 'function') {
+  // Home says it on the page, for as long as it holds (js/home/home.mjs): no toast there.
+  var onHome = !!globalThis.location && Routes.pageOf(globalThis.location) === 'home';
+  if (!onHome && globalThis.Toasts && typeof globalThis.Toasts.warn === 'function') {
     globalThis.Toasts.warn(
       'Safari deletes this site’s data after 7 days without a visit. To keep a copy, download your projects from the Project menu.',
       { duration: 0, closable: true, notify: false },
@@ -291,7 +371,12 @@ whenPageReady(function () {
 
 var syncRunner = null;
 var syncEngine = null;
+var syncTransport = null;
 var holdPolicy = null;
+
+// What all the requests a closing page sends may carry between them: the
+// browser's 64 KB for keepalive requests, and room for its own headers.
+var CLOSING_PAGE_BYTES = 60 * 1024;
 
 // What sync is doing, the same in every tab (sync/sync-status.mjs).
 var syncStatus = createSyncStatus({
@@ -321,6 +406,7 @@ function startSync(opts) {
   if (!opts || !opts.transport) throw new Error('Persist.startSync needs a transport (js/persist/sync/protocol.mjs)');
   stopSync();
   var nav = globalThis.navigator;
+  var engineWrites = 0;
   var engine = createSyncEngine({
     store: store,
     work: work,
@@ -328,10 +414,19 @@ function startSync(opts) {
     transport: opts.transport,
     account: account,
     notify: announceSync,
+    own: function (fn) {
+      engineWrites += 1;
+      try { return fn(); } finally { engineWrites -= 1; }
+    },
   });
   syncRunner = createSyncRunner({
     engine: engine,
     store: store,
+    // A tab nobody can see does not poll (plan v6 c8): a phone in a pocket, a tab behind others.
+    visible: function () { return typeof document === 'undefined' || document.visibilityState !== 'hidden'; },
+    // Not a change waiting to sync: what the engine wrote settling a round (a
+    // project forgotten, a deletion settled).
+    ignore: function () { return engineWrites > 0; },
     locks: opts.locks !== undefined ? opts.locks : (nav && nav.locks) || null,
   });
   syncEngine = engine;
@@ -348,20 +443,66 @@ function startSync(opts) {
       return !n || n.onLine !== false;
     },
   });
+  syncTransport = opts.transport;
   syncRunner.start();
   syncStatus.attach(syncRunner);
+  startPollAsk();
   return syncRunner;
 }
 
-/** Stop syncing; resolves once a round in flight has finished. */
-function stopSync() {
+/**
+ * Stop syncing; resolves once a round in flight has finished. `opts.hold`
+ * (signing out): no more rounds, but the sync lock stays with this page until
+ * it is left or sync stops outright, so no other tab takes over meanwhile
+ * (runner.mjs `stop`).
+ */
+var heldRunner = null;
+function stopSync(opts) {
+  stopPollAsk();
   const r = syncRunner;
   syncRunner = null;
   syncEngine = null;
+  syncTransport = null;
   if (holdPolicy) holdPolicy.stop();
   holdPolicy = null;
   syncStatus.detach();
+  if (opts && opts.hold && r) {
+    heldRunner = r;
+    return r.stop({ hold: true });
+  }
+  if (heldRunner) {
+    heldRunner.stop();
+    heldRunner = null;
+  }
   return r ? r.stop() : Promise.resolve();
+}
+
+/**
+ * The projects of account `uid` in this browser with work the cloud lacks
+ * (edited, new or renamed since they last synced, or a commit still on its
+ * way): what must not leave with a session that ended elsewhere
+ * (account.mjs `sessionEnded`). Local records only; nothing is sent.
+ */
+function unsyncedProjects(uid) {
+  if (!uid) return Promise.resolve([]);
+  var engine = createSyncEngine({ store: store, work: work, settings: Settings, transport: {}, account: uid });
+  return engine.localChanges().then(function (list) {
+    return list.filter(function (c) { return !c.deleted; }).map(function (c) { return c.pid; });
+  });
+}
+
+/**
+ * Restore a version of a project (engine.mjs `restoreVersion`). It is written
+ * as sync writes, which no round hears as a change, so the tab that syncs is
+ * asked for a round at once: the restore is in the cloud, as a new version,
+ * in a moment.
+ */
+function restoreVersion(pid, n) {
+  if (!syncEngine) return Promise.resolve({ ok: false, error: 'signed-out' });
+  return syncEngine.restoreVersion(pid, n).then(function (res) {
+    if (res && res.ok) syncStatus.confirm();
+    return res;
+  });
 }
 
 /** An explicit save, or the network coming back: sync now, not at the next poll. */
@@ -380,7 +521,63 @@ Settings.subscribe(function (e) {
 });
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') syncNow();
+    if (document.visibilityState === 'visible') seenAgain();
+  });
+}
+
+/**
+ * Seen again: a round now, from whichever tab syncs. Hidden, it stopped
+ * polling (createSyncRunner `visible`); this tab may not be the one that syncs,
+ * so it asks.
+ */
+function seenAgain() {
+  if (!syncRunner) return;
+  if (syncRunner.status().leader) syncNow();
+  else syncStatus.confirm();
+}
+
+// While this tab is seen and another, hidden, holds sync, this one asks it for
+// the minute's round: polling goes on as long as any tab of the browser is in
+// view, and stops when none is. ⛔ Only while sync runs (startSync, stopSync):
+// a timer of the module's own kept every page, and every test that loads it,
+// alive for good.
+var POLL_ASK_MS = 60000;
+var pollAsk = null;
+function startPollAsk() {
+  stopPollAsk();
+  if (typeof globalThis.setInterval !== 'function' || typeof document === 'undefined') return;
+  pollAsk = globalThis.setInterval(function () {
+    if (!syncRunner || document.visibilityState === 'hidden' || syncRunner.status().leader) return;
+    syncStatus.confirm();
+  }, POLL_ASK_MS);
+}
+function stopPollAsk() {
+  if (pollAsk != null && typeof globalThis.clearInterval === 'function') globalThis.clearInterval(pollAsk);
+  pollAsk = null;
+}
+
+// ⛔ What you typed is in the cloud when the tab closes (docs/PERSIST.md §5).
+// The page going (a tab closed: pagehide, then out of sight) or out of sight (a
+// tab switched away from, a phone switching apps: it may never come back) sends
+// what waits for the quiet spell NOW, each project in one request the browser
+// finishes after the page has gone (engine.mjs `flush`). What was typed in the
+// last moment is written to storage first (document.mjs `flushPending`),
+// whichever hook runs first. Offline, nothing is sent.
+function sendOnHide() {
+  if (!syncRunner || !syncTransport) return;
+  var nav = globalThis.navigator;
+  if (nav && nav.onLine === false) return;
+  documents.flushPending();
+  var t = syncTransport;
+  var send = typeof t.commitOnHide === 'function'
+    ? function (pid, req) { return t.commitOnHide(pid, req); }
+    : function (pid, req) { return t.commit(pid, req); };
+  syncRunner.flush(send, CLOSING_PAGE_BYTES);
+}
+
+if (typeof globalThis.addEventListener === 'function' && typeof document !== 'undefined') {
+  globalThis.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') sendOnHide();
   });
 }
 
@@ -390,6 +587,8 @@ export const Persist = {
   normalizeViewportAnchor: normalizeViewportAnchor,
   isSaveBlocked: store.isBlocked,
   isReadOnly: store.isReadOnly,
+  // The project the address named and this browser cannot show: the page is on its way home.
+  leaving: function () { return leaving; },
 
   // accounts and sync (docs/PERSIST.md §5)
   getAccount: work.account,
@@ -397,8 +596,34 @@ export const Persist = {
   claimProject: work.claimProject,
   projectStats: work.projectStats,
   onFileChange: work.onFileChange,
+  // home's list: fn() whenever a project, its files, a file's text, a file to
+  // review or this browser's device state changes, from this tab or anywhere
+  onProjectsChange: function (fn) {
+    return store.subscribe(function (e) {
+      var k = e && e.key ? parseKey(e.key) : null;
+      if (!e || e.key == null || e.key === DEVICE_KEY
+        || (k && (k.kind === 'meta' || k.kind === 'tree' || k.kind === 'f' || k.kind === 'conflict'))) fn();
+    });
+  },
+  // fn(account) when another tab signs in or out: this tab follows (account.mjs)
+  onAccountElsewhere: function (fn) {
+    var seen = work.account();
+    return store.subscribe(function (e) {
+      if (!e || (e.key != null && e.key !== DEVICE_KEY)) return;
+      var now = work.account();
+      if (now === seen) return;
+      seen = now;
+      if (e.origin !== 'local') fn(now);
+    });
+  },
+  ownerLeft: work.ownerLeft,
   removeAccountProjects: work.removeAccountProjects,
+  leaveAccount: work.leaveAccount,
   keepAccountProjects: work.keepAccountProjects,
+  releaseAccount: work.releaseAccount,
+  unsyncedProjects: unsyncedProjects,
+  noteSignedOut: work.noteSignedOut,
+  takeSignedOutNote: work.takeSignedOutNote,
   // signing in again: back to the account's work, not a blank placeholder
   resumeFor: work.resumeFor,
   clearResume: work.clearResume,
@@ -415,6 +640,10 @@ export const Persist = {
   // edits made offline, held for review ("Back online: Ask me first")
   offlineChanges: function () { return syncEngine ? syncEngine.localChanges() : Promise.resolve([]); },
   cloudSide: function (pid, fids) { return syncEngine ? syncEngine.cloudSide(pid, fids) : Promise.resolve({ state: 'unknown', name: null, texts: {} }); },
+  // Version history (plan v6 c6, js/ui/version-history.mjs): signed in only.
+  projectHistory: function (pid, o) { return syncEngine ? syncEngine.history(pid, o) : Promise.resolve(null); },
+  readVersion: function (pid, n) { return syncEngine ? syncEngine.readVersion(pid, n) : Promise.resolve(null); },
+  restoreVersion: restoreVersion,
   useCloud: function (pid) { return syncEngine ? syncEngine.useCloud(pid) : Promise.resolve(false); },
   projectFileText: function (pid, fid) { return work.getText(fid, pid); },
   releaseSync: function () { return syncStatus.release(); },
@@ -425,6 +654,21 @@ export const Persist = {
 
   // projects
   listProjects: work.listProjects,
+  // home: what there is, without making one; the last one opened; a delete that may empty the list
+  projects: work.visibleProjects,
+  lastProjectId: work.lastProject,
+  projectInUse: work.projectInUse,
+  removeProject: work.removeProject,
+  // a project as files, for its zip: { name, files: [{ path, text }], folders }, or null
+  projectFiles: function (pid) {
+    var snap = work.snapshotProject(pid);
+    if (!snap) return null;
+    return {
+      name: snap.meta.name,
+      files: snap.tree.files.map(function (f) { return { path: f.name, text: snap.texts[f.id] }; }),
+      folders: snap.tree.folders.slice(),
+    };
+  },
   getActiveProjectId: work.projectId,
   setActiveProjectId: work.setActiveProject,
   createProject: work.createProject,

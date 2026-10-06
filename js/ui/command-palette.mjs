@@ -13,7 +13,7 @@
 // Commands come from the shared registry (`js/commands/`), not a list of their
 // own: `register()` here is a thin front door that marks an entry palette-visible.
 import { Commands } from '../commands/command-registry.mjs';
-import { listStepDelta } from '../status-strip/status-strip-line-ui.mjs';
+import { listStepDelta } from './list-step.mjs';
 
 const global = globalThis;
 // ── Pure logic ──────────────────────────────────────────────────────────────
@@ -140,14 +140,14 @@ const global = globalThis;
    * own binding there tells the user to press a key that edits their document.
    */
   const HELP_CATALOG = [
-    { title: 'Anywhere', detail: 'Go to files & symbols', prefix: '', commandId: 'nav.anywhere' },
-    { title: 'Commands', detail: 'Run a command', prefix: '>', commandId: 'tools.commands' },
-    { title: 'Symbols', detail: 'Go to symbol', prefix: '@', commandId: 'nav.symbol' },
-    { title: 'Search project', detail: 'Find text across files', prefix: '%', commandId: 'edit.search-project' },
-    { title: 'Go to line', detail: 'Jump to line[:column]', prefix: ':' },
-    { title: 'Problems', detail: 'Errors & warnings', prefix: '!' },
-    { title: 'Library', detail: 'Browse library samples', prefix: '/' },
-    { title: 'Help', detail: 'This mode list', prefix: '?' },
+    { mode: 'anywhere', title: 'Anywhere', detail: 'Go to files & symbols', prefix: '', commandId: 'nav.anywhere' },
+    { mode: 'commands', title: 'Commands', detail: 'Run a command', prefix: '>', commandId: 'tools.commands' },
+    { mode: 'symbols', title: 'Symbols', detail: 'Go to symbol', prefix: '@', commandId: 'nav.symbol' },
+    { mode: 'search', title: 'Search project', detail: 'Find text across files', prefix: '%', commandId: 'edit.search-project' },
+    { mode: 'line', title: 'Go to line', detail: 'Jump to line[:column]', prefix: ':' },
+    { mode: 'problems', title: 'Problems', detail: 'Errors & warnings', prefix: '!' },
+    { mode: 'library', title: 'Library', detail: 'Browse library samples', prefix: '/' },
+    { mode: 'help', title: 'Help', detail: 'This mode list', prefix: '?' },
   ];
 
   const MODE_META = {
@@ -194,6 +194,31 @@ const global = globalThis;
   function setProvider(kind, fn) {
     if (PROVIDER_KINDS.indexOf(kind) < 0) return;
     providers[kind] = fn;
+  }
+
+  /**
+   * ⛔ A mode exists only where something answers it. The palette is on both
+   * pages (docs/PERSIST.md §5.11), and home has no symbols, no project text, no
+   * line to go to, no problems and no library: there those modes are not
+   * listed, not hinted at, and their prefix is just a character in the query.
+   * The editor provides all of them, so nothing changes there.
+   */
+  function modeAvailable(mode) {
+    if (mode === 'anywhere' || mode === 'commands' || mode === 'help') return true;
+    if (mode === 'line') return !!global.CurrentEditor;
+    return typeof providers[mode] === 'function';
+  }
+
+  /** What was typed, as the mode this page can answer: an unanswered prefix is ordinary text. */
+  function parseHere(raw) {
+    const parsed = parseInput(raw);
+    return modeAvailable(parsed.mode) ? parsed : { mode: 'anywhere', query: String(raw || '').trim() };
+  }
+
+  /** A page's own words for a mode: { label, placeholder, helpTitle, helpDetail }. Home goes to projects, not files. */
+  function setModeMeta(mode, meta) {
+    if (!MODE_META[mode] || !meta) return;
+    MODE_META[mode] = Object.assign({}, MODE_META[mode], meta);
   }
 
   function activeCommands() {
@@ -350,7 +375,7 @@ const global = globalThis;
   }
 
   function helpItems() {
-    return HELP_CATALOG.map((h) => {
+    return HELP_CATALOG.filter((h) => modeAvailable(h.mode)).map((h) => {
       // The prefix is always the way in; a chord is shown only where one works
       // right now, in the style that is actually loaded.
       let shortcut = h.prefix || 'bare';
@@ -358,21 +383,14 @@ const global = globalThis;
         const live = Commands.liveChord ? Commands.liveChord(h.commandId) : '';
         if (live) shortcut = live;
       }
+      // A page's own words for a mode win (`setModeMeta`): on home the first row goes to projects.
+      const meta = MODE_META[h.mode] || {};
       return {
-        title: (h.prefix ? h.prefix + '  ' : '') + h.title,
-        detail: h.detail,
+        title: (h.prefix ? h.prefix + '  ' : '') + (meta.helpTitle || h.title),
+        detail: meta.helpDetail || h.detail,
         shortcut,
         section: 'Modes',
-        run: () => {
-          open({ mode: h.prefix === '' ? 'anywhere'
-            : h.prefix === '>' ? 'commands'
-            : h.prefix === '@' ? 'symbols'
-            : h.prefix === '%' ? 'search'
-            : h.prefix === ':' ? 'line'
-            : h.prefix === '!' ? 'problems'
-            : h.prefix === '/' ? 'library'
-            : 'help' });
-        },
+        run: () => { open({ mode: h.mode }); },
       };
     });
   }
@@ -436,7 +454,7 @@ const global = globalThis;
       return rankItems(helpItems(), parsed.query, 20);
     }
     // anywhere: files + symbols
-    const files = providerItems('files').map((f) => ({ ...f, section: 'Files' }));
+    const files = providerItems('files').map((f) => ({ section: 'Files', ...f }));
     const symbols = providerItems('symbols').map((s) => ({ ...s, section: 'Symbols' }));
     return rankItems(files.concat(symbols), parsed.query, 50);
   }
@@ -466,7 +484,7 @@ const global = globalThis;
 
   function renderResults() {
     if (!ui) return;
-    const parsed = parseInput(ui.input.value);
+    const parsed = parseHere(ui.input.value);
     syncModeChrome(parsed);
     flatItems = gatherItems(parsed);
     const grouped = !parsed.query
@@ -477,7 +495,10 @@ const global = globalThis;
 
     const showHint = parsed.mode === 'anywhere' && !parsed.query;
     ui.hint.hidden = !showHint;
-    if (showHint) ui.hint.textContent = '> for commands · % to search project · ? to see modes';
+    if (showHint) {
+      ui.hint.textContent = ['> for commands', modeAvailable('search') ? '% to search project' : '', '? to see modes']
+        .filter(Boolean).join(' · ');
+    }
 
     let lastSection = null;
     flatItems.forEach((item, i) => {
@@ -590,7 +611,7 @@ const global = globalThis;
 
   function open(opts) {
     let mode = 'anywhere';
-    if (opts && opts.mode && MODE_PREFIX[opts.mode] != null) mode = opts.mode;
+    if (opts && opts.mode && MODE_PREFIX[opts.mode] != null && modeAvailable(opts.mode)) mode = opts.mode;
     if (!ui) buildUi();
     // A new session. Providers that have to gather something expensive — the
     // project-text corpus, say — key their cache on this: nothing can edit a
@@ -602,7 +623,8 @@ const global = globalThis;
     isOpen = true;
     ui.backdrop.classList.add('is-open');
     ui.panel.classList.add('is-open');
-    ui.input.value = MODE_PREFIX[mode];
+    // `query`: opened by typing (home: a letter pressed on a row finds a project).
+    ui.input.value = MODE_PREFIX[mode] + (opts && typeof opts.query === 'string' ? opts.query : '');
     renderResults();
     ui.input.focus();
     // Place caret after the mode prefix.
@@ -731,6 +753,8 @@ const global = globalThis;
     dispose,
     unregister,
     setProvider,
+    setModeMeta,
+    modeAvailable,
     open,
     close,
     toggle,

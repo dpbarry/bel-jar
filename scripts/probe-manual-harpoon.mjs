@@ -50,7 +50,7 @@ const ok = (cond, msg) => { console.log((cond ? '  ok   ' : '  FAIL ') + msg); i
 try {
   const page = await browser.newPage();
   page.on('pageerror', (e) => { fails.push('page error: ' + e.message); console.log('  PAGEERROR ' + e.message); });
-  await page.goto(`http://localhost:${port}/index.html`, { waitUntil: 'networkidle0', timeout: 60000 });
+  await page.goto(`http://localhost:${port}/edit.html`, { waitUntil: 'networkidle0', timeout: 60000 });
   await page.waitForFunction(() => !!(window.BelJarEditor && window.BelugaClient && window.Harpoon),
     { timeout: 40000 });
 

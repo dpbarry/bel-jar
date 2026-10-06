@@ -42,7 +42,8 @@ try {
     sameAsKeybindings: Commands.defaults().length === Keybindings.DEFAULTS.length,
   }));
   console.log('  registry:', JSON.stringify(reg));
-  check(reg.total === 166, `registry holds 166 commands (got ${reg.total})`);
+  // 179: Version History (not bindable) and the three case commands (bindable), 2026-10-05.
+  check(reg.total === 179, `registry holds 179 commands (got ${reg.total})`);
   check(reg.unwired.length === 0, 'every palette command has behaviour attached', reg.unwired.join(', '));
   check(reg.chordedUnwired.length === 0,
     'every command that ships a chord has behaviour behind it', reg.chordedUnwired.join(', '));
@@ -62,14 +63,17 @@ try {
     chords: [...document.querySelectorAll('.jar-palette-item-shortcut')].length,
   }));
   console.log('  palette:', JSON.stringify(pal));
-  // 125 palette commands minus the 21 that `when()` gates out of an empty
+  // The palette's commands minus those `when()` gates out of an empty
   // workspace: 4 Prover moves (no hole at the caret), 7 Harpoon lab commands
   // (no lab open), run.module / run.project (no suite, single file),
   // tab.next / tab.prev / tab.close-others / tab.close-right (one tab open),
   // suite.add-file / suite.remove-file (no suite owns the directory), run.stop
   // (nothing running). `cmdline.repeat` joins them until something has been
-  // typed on the line.
-  check(pal.rows === 104, `palette shows 104 of 125 with the rest gated (got ${pal.rows})`);
+  // typed on the line, and the account's commands have no server to work with
+  // here. Go Home and Report an Issue (2026-10-02) work everywhere: 106. Cycle
+  // start page is the one new preference a static server offers (the six sync
+  // preferences exist only where a server answers): 107.
+  check(pal.rows === 107, `palette shows 107 commands with the rest gated (got ${pal.rows})`);
   check(
     pal.sections.join(',') === 'File,Edit,Navigate,Prover,Run,View,Settings,Tools',
     'the Prover header survives on its two ungated reports',
@@ -103,6 +107,12 @@ try {
   // ── keybindings sheet ───────────────────────────────────────────────────────
   await page.evaluate(() => SettingsUI.open());
   await new Promise((r) => setTimeout(r, 500));
+  // Settings opens on the panel shown, not on its close button (docs/UI.md §7).
+  const settingsFocus = await page.evaluate(() => {
+    const a = document.activeElement;
+    return { nav: !!(a && a.matches('.jar-settings__nav-item[aria-selected="true"]')), close: !!(a && a.matches('.jar-dialog__close')) };
+  });
+  check(settingsFocus.nav && !settingsFocus.close, `Settings opens with focus on the selected category, not its close button (${JSON.stringify(settingsFocus)})`);
   await page.evaluate(() => {
     const item = [...document.querySelectorAll('button, [role="tab"], .jar-settings__rail-item')]
       .find((el) => (el.textContent || '').trim() === 'Keys');
@@ -118,7 +128,7 @@ try {
     unbound: [...document.querySelectorAll('.jar-kb__chord.is-empty')].length,
   }));
   console.log('  sheet:', JSON.stringify(sheet));
-  check(sheet.rows === 156, `sheet renders every bindable command (got ${sheet.rows})`);
+  check(sheet.rows === 168, `sheet renders every bindable command (got ${sheet.rows})`);
   check(
     sheet.sections.join(',') === 'File,Edit,Motion,Navigate,Prover,Run,View,Settings,Account,Tools',
     'sheet section headers appear once each, in SECTION_ORDER',
@@ -147,8 +157,8 @@ try {
     'and nothing inside it scrolls separately', scrollports.innerScrollports.join(' | '));
   check(scrollports.filterSticky === 'sticky',
     'the command filter sticks as you scroll past it', scrollports.filterSticky);
-  check(/156 commands · 20 bound/.test(sheet.count), 'filter count reads right', sheet.count);
-  check(sheet.unbound === 136, `unbound rows render as empty chords (got ${sheet.unbound})`);
+  check(/168 commands · 20 bound/.test(sheet.count), 'filter count reads right', sheet.count);
+  check(sheet.unbound === 148, `unbound rows render as empty chords (got ${sheet.unbound})`);
   await page.screenshot({ path: path.join(outDir, 'keybindings-sheet.png') });
 
   // ── filtering ───────────────────────────────────────────────────────────────
@@ -792,8 +802,9 @@ try {
   check(gestureTarget.heads.join(',') === 'Gestures',
     'the style options are nested, not a peer section', gestureTarget.heads.join(','));
   // ⛔ "Go and look at this" is a HEAD action beside Reset, never a settings row
-  // with a button in the control column: nothing about it is configured.
-  check(gestureTarget.headActions.join(' | ') === 'Keys | Available Keys | Reset',
+  // with a button in the control column: nothing about it is configured. The head
+  // holds no title since 2026-10-06: the list beside it says which panel this is.
+  check(gestureTarget.headActions.join(' | ') === 'Available Keys | Reset',
     'the Keys head carries its action beside Reset', gestureTarget.headActions.join(' | '));
 
   const retargeted = await page.evaluate(async () => {

@@ -90,8 +90,9 @@ export function resolveRows(rows, stored) {
 
 /**
  * Early boot's read of a table, straight from browser storage before the
- * store exists. A missing or different schema reads as defaults: the store is
- * about to wipe that data anyway, and painting from it would flash.
+ * store exists. A missing or different schema reads as defaults: that data is
+ * in another format (the store is about to migrate it, or leave it alone), and
+ * painting from it would flash.
  */
 export function readBootRows(storage, schema, key, rows) {
   try {
@@ -100,6 +101,20 @@ export function readBootRows(storage, schema, key, rows) {
     return resolveRows(rows, env && env.data && env.data.values);
   } catch (_) {
     return resolveRows(rows, {});
+  }
+}
+
+/**
+ * Early boot's read of one record's data (a project's meta, to know whether the
+ * start page can open it), under the same rule: another schema reads as absent.
+ */
+export function readBootRecord(storage, schema, key) {
+  try {
+    if (storage.getItem('beljar/schema') !== String(schema)) return null;
+    const env = JSON.parse(storage.getItem(key) || 'null');
+    return env && env.data && typeof env.data === 'object' ? env.data : null;
+  } catch (_) {
+    return null;
   }
 }
 

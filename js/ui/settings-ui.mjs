@@ -1022,7 +1022,7 @@ const global = globalThis;
     var F = typeof FullKeyboard !== 'undefined' ? FullKeyboard : null;
     if (F && F.isSupported && F.isSupported()) {
       return 'Full keyboard runs BelJar fullscreen with Keyboard Lock, so Ctrl+W closes nothing. '
-        + 'Hold Esc to leave — it is in the command palette, or type :fullkeys.';
+        + 'Hold Esc to leave. It is in the command palette, or type :fullkeys.';
     }
     return 'This browser has no Keyboard Lock, so those chords stay with the browser.';
   }
@@ -1273,7 +1273,9 @@ const global = globalThis;
     var activeCategory = 'appearance';
 
     function selectCategory(id) {
+      var arriving = id === 'account' && activeCategory !== 'account';
       activeCategory = id;
+      if (arriving && refreshAccountTab) refreshAccountTab();
       nav.querySelectorAll('.jar-settings__nav-item').forEach(function (el) {
         var on = el.dataset.category === id;
         el.classList.toggle('is-active', on);
@@ -1336,12 +1338,10 @@ const global = globalThis;
       panel.setAttribute('role', 'tabpanel');
       panel.hidden = cat.id !== activeCategory;
 
+      // The panel's action strip (Reset, and what you go and look at). No title:
+      // the list beside it already shows which panel this is (docs/UI.md §2, §7).
       var head = document.createElement('div');
       head.className = 'jar-settings__panel-head';
-      var headLabel = document.createElement('span');
-      headLabel.className = 'jar-settings__panel-head-label';
-      headLabel.textContent = cat.label;
-      head.appendChild(headLabel);
       panel.appendChild(head);
 
       var body = document.createElement('div');
@@ -1880,8 +1880,8 @@ const global = globalThis;
     keybindingsApi = mountKeybindingsSheet(kbUnit.body);
 
     // Beluga
-    addDropdownRow(panelBodies.beluga, 'beluga-mode', 'Run / Load',
-      'Stable: worker (non-blocking). Fast: main thread for Run/Load only — background checking always stays on the Stable worker.',
+    addDropdownRow(panelBodies.beluga, 'beluga-mode', 'Run and load',
+      'Stable: worker (non-blocking). Fast: main thread for runs and loads only; background checking always stays on the Stable worker.',
       [{ value: 'stable', label: 'Stable' }, { value: 'fast', label: 'Fast' }],
       function () {
         return BelugaRun.getBelugaMode()
@@ -1896,7 +1896,7 @@ const global = globalThis;
       function (p, on) { Settings.set('belugaFallbackStable', on); }
     );
     addSwitchRow(panelBodies.beluga, 'beluga-cancel-on-edit', 'Cancel load on edit',
-      'Abort a pending Run/Load when the buffer changes.',
+      'Abort a pending run or load when the buffer changes.',
       function () { return Settings.get('belugaCancelOnEdit'); },
       function (p, on) { Settings.set('belugaCancelOnEdit', on); }
     );
@@ -1944,6 +1944,13 @@ const global = globalThis;
       'Show how many Beluga certifies ran per hole in the proof tree.',
       function () { return Settings.get('autosolveShowStats'); },
       function (p, on) { Settings.set('autosolveShowStats', on); }
+    );
+    addDropdownRow(panelBodies.harpoon, 'case-fill', 'Fill missing cases',
+      'When a proof by induction is missing cases, search for them when typing pauses and show '
+      + 'each as a faint arm to accept. Proofs without a termination measure are only filled when asked.',
+      [{ value: 'auto', label: 'Automatically' }, { value: 'ask', label: 'When asked' }],
+      function () { return Settings.get('caseFill'); },
+      function (p, v) { Settings.set('caseFill', v); }
     );
 
     // REPL
@@ -2005,6 +2012,15 @@ const global = globalThis;
     );
 
     // Workspace
+    addDropdownRow(panelBodies.workspace, 'start-page', 'Start page',
+      'What opens when you come to BelJar.',
+      [
+        { value: 'home', label: 'Home' },
+        { value: 'last', label: 'Last project' },
+      ],
+      function () { return Settings.get('startPage'); },
+      function (p, v) { Settings.set('startPage', v); }
+    );
     addSwitchRow(panelBodies.workspace, 'restore-panels', 'Restore panel on reload',
       'Reopen the last side panel after reload.',
       function () { return Settings.get('restorePanels'); },
@@ -2016,7 +2032,7 @@ const global = globalThis;
       function (p, on) { Settings.set('libraryExpandDefault', on); }
     );
     addSwitchRow(panelBodies.workspace, 'inspector-follow', 'Inspector follows cursor',
-      'Update the inspector as the editor cursor moves.',
+      'Follow the cursor, and move the cursor to what you open.',
       function () { return Settings.get('inspectorFollow'); },
       function (p, on) {
         Settings.set('inspectorFollow', on);
@@ -2031,7 +2047,8 @@ const global = globalThis;
       'Reset',
       function () {
         ConfirmDialog.confirm({
-          message: 'Reset split panes and side panel sizes? The page will reload.',
+          message: 'Reset split panes and side panel sizes?',
+          note: 'The page will reload.',
           confirmLabel: 'Reset',
           ariaLabel: 'Reset panel layout',
         }).then(function (ok) {
@@ -2199,6 +2216,77 @@ const global = globalThis;
       function () { return Settings.get('signOutKeep'); },
       function (p, v) { Settings.set('signOutKeep', v); }
     );
+
+    // Where the account is signed in, each with Sign out there (server/auth.mjs).
+    // Asked each time the panel shows, and this browser first.
+    addSectionHead(panelBodies.account, 'Devices');
+    var devicesHead = panelBodies.account.lastElementChild;
+    var devicesBox = document.createElement('div');
+    devicesBox.className = 'jar-settings__devices';
+    panelBodies.account.appendChild(devicesBox);
+    var devicesAsked = 0;
+    function deviceNote(text) {
+      var row = document.createElement('div');
+      row.className = 'jar-dialog__setting jar-settings__action-row';
+      var main = document.createElement('div');
+      main.className = 'jar-dialog__setting-main';
+      var dsc = document.createElement('span');
+      dsc.className = 'jar-dialog__setting-desc';
+      dsc.textContent = text;
+      main.appendChild(dsc);
+      row.appendChild(main);
+      return row;
+    }
+    function refreshDevices() {
+      var A = global.Account;
+      var who = A && A.user();
+      devicesHead.hidden = !who;
+      devicesBox.hidden = !who;
+      var ask = ++devicesAsked;
+      if (!who) { devicesBox.replaceChildren(); return; }
+      A.sessions().then(function (list) {
+        if (ask !== devicesAsked) return;
+        devicesBox.replaceChildren();
+        if (!list) {
+          devicesBox.appendChild(deviceNote('Couldn’t ask BelJar’s server where you’re signed in.'));
+          return;
+        }
+        list.slice().sort(function (a, b) { return (b.current ? 1 : 0) - (a.current ? 1 : 0); }).forEach(function (s) {
+          var w = A.sessionWords(s);
+          if (s.current) {
+            var mine = addActionRow(devicesBox, w.label, w.detail, '', function () {});
+            mine.removeChild(mine.querySelector('.jar-settings__action-btn'));
+            mine.dataset.session = 'current';
+            return;
+          }
+          var row = addActionRow(devicesBox, w.label, w.detail, 'Sign out', function () {
+            var btn = row.querySelector('.jar-settings__action-btn');
+            btn.disabled = true;
+            A.signOutThere(s.id).then(function (ok) {
+              if (ok) {
+                row.remove();
+                return;
+              }
+              btn.disabled = false;
+              if (global.Toasts && typeof global.Toasts.error === 'function') global.Toasts.error('Couldn’t sign out that device. Try again.');
+            });
+          });
+          row.dataset.session = 'other';
+        });
+      });
+    }
+
+    // Deleting the account: last, and red only in its button (the dialog asks).
+    addSectionHead(panelBodies.account, 'Your data');
+    var dataHead = panelBodies.account.lastElementChild;
+    var deleteRow = addActionRow(panelBodies.account, 'Delete account',
+      'Deletes your projects and settings in the cloud, and signs out every device. Projects in this browser stay here.',
+      'Delete account', function () {
+        var A = global.Account;
+        if (A && A.user()) A.deleteAccount();
+      });
+    deleteRow.querySelector('.jar-settings__action-btn').classList.add('jar-settings__action-btn--danger');
+
     refreshAccountTab = function () {
       var A = global.Account;
       var there = !!(A && A.available());
@@ -2212,6 +2300,9 @@ const global = globalThis;
       if (lbl) lbl.textContent = who ? (who.name || '@' + who.handle) : 'Not signed in';
       if (dsc) dsc.textContent = who ? '@' + who.handle + ', signed in with GitHub.' : 'Sign in to have your projects and settings on every device.';
       if (btn) btn.textContent = who ? 'Sign out' : 'Sign in with GitHub';
+      dataHead.hidden = !who;
+      deleteRow.hidden = !who;
+      if (activeCategory === 'account') refreshDevices();
     };
     refreshAccountTab();
     global.addEventListener('beljar:account', refreshAccountTab);
@@ -2576,6 +2667,10 @@ const global = globalThis;
     // style in force at render time. Rebuild on every open.
     if (keybindingsApi && typeof keybindingsApi.refresh === 'function') keybindingsApi.refresh();
     Dialog.openDialog(settingsDialogEl);
+    // Start on the panel shown, where the arrows move from: left to the dialog,
+    // focus lands on its close button, drawn lit as if it were the thing to press.
+    var shown = settingsDialogEl.querySelector('.jar-settings__nav-item[aria-selected="true"]');
+    if (shown) shown.focus({ preventScroll: true });
   }
 
   global.SettingsUI = {

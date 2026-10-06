@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <!-- The kit: BelJar's components on one page, for looking at (docs/UI.md §6).
+       A page for whoever builds BelJar, never uploaded (.assetsignore names
+       dev/, tests/test-deploy-config.mjs holds it). Every specimen is drawn by
+       the app's own modules and stylesheets (dev/kit.mjs), so what is here is
+       what ships: a component changed in the app changes here.
+       Open it from a static server at the repository root: /dev/kit.html
+       `npm run probe:kit` shoots it in both themes. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BelJar kit</title>
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.png">
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/home.css">
+  <link rel="stylesheet" href="kit.css">
+</head>
+
+<body class="kit-page">
+  <div class="kit-bar">
+    <span class="kit-bar__title">BelJar kit</span>
+    <span class="kit-bar__note">Every specimen is drawn by the app's own code and styles.</span>
+    <span class="kit-bar__themes" role="group" aria-label="Theme">
+      <button type="button" class="jar-prompt-dialog__btn is-secondary" data-kit-theme="dark">Dark</button>
+      <button type="button" class="jar-prompt-dialog__btn is-secondary" data-kit-theme="light">Light</button>
+    </span>
+  </div>
+
+  <main class="kit" id="kit"></main>
+
+  <div id="toast-stack" class="toast-stack" popover="manual" aria-live="polite" aria-relevant="additions"></div>
+  <div id="tooltip-root" class="tooltip-root" role="tooltip" hidden></div>
+  <div id="menu-root" class="menu-root"></div>
+
+  <script type="module" src="kit.mjs"></script>
+</body>
+
+</html>

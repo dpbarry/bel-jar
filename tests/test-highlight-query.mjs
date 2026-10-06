@@ -8,7 +8,7 @@ const hi = tagHighlighter([
   { tag: t.propertyName, class: 'prop' },
   { tag: t.typeName, class: 'type' },
   { tag: t.typeOperator, class: 'arrow' },
-  { tag: t.definitionOperator, class: 'colon' },
+  { tag: t.separator, class: 'colon' },
 ]);
 
 function expect(cond, msg) {

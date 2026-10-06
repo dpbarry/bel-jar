@@ -182,6 +182,18 @@ function expect(cond, msg) {
   expect(m && /\n=\n/.test(m.declText), 'declText isolates = from the trailing type comment');
   expect(!!theoremUnderProof(m.declText), 'masked declText re-parses after a trailing type comment');
 }
+{
+  // (i) The body `=` glued to the closing bracket of the type, as in
+  // `rec values_dont_step : … -> [ |- not_possible]=`. Found by the case-completion
+  // harness: four corpus theorems were unreadable, so Orca could not even start on them.
+  // A name may contain `=` (`pred=`), but never `]`, `)` or `}`.
+  const glued = theoremUnderProof('rec f : [ |- tp] -> [ |- tp]=\n/ total 1 /\nfn x => x\n;');
+  expect(!!glued && glued.name === 'f', 'a body equals glued to the type bracket is still the body');
+  expect(glued.compType && glued.compType.premises.length === 1, 'and the type is read up to it, not past it');
+  const named = theoremUnderProof('rec pred= : [ |- tp] -> [ |- tp] =\nfn x => x\n;');
+  expect(!!named && named.name === 'pred=', 'an equals inside a name is still part of the name');
+  expect(!theoremUnderProof('rec f : [ |- tp] -> [ |- tp]=> x;'), 'an arrow after a bracket is not the body equals');
+}
 
 // ── STRUCTURAL anti-overfit guard on the harness files ──────────────────────
 // Same rules as tests/test-prover-no-overfit.mjs, applied to the corpus harness

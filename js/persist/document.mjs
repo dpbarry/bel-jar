@@ -482,7 +482,7 @@ export function createDocuments(deps) {
       return { ok: true, copyId: copyId };
     }
 
-    var handle = { noteFileChange: noteFileChange };
+    var handle = { noteFileChange: noteFileChange, flushIfDirty: flushCheckpointIfDirty };
     open.add(handle);
 
     return {
@@ -513,5 +513,17 @@ export function createDocuments(deps) {
     };
   }
 
-  return { createPersist: createPersist };
+  /**
+   * Write what any open document has waiting to storage, now. The page is
+   * going, and sync is about to send what is in storage (persist.mjs): what
+   * was typed in the last moment must be there first, whichever page hook runs
+   * first.
+   */
+  function flushPending() {
+    open.forEach(function (doc) {
+      try { if (doc.flushIfDirty) doc.flushIfDirty(); } catch (_) { /* the rest still flush */ }
+    });
+  }
+
+  return { createPersist: createPersist, flushPending: flushPending };
 }

@@ -1,6 +1,10 @@
 /**
  * Upload/import/move/download + cfg reload helpers — injected into app.js.
  */
+import {
+  relPathFromPickerFile, projectEntriesFromRawEntries, projectEntriesFromPickerFiles,
+  activeCfgByDirFor, folderAsProject, createImportedProject,
+} from '../workspace/import-project.mjs';
 
   export function create(deps) {
     var getEditor = deps.getEditor;
@@ -49,49 +53,6 @@
       }
     });
 
-    function relPathFromPickerFile(file, opts) {
-      const rel = file.webkitRelativePath || file.name;
-      const parts = rel.split('/');
-      if (opts && opts.stripRoot && parts.length > 1) return parts.slice(1).join('/');
-      return rel;
-    }
-
-    function projectEntriesFromRawEntries(rawEntries) {
-      const belEntries = [];
-      const elfEntries = [];
-      const cfgEntries = [];
-      for (const entry of rawEntries) {
-        if (ProjectSource.isCfgPath(entry.name)) cfgEntries.push(entry);
-        else if (ProjectSource.isElfPath(entry.name)) elfEntries.push(entry);
-        else if (ProjectSource.isBelPath(entry.name)) belEntries.push(entry);
-      }
-      const belPaths = belEntries.map((e) => e.name);
-      const sigPaths = belPaths.concat(elfEntries.map((e) => e.name));
-      const cfgByDir = {};
-      for (const entry of cfgEntries) {
-        const dir = ProjectSource.dirOf(entry.name);
-        const base = entry.name.slice(entry.name.lastIndexOf('/') + 1);
-        if (!cfgByDir[dir]) cfgByDir[dir] = {};
-        cfgByDir[dir][base] = entry.text;
-      }
-      const byPath = new Map([...belEntries, ...elfEntries, ...cfgEntries].map((e) => [e.name, e]));
-      const orderedSig = typeof ProjectSource.orderSignaturePaths === 'function'
-        ? ProjectSource.orderSignaturePaths(sigPaths, cfgByDir)
-        : sigPaths.slice().sort();
-      const projectEntries = orderedSig.map((p) => byPath.get(p)).filter(Boolean);
-      for (const cfg of cfgEntries) projectEntries.push(cfg);
-      return { projectEntries, belCount: belPaths.length, sigCount: sigPaths.length };
-    }
-
-    async function projectEntriesFromPickerFiles(all, opts) {
-      const rawEntries = [];
-      for (const file of all) {
-        if (!ProjectSource.isProjectSourcePath(file.name)) continue;
-        rawEntries.push({ name: relPathFromPickerFile(file, opts), text: await file.text() });
-      }
-      return projectEntriesFromRawEntries(rawEntries);
-    }
-
     async function exportLibraryAsNewProject(payload) {
       if (!getPersist() || !payload) return;
       const { projectEntries } = projectEntriesFromRawEntries(payload.entries || []);
@@ -109,11 +70,7 @@
           confirmLabel: 'Create',
         });
       if (projName === null) return;
-      const tmpFiles = projectEntries.map((e, i) => ({ id: 'tmp-' + i, name: e.name }));
-      const tmpText = (id) => projectEntries[Number(id.slice(4))]?.text ?? '';
-      const activeCfgByDir = typeof ProjectSource.inferActiveCfgByDir === 'function'
-        ? ProjectSource.inferActiveCfgByDir(tmpFiles, tmpText)
-        : null;
+      const activeCfgByDir = activeCfgByDirFor(projectEntries);
       let activePath = payload.activeRelPath || null;
       if (!activePath) {
         const orderedBel = projectEntries.filter((e) => ProjectSource.isBelPath(e.name)).map((e) => e.name);
@@ -123,14 +80,7 @@
           || null;
       }
       switchProjectAndReload(() => {
-        Persist.createProjectWithFiles(projName, projectEntries, {
-          projectName: projName,
-          activeCfgByDir: activeCfgByDir || undefined,
-        });
-        if (activePath) {
-          const created = Persist.listFiles().find((f) => f.name === activePath);
-          if (created) Persist.setActiveFileId(created.id);
-        }
+        createImportedProject({ name: projName, entries: projectEntries, activeCfgByDir, activePath });
       });
     }
 
@@ -452,35 +402,14 @@
       const all = Array.from(folderInputEl.files || []);
       folderInputEl.value = '';
       if (!getPersist()) return;
-      const { projectEntries, belCount } = await projectEntriesFromPickerFiles(all, { stripRoot: true });
-      if (!belCount) {
+      const plan = await folderAsProject(all);
+      if (!plan) {
         showToast('No .bel files in that folder.', { kind: 'warn' });
         return;
       }
-      const rootName = (all[0] && all[0].webkitRelativePath)
-        ? all[0].webkitRelativePath.split('/')[0]
-        : 'Imported';
-      const orderedPaths = projectEntries
-        .filter((e) => ProjectSource.isBelPath(e.name))
-        .map((e) => e.name);
-      const firstBel = orderedPaths.length ? orderedPaths[0] : null;
-      const tmpFiles = projectEntries.map((e, i) => ({ id: 'tmp-' + i, name: e.name }));
-      const tmpText = (id) => projectEntries[Number(id.slice(4))]?.text ?? '';
-      const activeCfgByDir = typeof ProjectSource.inferActiveCfgByDir === 'function'
-        ? ProjectSource.inferActiveCfgByDir(tmpFiles, tmpText)
-        : null;
       // Imports into a fresh PROJECT silo — the current project is untouched, and
-      // the reload boots into the new (now active) project.
-      switchProjectAndReload(() => {
-        Persist.createProjectWithFiles(rootName, projectEntries, {
-          projectName: rootName,
-          activeCfgByDir: activeCfgByDir || undefined,
-        });
-        if (firstBel) {
-          const created = Persist.listFiles().find((f) => f.name === firstBel);
-          if (created) Persist.setActiveFileId(created.id);
-        }
-      });
+      // the page leaves for the new (now active) project.
+      switchProjectAndReload(() => { createImportedProject(plan); });
     });
 
     function baseName(path) {

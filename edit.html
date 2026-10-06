@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <!-- The editor: one project, named by this page's address (/edit?p=ID,
+       js/frame/routes.mjs). Home is index.html.
+       One address. BelJar moved off GitHub Pages to beljar.deanbarry.com: the
+       online features need the app and its API on one site, and browser storage
+       belongs to the origin, so a second live copy would split everyone's
+       projects in two. Old links land on the same page at the new address.
+       tests/test-canonical-redirect.mjs pins where it fires and where it never may. -->
+  <script>
+    (function () {
+      if (location.hostname !== 'dpbarry.github.io') return;
+      var path = location.pathname.replace(/^\/bel-jar(?=\/|$)/, '') || '/';
+      location.replace('https://beljar.deanbarry.com' + path + location.search + location.hash);
+    })();
+  </script>
+  <script src="js/boot/early-boot.js"></script>
+  <!-- Nothing is painted until the boot scripts in the body have run (the side
+       panel restored, the project's name in the header): the first frame is a
+       true one, and it is what the transition from home lands on. -->
+  <link rel="expect" href="#boot-painted" blocking="render">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
+  <title>BelJar</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.png">
+  <link rel="stylesheet" href="css/style.css">
+  <!-- The navigation between home and the editor is animated by the browser
+       (css/page-transition.css). ⛔ The opt-in is here, in the document, and in
+       both documents: in a stylesheet reached through @import the editor's was
+       not seen in time and the transition was refused (measured 2026-10-02), and
+       a page without it gets a hard cut and no error. -->
+  <style>@view-transition { navigation: auto; }</style>
+</head>
+
+<body>
+
+  <header>
+    <div class="header-start">
+      <a class="header-brand" id="btn-home" href="index.html" data-tooltip="Home" aria-label="Home">
+        <svg class="header-logo" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M 25 65 Q 37.5 50, 50 60 T 75 55 V 80 H 25 Z" fill="currentColor" fill-opacity="0.2" stroke="none" />
+          <path d="M 25 72 Q 40 60, 55 68 T 75 62 V 80 H 25 Z" fill="currentColor" fill-opacity="0.15" stroke="none" />
+          <path d="M 25 65 Q 37.5 50, 50 60 T 75 55" stroke-width="3" />
+          <path d="M 44 20 V 14 C 44 9, 56 9, 56 14 V 20 Z" fill="currentColor" fill-opacity="0.15" />
+          <path d="M 25 80 V 45 A 25 25 0 0 1 75 45 V 80" />
+          <path d="M 33 45 A 17 17 0 0 1 42 30" stroke-width="4" opacity="0.4" />
+          <path d="M 18 80 V 86 C 18 94, 30 96, 50 96 C 70 96, 82 94, 82 86 V 80 Z" fill="currentColor" fill-opacity="0.15" />
+          <circle cx="58" cy="44" r="3.5" stroke-width="2.5" />
+        </svg>
+      </a>
+      <nav class="header-menu" aria-label="Application menu">
+        <button type="button" class="header-menu-btn" id="menu-project" aria-haspopup="menu" aria-expanded="false">Project</button>
+        <button type="button" class="header-menu-btn" id="menu-edit" aria-haspopup="menu" aria-expanded="false">Edit</button>
+        <button type="button" class="header-menu-btn" id="menu-tools" aria-haspopup="menu" aria-expanded="false">Tools</button>
+      </nav>
+    </div>
+    <div class="header-context" id="header-context" data-tooltip-placement="below" aria-label="Untitled project">
+      <span class="header-context-name" id="header-context-name">Untitled project</span>
+      <button id="btn-sync" type="button" class="icon-btn sync-cloud" aria-label="All changes synced" aria-haspopup="menu" aria-expanded="false" hidden></button>
+    </div>
+    <div class="header-end">
+      <button id="btn-notifications" type="button" class="icon-btn notif-bell" data-tooltip="Notifications" aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path class="notif-bell-body" d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326Z"/>
+          <path class="notif-bell-clapper" d="M10.268 21a2 2 0 0 0 3.464 0"/>
+        </svg>
+      </button>
+      <button id="btn-theme" class="icon-btn theme-toggle" data-tooltip="Toggle theme">
+        <svg class="icon-moon" viewBox="1.25 1.25 21.5 21.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="5.5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+      </button>
+      <button id="btn-account" type="button" class="icon-btn account-btn" data-tooltip="Sign in" aria-label="Sign in" aria-haspopup="menu" aria-expanded="false" hidden></button>
+    </div>
+  </header>
+
+  <aside id="notif-panel" class="notif-panel" aria-hidden="true" aria-label="Notifications">
+    <div class="notif-panel-header">
+      <span class="notif-panel-title">Notifications</span>
+      <span id="notif-panel-count" class="notif-panel-count" aria-hidden="true" hidden></span>
+      <button id="btn-notif-clear" type="button" class="notif-panel-clear" aria-label="Clear all notifications" hidden>Clear all</button>
+    </div>
+    <ul id="notif-panel-list" class="notif-panel-list" role="list"></ul>
+    <p id="notif-panel-empty" class="notif-panel-empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
+        <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"/>
+      </svg>
+      <span>No notifications</span>
+    </p>
+  </aside>
+
+  <div id="toast-stack" class="toast-stack" popover="manual" aria-live="polite" aria-relevant="additions"></div>
+
+  <div class="workspace">
+    <aside class="sidebar">
+      <button id="btn-files" type="button" class="icon-btn icon-btn-lg" data-tooltip="Explorer" aria-pressed="false" aria-controls="explorer-panel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>
+        </svg>
+      </button>
+      <button id="btn-inspector" type="button" class="icon-btn icon-btn-lg" data-tooltip="Inspector" aria-pressed="false" aria-controls="inspector-panel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+      <button id="btn-library" type="button" class="icon-btn icon-btn-lg" data-tooltip="Library" aria-pressed="false" aria-controls="library-panel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="2" y="3" width="20" height="5" rx="1"/>
+          <path d="M3.5 8v12.25a1.75 1.75 0 0 0 1.75 1.75h14a1.75 1.75 0 0 0 1.75-1.75V8"/>
+          <path d="m8.65 12.6-2.2 2.1 2.2 2.1"/>
+          <path d="m15.35 12.6 2.2 2.1-2.2 2.1"/>
+          <path d="m12.85 11.6-1.7 6"/>
+        </svg>
+      </button>
+      <button id="btn-harpoon" type="button" class="icon-btn icon-btn-lg" data-tooltip="Harpoon" aria-pressed="false" aria-controls="harpoon-panel">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="5" r="1.6"/><path d="M6.20 6.20 21.00 21.00"/><path d="M18.74 18.74 20.45 12.36"/><path d="M18.74 18.74 12.36 20.45"/></svg>
+      </button>
+      <div class="sidebar-fill" aria-hidden="true"></div>
+      <a id="btn-beluga" class="icon-btn icon-btn-lg" href="https://www.cs.mcgill.ca/~complogic/beluga/" target="_blank" rel="noopener noreferrer" data-tooltip="Beluga" aria-label="Beluga site">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048 2048">
+  <path fill="currentColor" fill-rule="evenodd" d="M 440.0 0.0 H 1608.0 A 440 440 0 0 1 2048.0 440.0 V 1608.0 A 440 440 0 0 1 1608.0 2048.0 H 440.0 A 440 440 0 0 1 0.0 1608.0 V 440.0 A 440 440 0 0 1 440.0 0.0 Z M 1347.76994617,606.796568339 C 1329.57993491,606.796568339 1331.67791795,670.582409662 1351.12513475,708.779296374 C 1366.39416265,738.76957568 1387.51998695,755.67528273 1432.54146686,773.936126368 C 1482.38258775,794.151814545 1491.98078877,814.020847799 1471.33734306,854.242490324 C 1439.79344915,915.702423112 1364.26679661,936.223869496 1282.24254036,905.622442213 C 1260.14035306,897.376688178 1242.36262489,888.717831269 1196.74058962,863.976976883 C 1116.75177391,820.599010662 1090.40996052,808.608029451 1036.75752374,791.158128978 C 986.319716094,774.75357248 929.817404641,764.722243934 864.685103465,760.605400103 C 836.988282441,758.854670699 817.707074983,753.379098 785.573292015,738.139268882 C 716.577255301,705.417199569 655.418484446,691.435285233 594.112807803,694.36916396 C 480.831339928,699.790373503 394.55742685,752.737793302 360.841346308,837.531411108 C 346.844270712,872.73316613 344.622068507,908.018004118 353.909730825,947.602523726 C 359.931873377,973.269357104 360.083900467,972.601755081 344.842680492,987.672083897 C 320.646249803,1011.5970304 313.082724813,1025.85128554 314.086674681,1045.64538754 C 314.591481988,1055.5984873 316.994725843,1062.54494166 322.218231089,1069.15316914 C 327.266985777,1075.54033329 328.156148515,1075.86888865 334.814953436,1073.79642001 C 353.641516538,1067.93695243 377.848447735,1064.94707099 399.070480632,1065.86273369 C 423.867024553,1066.93258806 437.045355291,1069.33499372 485.653615244,1081.6437074 C 529.313768796,1092.69945259 541.608242316,1094.99676106 567.032191579,1096.85083757 C 610.437505175,1100.01628013 647.25036048,1088.98319393 677.538660778,1063.73094639 C 689.068153882,1054.11846836 696.349537595,1053.86774571 702.31113643,1062.87635243 C 708.067201641,1071.57436518 704.067862177,1078.08320627 684.38752489,1092.05109229 C 651.641728114,1115.29184782 622.576156686,1124.02753344 578.223881504,1123.95660896 C 546.159263723,1123.90511963 536.35990429,1122.31613489 479.205935007,1107.90400369 C 415.674998116,1091.88391315 386.990401691,1089.40505643 352.742166466,1096.97500147 C 346.495653852,1098.35563403 346.604785446,1097.90954667 350.318888747,1106.98290651 C 354.370896549,1116.88184576 358.577952637,1123.20886227 366.749318865,1131.69419368 C 386.188089206,1151.87966987 402.864783865,1158.67727492 442.822596526,1162.70210115 C 509.623741567,1169.43090024 561.541494465,1186.35946893 642.331885776,1227.75099697 C 705.35404543,1260.03913741 779.054484654,1287.56235004 842.726284936,1302.58830039 C 861.569427788,1307.03508123 896.770740683,1313.73680007 897.491987405,1313.01548887 C 897.727088249,1312.78042487 897.094773459,1311.18886106 896.086954983,1309.47856782 C 895.079136507,1307.76827458 892.211438612,1301.60318696 889.714841558,1295.77724732 C 877.20019818,1266.573585 871.381047024,1237.46424303 870.244063091,1198.37122088 C 870.225641147,1197.73796657 870.626180254,1197.21984941 871.132783702,1197.21984941 C 871.639387149,1197.21984941 872.053880878,1197.66123917 872.053880878,1198.20035735 C 872.053880878,1198.73938342 875.231352965,1207.71427798 879.115021046,1218.14607195 C 924.709432615,1340.61570522 1021.42853241,1429.18951505 1121.70175014,1440.30135506 C 1137.77968558,1442.08312544 1152.95402469,1441.16985759 1159.04938526,1438.05258841 C 1167.41202652,1433.77575 1170.02877149,1429.4022885 1170.02877149,1419.70083248 L 1170.02877149,1412.06576588 L 1161.16321117,1394.68005667 C 1146.42482735,1365.77575093 1143.77529132,1357.6475289 1137.23808044,1321.26934856 C 1132.03599992,1292.32138282 1129.90273885,1284.69985634 1123.27231294,1271.36817213 C 1112.98540756,1250.68456659 1090.85402147,1230.39804604 1061.42211128,1214.67215394 C 1056.56304734,1212.07585733 1052.58888146,1209.79927355 1052.58888146,1209.61505411 C 1052.58888146,1209.01882791 1062.03427246,1210.25696674 1071.010825,1212.02934192 C 1121.80786054,1222.05926119 1151.93059362,1252.84969761 1161.91160262,1304.94142735 C 1162.74160329,1309.27325526 1163.50169268,1312.9313927 1163.60089485,1313.07121525 C 1164.65647221,1314.5598925 1211.88388775,1303.0566783 1233.53593487,1296.03635195 C 1362.8060286,1254.12311446 1467.61343929,1165.33137304 1524.55225869,1049.49170513 C 1553.79405443,990.00052545 1568.42586731,933.631404648 1574.34732473,857.646229932 C 1576.45387397,830.614422648 1579.5564977,819.005917829 1587.8939009,806.978691444 C 1597.6473068,792.908757061 1608.03470388,785.632227529 1632.41955421,775.785514491 C 1681.75434798,755.863932643 1702.83577539,739.356176417 1718.35331531,708.493249646 C 1737.79076848,669.834064261 1739.55282738,606.779905691 1721.19572909,606.800169829 C 1717.67916429,606.804038437 1714.79253784,608.435117318 1707.48897411,614.54493911 C 1699.54156345,621.193418532 1688.34387718,626.535588726 1677.09276728,629.045025875 C 1674.81305177,629.553471516 1656.9898214,630.296483765 1637.48558868,630.69652548 C 1598.65342124,631.492988997 1594.67299191,632.038112729 1579.91701513,638.594206103 C 1561.57124634,646.74517924 1545.28044534,664.289786924 1537.39364287,684.391811709 C 1536.04819623,687.821148608 1534.8422958,690.521317348 1534.71315798,690.391534756 C 1534.58402016,690.261752164 1533.38806758,687.259030634 1532.05597684,683.718977854 C 1525.43605144,666.126021779 1509.90340552,648.950405623 1492.87333193,640.393228632 C 1476.92250791,632.378393659 1466.87904851,630.745094934 1433.56692435,630.745094934 C 1390.04314844,630.745094934 1375.65625531,627.423452717 1360.69588707,613.91887857 C 1353.93236262,607.813570154 1352.08712864,606.796568339 1347.76994617,606.796568339 z M 781.15850088,981.235162075 A 18.1494,18.1494 0 0,1 799.308785224,999.383650279 A 18.1494,18.1494 0 0,1 781.15850088,1017.53396226 A 18.1494,18.1494 0 0,1 763.010003465,999.383650279 A 18.1494,18.1494 0 0,1 781.15850088,981.235162075 z M 673.904646876,1273.30754224 C 671.341178167,1273.28718599 673.453263204,1277.21400747 677.70777422,1287.12934225 C 708.264509867,1358.34286515 766.785147876,1413.0811834 823.235730512,1423.25203054 C 852.023526665,1428.43882085 862.297720903,1418.6991393 856.87556263,1391.36263307 C 853.005010973,1371.84872884 852.19542182,1361.29838967 853.446640225,1346.72009254 C 854.04090449,1339.79592873 854.363352979,1333.96777846 854.164442044,1333.76891358 C 853.965521897,1333.56995659 849.724385213,1332.45533689 844.737592731,1331.29171483 C 792.324409295,1319.06175496 739.476117975,1301.3894003 687.969367848,1278.86645581 C 680.134229723,1275.44034275 675.77528471,1273.3223719 673.904646876,1273.30754224 z"></path>
+</svg>
+      </a>
+      <button id="btn-settings" type="button" class="icon-btn icon-btn-lg" data-tooltip="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <g transform="translate(12 12) scale(1.08) translate(-12 -12)">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </g>
+        </svg>
+      </button>
+    </aside>
+
+    <div id="explorer-panel" class="panel explorer-panel" aria-hidden="true">
+      <div class="panel-header explorer-panel-header">
+        <span class="panel-label">Explorer</span>
+        <div class="hsearch" id="explorer-search-wrap">
+          <span class="hsearch__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          </span>
+          <input id="explorer-search-input" class="hsearch__input" type="text" placeholder="Search workspace…" aria-label="Search workspace" role="combobox" aria-expanded="false" aria-controls="explorer-search-ac" autocomplete="off" spellcheck="false">
+        </div>
+        <button id="btn-explorer-new" type="button" class="icon-btn" data-tooltip="New file or folder" aria-label="New file or folder" aria-haspopup="menu" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+        </button>
+        <div class="hsearch-ac" id="explorer-search-ac" role="listbox" hidden></div>
+      </div>
+      <div class="explorer-tree" role="tree" aria-label="Project files"></div>
+    </div>
+
+    <div id="inspector-panel" class="panel inspector-panel" aria-hidden="true">
+      <div class="panel-header inspector-header-bar">
+        <span class="panel-label inspector-panel-label">Inspector</span>
+        <button id="inspector-nav-home" type="button" class="icon-btn" data-tooltip="File overview" aria-label="File overview">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/>
+            <path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          </svg>
+        </button>
+        <div class="inspector-nav-group">
+          <button id="inspector-nav-back" type="button" class="icon-btn" data-tooltip="Back" aria-label="Back" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <button id="inspector-nav-fwd" type="button" class="icon-btn" data-tooltip="Forward" aria-label="Forward" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
+        <div class="hsearch inspector-search" id="inspector-search">
+          <span class="hsearch__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          </span>
+          <input id="inspector-search-input" class="hsearch__input" type="text" placeholder="Search symbols…" aria-label="Search symbols in suite" role="combobox" aria-expanded="false" aria-controls="inspector-search-ac" autocomplete="off" spellcheck="false">
+        </div>
+        <button id="inspector-sync-toggle" type="button" class="icon-btn" data-tooltip="Not following editor selection" aria-label="Not following editor selection" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="miter" aria-hidden="true"><path d="M4 4l7.07 16.97 2.51-7.39 7.39-2.51z"/></svg>
+        </button>
+        <div class="inspector-search-ac" id="inspector-search-ac" role="listbox" hidden></div>
+      </div>
+      <div class="inspector-body">
+        <p class="inspector-empty-note">Place the cursor on a symbol.</p>
+      </div>
+      <div id="inspector-project-empty" class="panel-empty" hidden aria-hidden="true" aria-live="polite">
+        <p class="panel-empty__note">Project empty</p>
+      </div>
+    </div>
+
+    <div id="library-panel" class="panel library-panel" aria-hidden="true">
+      <div class="panel-header library-panel-header">
+        <span class="panel-label">Library</span>
+        <div class="hsearch" id="library-search-wrap">
+          <span class="hsearch__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          </span>
+          <input id="library-search" class="hsearch__input" type="search" placeholder="Search library…" aria-label="Search library" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="library-tree" role="tree" aria-label="Code library"></div>
+    </div>
+
+    <div id="harpoon-panel" class="panel harpoon-panel" aria-hidden="true">
+      <div class="panel-header harpoon-panel-header">
+        <span class="panel-label">Harpoon</span>
+        <button type="button" class="icon-btn harpoon-panel-back" data-tooltip="Cancel proof and return to goals" aria-label="Back to goals" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M19 12H5"/>
+            <path d="m12 19-7-7 7-7"/>
+          </svg>
+        </button>
+      </div>
+      <div class="harpoon-panel-body" id="harpoon-panel-body"></div>
+    </div>
+
+    <div class="workspace-panes">
+    <div class="panel editor-panel">
+      <div class="editor-topbar">
+        <div class="editor-tabs" id="editor-tabs" role="tablist" aria-label="Open files"></div>
+        <div class="editor-topbar-controls">
+          <button id="btn-load" type="button" class="icon-btn" data-tooltip="Run" aria-label="Run">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 3 20 12 5 21V3Z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="editor-body">
+        <div id="editor-empty" class="editor-empty" hidden aria-hidden="true" aria-live="polite">
+          <p class="editor-empty__note">No file open</p>
+        </div>
+        <div id="editor" class="editor-cm-host" aria-label="Beluga source editor"></div>
+      </div>
+    </div>
+
+    <div class="panel output-panel">
+      <div class="panel-header output-panel-header" id="output-panel-header">
+        <div class="output-header-progress" id="output-header-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-hidden="true"></div>
+        <span class="panel-label" id="output-panel-label">
+          Output<span class="output-header-status" id="output-header-status" aria-hidden="true"> (running)</span>
+        </span>
+        <div class="panel-header-actions">
+          <button id="btn-clear" class="icon-btn" data-tooltip="Clear" aria-label="Clear output">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 5h18"/><path d="M19 5v15c0 1-1 2-2 2H7c-1 0-2-1-2-2V5"/><path d="M8 5V3c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div id="output" class="repl-log repl-stream" role="log" aria-live="polite" aria-relevant="additions"></div>
+    </div>
+    </div>
+    <script src="js/boot/panel-restore.js"></script>
+    <span id="boot-painted" hidden></span>
+  </div>
+
+  <div id="tooltip-root" class="tooltip-root" role="tooltip" hidden></div>
+  <div id="hint-root" class="hint-root" role="status" aria-live="polite" aria-hidden="true" hidden>
+    <div class="hint-card">
+      <div class="hint-top">
+        <div class="hint-body"></div>
+        <button type="button" class="icon-btn hint-close" aria-label="Dismiss">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="hint-progress" aria-hidden="true"><span class="hint-progress-bar"></span></div>
+    </div>
+  </div>
+  <div id="menu-root" class="menu-root"></div>
+
+  <!-- The deployed hosts. The Beluga runtime is served from R2 there (the fast
+       build is ~31.5 MB, over Cloudflare's per-file static-asset cap), and a
+       server always answers /api, so an account that cannot be reached is a
+       failure to explain, never "no server" (js/account/account.mjs). Local,
+       file:// and the probes fall through to the copies in this repo. -->
+  <script>
+    (function () {
+      var h = location.hostname;
+      var deployed = ['deanbarry.com', 'workers.dev', 'pages.dev'].some(function (d) {
+        return h === d || h.endsWith('.' + d);
+      });
+      window.BELJAR_DEPLOYED = deployed;
+      if (deployed) window.BELJAR_RUNTIME_BASE = 'https://beljar-cdn.deanbarry.com/';
+    })();
+  </script>
+  <script src="js/beluga/beluga-client.js"></script>
+  <script src="js/harpoon/harpoon-client.js"></script>
+  <script src="js/editor-cm.bundle.js?v=ac12-vim-caret"></script>
+  <script src="js/boot/error-hook.js"></script>
+  <script src="js/shell.js"></script>
+</body>
+
+</html>

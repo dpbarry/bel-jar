@@ -152,6 +152,10 @@ header {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Tall enough for descenders: the ellipsis needs `overflow: hidden`, and at
+     the header's line-height of 1 it cut the tail off a g or a j. The box stays
+     centred, so the words do not move. */
+  line-height: 1.4;
   flex-shrink: 0;
   cursor: text;
 }
@@ -166,7 +170,7 @@ header {
   margin: 0;
   padding: 0.1rem 0.35rem;
   border: 1px solid var(--accent-mid);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: light-dark(hsl(220, 10%, 98%), hsl(220, 8%, 12%));
   color: var(--header-menu-fg-active);
   font: inherit;

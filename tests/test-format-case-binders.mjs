@@ -16,5 +16,4 @@ assert.ok(
   'contextual QuantifiedBinder in case branch must be preserved',
 );
 assert.ok(out.includes('msf/var/U'), 'case pattern must be preserved');
-
 console.log('OK format case binders');

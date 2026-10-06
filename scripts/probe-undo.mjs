@@ -520,7 +520,7 @@ try {
     `${before.undo} -> ${after.undo}`);
   check(after.redo === before.redo + 3, 'and the three land on the redo stack');
   const w1 = await widget();
-  check(w1.branched, 'the widget flags the waiting redo branch');
+  check(!w1.branched, 'a waiting redo branch does not colour the icon');
   check(w1.text === '', 'and still carries no leftover count');
   const aheadRows = await page.evaluate(() =>
     document.querySelectorAll('.jar-hist__row.is-ahead').length);

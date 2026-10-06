@@ -1,6 +1,6 @@
-import { statSync, readdirSync } from 'node:fs';
+import { statSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const jsRoot = join(root, 'js');
@@ -33,6 +33,7 @@ const SHELL_PAIRS = [
 
 const EDITOR_BUNDLE = join(jsRoot, 'editor-cm.bundle.js');
 const MOVES_WORKER = join(jsRoot, 'prover-moves.worker.js');
+const CASE_FILL_WORKER = join(jsRoot, 'case-fill.worker.js');
 const EDITOR_ENTRY = join(root, 'scripts', 'build-editor.mjs');
 
 function mtime(path) {
@@ -72,6 +73,36 @@ for (const rel of SHELL_PAIRS) {
   if (srcT > outT) stale.push(`stale: js/${rel.replace(/\.mjs$/, '.js')} (run npm run build:shell)`);
 }
 
+// Home's bundle (js/home.mjs → js/home.js). Its entry is a list of imports that
+// never changes, so comparing the entry alone would hold nothing: the bundle is
+// compared with every module it is built from.
+function graphNewest(entry) {
+  const seen = new Set();
+  let newest = { t: 0, file: entry };
+  (function walk(file) {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const t = mtime(file);
+    if (t == null) return;
+    if (t > newest.t) newest = { t, file };
+    const text = readFileSync(file, 'utf8');
+    for (const m of text.matchAll(/^\s*(?:import|export)\s[^;'"]*?\bfrom\s*['"](\.[^'"]+)['"]|^\s*import\s*['"](\.[^'"]+)['"]/gm)) {
+      walk(join(dirname(file), m[1] || m[2]));
+    }
+  })(entry);
+  return newest;
+}
+
+const homeOut = mtime(join(jsRoot, 'home.js'));
+const homeNewest = graphNewest(join(jsRoot, 'home.mjs'));
+if (mtime(join(jsRoot, 'home.mjs')) == null) {
+  stale.push('missing source: js/home.mjs');
+} else if (homeOut == null) {
+  stale.push('missing build output: js/home.js (run npm run build:shell)');
+} else if (homeNewest.t > homeOut) {
+  stale.push(`stale: js/home.js, older than ${relative(root, homeNewest.file).replace(/\\/g, '/')} (run npm run build:shell)`);
+}
+
 const editorSrcNewest = newestMtime(join(jsRoot, 'editor-src'), '.mjs');
 const editorBundleT = mtime(EDITOR_BUNDLE);
 const movesWorkerT = mtime(MOVES_WORKER);
@@ -86,6 +117,12 @@ if (movesWorkerT == null) {
   stale.push('missing build output: js/prover-moves.worker.js (run npm run build:editor)');
 } else if (editorDriver > movesWorkerT) {
   stale.push('stale: js/prover-moves.worker.js (run npm run build:editor)');
+}
+const caseFillWorkerT = mtime(CASE_FILL_WORKER);
+if (caseFillWorkerT == null) {
+  stale.push('missing build output: js/case-fill.worker.js (run npm run build:editor)');
+} else if (editorDriver > caseFillWorkerT) {
+  stale.push('stale: js/case-fill.worker.js (run npm run build:editor)');
 }
 
 if (stale.length) {

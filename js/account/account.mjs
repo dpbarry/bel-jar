@@ -12,9 +12,20 @@
  * Offline-first stays true: nothing on the page waits for this. Where the site
  * has no server (local development, the probes' static server), the account
  * button stays hidden and BelJar is exactly what it was.
+ *
+ * A session can also end without this browser signing out: from another
+ * device (Settings > Account, Sign out there), with the account (Delete
+ * account), or by time. The browser follows when it next hears so
+ * (`followEndedSession`).
+ *
+ * Both pages load this (js/frame/routes.mjs). ⛔ Home has no project of its own,
+ * and asking Persist which project is open settles a page on one and makes one
+ * when there is none: nothing here does on home. Signing in happens on home (or
+ * from the palette); signed out, the editor's header shows no account button.
  */
 import { avatarImage } from './avatar.mjs';
 import { createHttpTransport } from '../persist/sync/http-transport.mjs';
+import { Routes } from '../frame/routes.mjs';
 
 export { roundIsSafe } from '../persist/sync/runner.mjs';
 
@@ -40,10 +51,52 @@ export function accountStep(me, local) {
  * The projects a signed-in page adopts: every one in this browser that belongs to
  * no account and has something written in it. An empty one waits: every browser
  * starts with an empty project, and adopting it would leave one more empty
- * "Untitled Project" in the account per device. It joins at its first character.
+ * "Untitled project" in the account per device. It joins at its first character.
  */
 export function adoptable(projects, sizeOf) {
   return projects.filter((p) => p.owner === null && sizeOf(p.id) > 0).map((p) => p.id);
+}
+
+/**
+ * What a browser does with the account's projects when its session ended
+ * without it signing out (`reason`: 'elsewhere', 'deleted', or null for one
+ * that ran out): 'release' (the account was deleted: they stay, as this
+ * browser's own, since the cloud no longer has them), 'keep' (Projects in this
+ * browser: Keep them), or 'leave' (they leave as a sign-out's would, but those
+ * with work the cloud lacks stay, kept for the account).
+ */
+export function endedStep(reason, keepSetting) {
+  if (reason === 'deleted') return 'release';
+  return keepSetting === 'keep' ? 'keep' : 'leave';
+}
+
+/** What this browser says once it has followed a session that ended elsewhere. */
+export function endedWords(reason, left) {
+  if (reason === 'deleted') return 'Your account was deleted. Its projects stay in this browser.';
+  const first = reason === 'elsewhere' ? 'This browser was signed out from another device.' : 'Your session in this browser ended.';
+  return left ? first + ' Sign in to bring your projects back.' : first;
+}
+
+const HOUR = 60 * 60 * 1000;
+
+/**
+ * A session as Settings > Account lists it: { label, detail }. "Last used"
+ * moves at most once an hour on the server (server/auth.mjs), so nothing
+ * finer than that is said.
+ */
+export function sessionWords(s, now = Date.now()) {
+  const label = s.device || 'A browser';
+  if (s.current) return { label, detail: 'This browser' };
+  const h = Math.floor((now - s.usedAt) / HOUR);
+  if (h < 1) return { label, detail: 'Used in the last hour' };
+  if (h < 24) return { label, detail: 'Last used ' + (h === 1 ? '1 hour' : h + ' hours') + ' ago' };
+  const d = Math.floor(h / 24);
+  if (d < 7) return { label, detail: 'Last used ' + (d === 1 ? 'yesterday' : d + ' days ago') };
+  const then = new Date(s.usedAt);
+  const opts = then.getFullYear() === new Date(now).getFullYear()
+    ? { day: 'numeric', month: 'short' }
+    : { day: 'numeric', month: 'short', year: 'numeric' };
+  return { label, detail: 'Last used ' + then.toLocaleDateString([], opts) };
 }
 
 /**
@@ -98,7 +151,7 @@ async function askServer() {
       if (res.status === 404) return { none: true };
       if (res.status === 200 && /application\/json/.test(res.headers.get('content-type') || '')) {
         const body = await res.json();
-        return body && 'user' in body ? { user: body.user } : { error: 'not-json' };
+        return body && 'user' in body ? { user: body.user, ended: body.ended || null } : { error: 'not-json' };
       }
       error = res.status === 200 ? 'not-json' : 'status-' + res.status;
     } catch (_) {
@@ -135,6 +188,11 @@ function toast(kind, message) {
   if (T && typeof T[kind] === 'function') T[kind](message);
 }
 
+/** The sync transport: it tells this page when the server says nobody is signed in. */
+function syncTransport() {
+  return createHttpTransport({ onSignedOut: () => { recheck(); } });
+}
+
 function saveNow() {
   try {
     if (g.Commands && typeof g.Commands.run === 'function') g.Commands.run('file.save');
@@ -166,11 +224,18 @@ function avatarNode(cls) {
   return img;
 }
 
+function onEditor() {
+  return Routes.pageOf(g.location) === 'edit';
+}
+
 function render() {
   const btn = document.getElementById('btn-account');
   if (!btn) return;
-  btn.hidden = !available;
-  if (!available) return;
+  // Signed out, the editor has no account button: sign-in lives on home and in
+  // the palette. A server that cannot be reached still shows, there too.
+  const shown = available && (!!user || !!unreachable || !onEditor());
+  btn.hidden = !shown;
+  if (!shown) return;
   btn.replaceChildren();
   btn.classList.toggle('is-signed-in', !!user);
   btn.classList.toggle('is-unreachable', !!unreachable);
@@ -206,16 +271,25 @@ function menuItems() {
       media: avatarNode('account-avatar account-avatar--menu'),
     },
     { type: 'separator' },
-    { label: 'Settings', onSelect: () => g.SettingsUI && g.SettingsUI.open('account') },
+    ...(onEditor() ? [{ label: 'Home', onSelect: () => goHome() }] : []),
+    // Only where there is a Settings dialog to open (home has none yet).
+    ...(g.SettingsUI ? [{ label: 'Settings', onSelect: () => g.SettingsUI.open('account') }] : []),
     { label: 'Sign out', onSelect: signOut },
   ];
+}
+
+/** Leave the editor for home, with what is typed saved first. */
+function goHome() {
+  saveNow();
+  Routes.go(Routes.homeUrl());
 }
 
 // ── signing in: every project here joins the account ───────────────────────
 
 function signIn() {
   saveNow();
-  g.location.assign('/api/auth/github/start');
+  // Back to this page afterwards: from the editor, to the same project.
+  Routes.go(Routes.signInUrl());
 }
 
 /** Every project in this browser with something in it and no account becomes the account's, and syncs. */
@@ -223,7 +297,7 @@ function adopt(projects) {
   const P = g.Persist;
   let n = 0;
   const sizeOf = (pid) => P.projectStats(pid).size;
-  for (const pid of adoptable(projects || P.listProjects(), sizeOf)) if (P.claimProject(pid)) n += 1;
+  for (const pid of adoptable(projects || P.projects(), sizeOf)) if (P.claimProject(pid)) n += 1;
   if (n) {
     g.dispatchEvent(new CustomEvent('beljar:project-tree-changed', { detail: { kind: 'external' } }));
     P.syncNow();
@@ -238,7 +312,7 @@ function adoptOnWrite() {
   const owned = new Set();
   P.onFileChange(({ pid }) => {
     if (!user || !pid || owned.has(pid)) return;
-    const p = P.listProjects().find((x) => x.id === pid);
+    const p = P.projects().find((x) => x.id === pid);
     if (!p) return;
     if (p.owner !== null) { owned.add(pid); return; }
     adopt([p]);
@@ -261,7 +335,7 @@ async function signOut() {
   if (!keep && !check.ok) {
     const choice = await g.PromptDialog.open({
       ariaLabel: 'Sign out',
-      message: 'Not everything is in the cloud yet.',
+      message: 'Not everything is in the cloud yet',
       note: check.reason === 'offline'
         ? 'You’re offline. Signing out removes your projects from this browser, with what hasn’t synced.'
         : 'Signing out removes your projects from this browser, with what hasn’t synced.',
@@ -274,18 +348,20 @@ async function signOut() {
     if (choice !== 'out') return;
   }
   // Sync stops, and a round in flight finishes, before the session ends and
-  // anything is removed: nothing can land on this browser afterwards.
-  await P.stopSync();
+  // anything is removed: nothing can land on this browser afterwards. It stops
+  // holding the sync lock (it goes with the page): let go here, another tab
+  // would take over syncing for a session that is about to end.
+  await P.stopSync({ hold: true });
   try {
     await fetch('/api/auth/signout', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: '{}' });
   } catch (_) { /* the session ends here either way */ }
-  // ⛔ The page is still live while the projects go, and reading the project
-  // list creates one when none is visible (work.mjs `ensureProjects`), for
-  // whoever is signed in. Removing while still signed in made an empty
-  // project FOR THE ACCOUNT every time, and the next sign-in uploaded it.
-  // So: adopt nothing from here on; removing, sign out first (anything read
-  // into existence is this browser's own); keeping, keep first (the list is
-  // never empty).
+  // ⛔ The page is still live until the browser has left it, and reading the
+  // project list creates one when none is visible (work.mjs `ensureProjects`).
+  // Removing while still signed in made an empty project FOR THE ACCOUNT
+  // every time, and the next sign-in uploaded it; removing under a live editor
+  // at all left a stray blank one for home to list. So: adopt nothing from
+  // here on; keeping, keep first (the list is never empty); removing, sign out
+  // and leave: the projects go as the next page loads (`Persist.leaveAccount`).
   const uid = user.id;
   user = null;
   if (keep) {
@@ -293,9 +369,156 @@ async function signOut() {
     P.setAccount(null);
   } else {
     P.setAccount(null);
-    P.removeAccountProjects(uid);
+    P.leaveAccount(uid);
   }
-  g.location.reload();
+  // Home: what this browser still has, and the way back in.
+  Routes.go(Routes.homeUrl(), { replace: true });
+}
+
+// ── a session that ended elsewhere ──────────────────────────────────────────
+
+let following = null;
+
+/**
+ * This browser's session ended without it signing out: from another device
+ * ('elsewhere'), with the account ('deleted'), or by time (null). The server
+ * has signed it out already; the browser follows, once (`endedStep`).
+ * ⛔ Deleted, the projects stay as this browser's own: the cloud no longer
+ * has them, and removing them as a sign-out would lost the work. Otherwise
+ * nothing the cloud lacks leaves with the session.
+ */
+function followEndedSession(uid, reason) {
+  if (!following) following = followEnded(uid, reason).finally(() => { following = null; });
+  return following;
+}
+
+async function followEnded(uid, reason) {
+  const P = g.Persist;
+  user = null;
+  await P.stopSync();
+  const step = endedStep(reason, g.Settings && g.Settings.get('signOutKeep'));
+  if (step === 'leave') {
+    // Work the cloud lacks stays; if that cannot be read, nothing leaves.
+    const stay = await P.unsyncedProjects(uid).catch(() => null);
+    if (stay) {
+      P.setAccount(null);
+      P.leaveAccount(uid, stay);
+      P.noteSignedOut(reason === 'elsewhere' ? 'elsewhere' : 'ended');
+      // The projects go as the next page loads (work.mjs `finishSignOut`).
+      Routes.go(Routes.homeUrl(), { replace: true });
+      return;
+    }
+  }
+  if (step === 'release') P.releaseAccount(uid);
+  else P.keepAccountProjects(uid);
+  P.setAccount(null);
+  render();
+  announce();
+  toast('info', endedWords(reason, false));
+}
+
+/** Said once by the page after one that followed an ended session home. */
+function noteEndedSession() {
+  const note = g.Persist.takeSignedOutNote();
+  if (note) toast('info', endedWords(note === 'elsewhere' ? 'elsewhere' : null, true));
+}
+
+let rechecking = false;
+
+/**
+ * A sync call was answered 401: this browser's session may have ended
+ * elsewhere. Ask who is signed in, and follow if nobody is.
+ */
+async function recheck() {
+  if (rechecking || !user) return;
+  rechecking = true;
+  try {
+    const answer = await askServer();
+    const uid = g.Persist.getAccount();
+    if (user && uid && answer && 'user' in answer && !answer.user) await followEndedSession(uid, answer.ended);
+  } finally {
+    rechecking = false;
+  }
+}
+
+// ── where the account is signed in, and deleting it (Settings > Account) ─────
+
+/** Where the account is signed in: [{ id, device, signedInAt, usedAt, current }], or null when that could not be asked. */
+async function sessions() {
+  if (!user) return [];
+  try {
+    const res = await fetch('/api/auth/sessions', { credentials: 'same-origin', headers: { accept: 'application/json' } });
+    if (res.status === 401) {
+      recheck();
+      return null;
+    }
+    if (res.status !== 200) return null;
+    const body = await res.json();
+    return body && Array.isArray(body.sessions) ? body.sessions : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Sign out there: ends another of the account's sessions. True when the server took it. */
+async function signOutThere(id) {
+  try {
+    const res = await fetch('/api/auth/sessions/end', {
+      method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }),
+    });
+    return res.status === 200;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Delete account: asked once, then everything the server keeps for the
+ * account goes (server/deletion.mjs) and every device signed in to it is
+ * signed out. Projects in this browser stay, as its own.
+ */
+async function deleteAccount() {
+  if (!user) return;
+  const who = user;
+  const P = g.Persist;
+  const yes = await g.ConfirmDialog.confirm({
+    ariaLabel: 'Delete account',
+    subject: '@' + who.handle,
+    message: 'Delete your account?',
+    note: 'Everything in the cloud is deleted: your projects, every version of them, and your settings. Every device is signed out. Projects in this browser stay here.',
+    confirmLabel: 'Delete account',
+  });
+  if (!yes || user !== who) return;
+  saveNow();
+  const nav = g.navigator;
+  if (nav && nav.onLine === false) {
+    toast('error', 'You’re offline. Deleting your account needs BelJar’s server.');
+    return;
+  }
+  // Sync stops, and a round in flight finishes, before the account goes:
+  // nothing this browser sends lands after it.
+  await P.stopSync({ hold: true });
+  let deleted = false;
+  try {
+    const res = await fetch('/api/auth/delete', {
+      method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: '{}',
+    });
+    deleted = res.status === 200;
+  } catch (_) { /* asked below */ }
+  if (!deleted) {
+    // What was lost may be only the answer: the server says whether it happened.
+    const answer = await askServer();
+    deleted = !!answer && 'user' in answer && !answer.user && answer.ended === 'deleted';
+  }
+  if (!deleted) {
+    P.startSync({ transport: syncTransport() });
+    toast('error', 'Couldn’t delete your account. Nothing was changed.');
+    return;
+  }
+  user = null;
+  P.releaseAccount(who.id);
+  P.setAccount(null);
+  Routes.go(Routes.homeUrl(), { replace: true });
 }
 
 // ── signing in again: back to the work ──────────────────────────────────────
@@ -323,6 +546,11 @@ export function resumeTarget(projects, uid, remembered) {
  */
 function resumeAfterSignIn() {
   const P = g.Persist;
+  // The editor only: home lists the account's projects as they arrive.
+  if (!onEditor()) {
+    if (user && P.resumeFor(user.id)) P.clearResume();
+    return;
+  }
   if (!user || !P.resumeFor(user.id)) return;
   let done = false;
   let off = null;
@@ -341,7 +569,7 @@ function resumeAfterSignIn() {
       P.clearResume();
       return settle();
     }
-    const target = resumeTarget(P.listProjects(), user.id, r.project);
+    const target = resumeTarget(P.projects(), user.id, r.project);
     if (!target) {
       // Nothing of the account's here yet: wait for a round to finish.
       if (s && s.lastSync > 0 && s.state !== 'syncing') {
@@ -409,22 +637,61 @@ function noteUnreachable(error) {
   });
 }
 
+/**
+ * Signed in or out in another tab. Signing out is for the browser, not for a
+ * tab: an editor on one of the account's projects goes home with it (the
+ * project is leaving this browser), and any other page asks again who is
+ * signed in and becomes that, where it is.
+ */
+async function follow() {
+  const P = g.Persist;
+  if (onEditor() && P.ownerLeft()) {
+    Routes.go(Routes.homeUrl(), { replace: true });
+    return;
+  }
+  await P.stopSync();
+  await connect();
+}
+
 async function boot() {
   noteFailedSignIn();
+  noteEndedSession();
+  g.Persist.onAccountElsewhere(() => { follow(); });
   await connect();
+}
+
+/**
+ * A static server (Live Server, the probes) has no /api: sign-in and sync are
+ * off, by design and silently. On this machine, say where they are, once, in
+ * the console: the page itself says nothing.
+ */
+function noteNoServer() {
+  const host = g.location && g.location.hostname;
+  if (host !== '127.0.0.1' && host !== 'localhost') return;
+  console.info('BelJar: no server here (a static server has no /api), so sign-in and sync are off. For them locally: npm run dev, then http://127.0.0.1:8787');
+}
+
+/** The page now knows who is signed in, or that nobody can be: whoever waited on that goes on. */
+function announce() {
+  g.dispatchEvent(new CustomEvent('beljar:account', { detail: { user: user ? Object.assign({}, user) : null } }));
 }
 
 /** Ask who is signed in, and set the page up for the answer. Try again runs it anew. */
 async function connect() {
   const answer = await askServer();
   const where = reach(answer, !!g.BELJAR_DEPLOYED);
-  if (where === 'none') return; // no server here: BelJar stays as it was
+  if (where === 'none') { // no server here: BelJar stays as it was
+    noteNoServer();
+    announce();
+    return;
+  }
   available = true;
   if (where === 'unreachable') {
     unreachable = answer.error || 'status-404';
     user = null;
     render();
     noteUnreachable(unreachable);
+    announce();
     return;
   }
   unreachable = null;
@@ -432,27 +699,37 @@ async function connect() {
   user = me;
   const P = g.Persist;
   const step = accountStep(me, P.getAccount());
+  if (step === 'ended') {
+    await followEndedSession(P.getAccount(), answer.ended);
+    return;
+  }
   if (step === 'first' || step === 'switched') {
     P.setAccount(me.id);
     // Another account's projects were on screen: start again as this one.
     if (step === 'switched') { g.location.reload(); return; }
   }
   render();
-  g.dispatchEvent(new CustomEvent('beljar:account', { detail: { user: user ? Object.assign({}, user) : null } }));
+  announce();
   if (!me) return;
   adopt();
   if (!adopting) adoptOnWrite();
   adopting = true;
-  P.startSync({ transport: createHttpTransport() });
+  P.startSync({ transport: syncTransport() });
   resumeAfterSignIn();
 }
 
 export const Account = {
   user: () => (user ? Object.assign({}, user) : null),
   available: () => available,
+  unreachable: () => unreachable,
   menuItems,
   signIn,
   signOut,
+  goHome,
+  sessions,
+  sessionWords,
+  signOutThere,
+  deleteAccount,
   _boot: boot,
 };
 
@@ -460,6 +737,8 @@ g.Account = Account;
 
 if (typeof document !== 'undefined') {
   const go = () => {
+    // A home that is only passing through to the last project asks nothing.
+    if (g.BELJAR_LEAVING) return;
     const idle = g.requestIdleCallback;
     if (typeof idle === 'function') idle(() => { boot(); }, { timeout: 2000 });
     else setTimeout(boot, 0);

@@ -86,6 +86,7 @@
       if (!workspaceEl || !cfg) return false;
       var open = !workspaceEl.classList.contains(cfg.openClass);
       if (open) closeOtherSidePanels(id);
+      if (open && typeof Hint !== "undefined" && Hint.isVisible && Hint.isVisible("library")) Hint.dismiss("library");
       setSidePanelOpen(id, open);
       notifySidePanelLayout();
       return open;
@@ -366,11 +367,28 @@
       const id = getPersist() ? getPersist().getCurrentFileId() : Persist.getActiveFileId();
       return id ? Persist.getFileById(id) : null;
     }
+    const baseOf = (p) => p.slice(p.lastIndexOf("/") + 1);
+    const holeCounts = /* @__PURE__ */ new Map();
+    function holesInFile(f) {
+      const text = projectFileText(f.id) || "";
+      const hit = holeCounts.get(f.id);
+      if (hit && hit.text === text) return hit.n;
+      const ed = typeof BelEditor !== "undefined" ? BelEditor : null;
+      const n = ed && ed.scanFileHoles ? ed.scanFileHoles(text).length : 0;
+      holeCounts.set(f.id, { text, n });
+      return n;
+    }
     function publishSuite(file) {
       const strip = typeof StatusStrip !== "undefined" ? StatusStrip : null;
       if (!strip || !strip.setSuite) return;
       const m = file && !/\.cfg$/i.test(file.name) ? activeSuiteMembership(file.name) : null;
-      strip.setSuite(m && m.member ? { name: m.cfg.slice(m.cfg.lastIndexOf("/") + 1).replace(/\.cfg$/i, ""), index: m.index, count: m.count } : null);
+      if (!m || !m.member) {
+        strip.setSuite(null);
+        return;
+      }
+      const { cfg, index, count } = m;
+      const elsewhere = ProjectSource.developmentFilesForCfg(Persist.listFiles(), cfg, projectFileText).filter((f) => f.id !== file.id).map((f) => ({ name: baseOf(f.name), holes: holesInFile(f) })).filter((x) => x.holes);
+      strip.setSuite({ name: baseOf(cfg).replace(/\.cfg$/i, ""), index, count, elsewhere });
     }
     function updateRunButtonTooltip() {
       const file = activeFileRecord();
@@ -405,6 +423,966 @@
       updateRunButtonTooltip
     };
   }
+
+  // js/editor-src/project-paths.mjs
+  function fileBase(name) {
+    const s = String(name || "");
+    return s.slice(s.lastIndexOf("/") + 1);
+  }
+  function isExtensionless(name) {
+    return !fileBase(name).includes(".");
+  }
+  function isCfgPath(name) {
+    return String(name || "").toLowerCase().endsWith(".cfg");
+  }
+  function isElfPath(name) {
+    return String(name || "").toLowerCase().endsWith(".elf");
+  }
+  function isBelPath(name) {
+    const low = String(name || "").toLowerCase();
+    if (isCfgPath(name) || isElfPath(name)) return false;
+    if (low.endsWith(".bel")) return true;
+    return isExtensionless(name);
+  }
+  function isSignaturePath(name) {
+    return isBelPath(name) || isElfPath(name);
+  }
+  function isProjectSourcePath(name) {
+    return isSignaturePath(name) || isCfgPath(name);
+  }
+  function isCfgEntryToken(text) {
+    const t = String(text || "").trim();
+    if (!t || t.charAt(0) === "%") return false;
+    const low = t.toLowerCase();
+    if (low.endsWith(".cfg") || low.endsWith(".elf") || low.endsWith(".bel")) return true;
+    const base = t.includes("/") ? t.slice(t.lastIndexOf("/") + 1) : t;
+    return !base.includes(".");
+  }
+  function isCfgSourceEntry(text) {
+    return isCfgEntryToken(text) && !String(text || "").trim().toLowerCase().endsWith(".cfg");
+  }
+
+  // js/editor-src/semantic/development.mjs
+  function dirOf(name) {
+    const i = String(name || "").lastIndexOf("/");
+    return i === -1 ? "" : name.slice(0, i);
+  }
+  function baseNoExt(name) {
+    const s = String(name || "");
+    const base = s.slice(s.lastIndexOf("/") + 1);
+    const dot = base.lastIndexOf(".");
+    return dot === -1 ? base : base.slice(0, dot);
+  }
+  function joinPath(dir, entry) {
+    if (!dir) return entry;
+    if (!entry) return dir;
+    return `${dir}/${entry}`;
+  }
+  function parseCfg(text) {
+    const out = [];
+    for (const line of String(text || "").split("\n")) {
+      const t = line.trim();
+      if (!t || t.charAt(0) === "%") continue;
+      out.push(t);
+    }
+    return out;
+  }
+  function cfgByDirFromFiles(files, getText) {
+    const cfgByDir = {};
+    for (const f of files) {
+      const n = String(f.name || "");
+      if (!n.toLowerCase().endsWith(".cfg")) continue;
+      const dir = dirOf(n);
+      const base = n.slice(n.lastIndexOf("/") + 1);
+      if (!cfgByDir[dir]) cfgByDir[dir] = {};
+      cfgByDir[dir][base] = String(getText(f.id) ?? "");
+    }
+    return cfgByDir;
+  }
+  function allSignaturePaths(files) {
+    const out = [];
+    for (const f of files) {
+      const fn = String(f.name || "");
+      if (isSignaturePath(fn)) out.push(fn);
+    }
+    return out;
+  }
+  function pathSetFrom(paths) {
+    return Object.fromEntries(paths.map((p) => [p, true]));
+  }
+  function cfgHash(text) {
+    let hash = 2166136261;
+    const s = String(text || "");
+    for (let i = 0; i < s.length; i += 1) {
+      hash ^= s.charCodeAt(i);
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    return hash.toString(16);
+  }
+  function resolveCfgOrder(cfgDir, cfgText, cfgByDir, pathSet, seenCfg) {
+    seenCfg = seenCfg || /* @__PURE__ */ new Set();
+    const key = `${cfgDir}\0${cfgHash(cfgText)}`;
+    if (seenCfg.has(key)) return [];
+    seenCfg.add(key);
+    const ordered = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const entry of parseCfg(cfgText)) {
+      const low = entry.toLowerCase();
+      if (low.endsWith(".cfg")) {
+        const slash = entry.lastIndexOf("/");
+        const subDir = slash === -1 ? cfgDir : joinPath(cfgDir, entry.slice(0, slash));
+        const subName = slash === -1 ? entry : entry.slice(slash + 1);
+        const subMap = cfgByDir[subDir];
+        if (subMap?.[subName]) {
+          for (const p of resolveCfgOrder(subDir, subMap[subName], cfgByDir, pathSet, seenCfg)) {
+            if (!seen.has(p)) {
+              seen.add(p);
+              ordered.push(p);
+            }
+          }
+        }
+      } else if (isCfgSourceEntry(entry)) {
+        const full = joinPath(cfgDir, entry);
+        if (pathSet[full] && !seen.has(full)) {
+          seen.add(full);
+          ordered.push(full);
+        }
+      }
+    }
+    return ordered;
+  }
+  function topLevelCfgPaths(files, getText) {
+    const referenced = {};
+    const cfgPaths = [];
+    for (const f of files) {
+      const n = String(f.name || "");
+      if (!n.toLowerCase().endsWith(".cfg")) continue;
+      cfgPaths.push(n);
+      const cdir = dirOf(n);
+      for (const entry of parseCfg(getText(f.id))) {
+        if (entry.toLowerCase().endsWith(".cfg")) {
+          referenced[joinPath(cdir, entry)] = true;
+        }
+      }
+    }
+    cfgPaths.sort();
+    return cfgPaths.filter((p) => !referenced[p]);
+  }
+  function resolveActiveChain(files, cfgPath, getText) {
+    if (!cfgPath) return [];
+    const allSet = pathSetFrom(allSignaturePaths(files));
+    const cfgByDir = cfgByDirFromFiles(files, getText);
+    const dir = dirOf(cfgPath);
+    const base = cfgPath.slice(cfgPath.lastIndexOf("/") + 1);
+    const map = cfgByDir[dir];
+    if (!map?.[base]) return [];
+    return resolveCfgOrder(dir, map[base], cfgByDir, allSet, /* @__PURE__ */ new Set());
+  }
+  function owningCfgForFile(files, fileName, getText, preferredCfg = null) {
+    const dir = dirOf(fileName);
+    const cfgs = files.filter((f) => /\.cfg$/i.test(String(f.name || "")) && dirOf(f.name) === dir).map((f) => f.name);
+    if (!cfgs.length) return null;
+    const owning = cfgs.filter((cfg) => resolveActiveChain(files, cfg, getText).includes(fileName));
+    if (!owning.length) return null;
+    if (preferredCfg && owning.includes(preferredCfg)) return preferredCfg;
+    return owning[0];
+  }
+  function bestCfgInDir(files, getText, dir) {
+    const cfgByDir = cfgByDirFromFiles(files, getText);
+    const map = cfgByDir[dir != null ? String(dir) : ""];
+    if (!map) return null;
+    const pathSet = pathSetFrom(allSignaturePaths(files).filter((p) => dirOf(p) === dir));
+    let best = null;
+    let bestCount = -1;
+    for (const cfgName of Object.keys(map)) {
+      const cfgPath = joinPath(dir, cfgName);
+      const ord = resolveCfgOrder(dir, map[cfgName], cfgByDir, pathSet, /* @__PURE__ */ new Set());
+      if (ord.length > bestCount || ord.length === bestCount && cfgPath < (best || "")) {
+        bestCount = ord.length;
+        best = cfgPath;
+      }
+    }
+    return best;
+  }
+  function inferActiveCfgForDir(files, getText, dir) {
+    return bestCfgInDir(files, getText, dir);
+  }
+  function inferActiveCfgByDir(files, getText) {
+    const cfgByDir = cfgByDirFromFiles(files, getText);
+    const out = {};
+    for (const dir of Object.keys(cfgByDir)) {
+      const best = bestCfgInDir(files, getText, dir);
+      if (best) out[dir] = best;
+    }
+    return out;
+  }
+  function defaultActiveCfgForDir(dir) {
+    const d = dir != null ? String(dir) : "";
+    const g6 = typeof globalThis !== "undefined" ? globalThis : {};
+    const P = g6.Persist;
+    if (P && typeof P.getActiveCfgForDir === "function") {
+      const path = P.getActiveCfgForDir(d);
+      if (path) {
+        if (typeof P.listFiles === "function") {
+          const files = P.listFiles();
+          if (files.some((f) => f.name === path)) return path;
+        } else return path;
+      }
+    }
+    if (P && typeof P.listFiles === "function" && typeof P.getFileText === "function") {
+      return inferActiveCfgForDir(P.listFiles(), (id) => P.getFileText(id), d);
+    }
+    return null;
+  }
+  function activeCfgResolver(map) {
+    const byDir = map || {};
+    return (dir) => byDir[dir != null ? String(dir) : ""] || null;
+  }
+  function resolveActiveCfgForDir(options) {
+    if (typeof options?.activeCfgForDir === "function") return options.activeCfgForDir;
+    return defaultActiveCfgForDir;
+  }
+  function defaultActiveCfgsForDir(dir) {
+    const d = dir != null ? String(dir) : "";
+    const g6 = typeof globalThis !== "undefined" ? globalThis : {};
+    const P = g6.Persist;
+    if (P && typeof P.getActiveCfgsForDir === "function") {
+      const list2 = P.getActiveCfgsForDir(d);
+      if (list2?.length) {
+        if (typeof P.listFiles === "function") {
+          const names = new Set(P.listFiles().map((f) => f.name));
+          const out = list2.filter((p) => names.has(p));
+          if (out.length) return out;
+        } else return list2.slice();
+      }
+    }
+    const one = defaultActiveCfgForDir(d);
+    return one ? [one] : [];
+  }
+  function resolveActiveCfgsForDir(options) {
+    if (typeof options?.activeCfgsForDir === "function") return options.activeCfgsForDir;
+    return defaultActiveCfgsForDir;
+  }
+  function resolveOwningActiveCfg(files, filePath, getText, activeCfgs) {
+    if (!activeCfgs?.length) return null;
+    const owning = activeCfgs.filter((cfg) => resolveActiveChain(files, cfg, getText).includes(filePath));
+    return owning.length === 1 ? owning[0] : null;
+  }
+  function standaloneResult(active) {
+    return {
+      kind: "standalone",
+      cfg: null,
+      paths: active ? [active.name] : [],
+      activeIndex: active ? 0 : -1,
+      preludePaths: [],
+      scopeKey: active ? `standalone:${active.name}` : "standalone:"
+    };
+  }
+  function developmentForFile(files, activeId, getText, options = {}) {
+    const activeCfgsForDir = resolveActiveCfgsForDir(options);
+    const activeCfgForDir = resolveActiveCfgForDir(options);
+    const active = files.find((f) => f.id === activeId);
+    if (!active) {
+      return {
+        kind: "standalone",
+        cfg: null,
+        paths: [],
+        activeIndex: -1,
+        preludePaths: [],
+        scopeKey: "standalone:"
+      };
+    }
+    if (/\.cfg$/i.test(String(active.name))) {
+      const paths2 = resolveActiveChain(files, active.name, getText);
+      return {
+        kind: "module",
+        cfg: active.name,
+        paths: paths2,
+        activeIndex: -1,
+        preludePaths: [],
+        scopeKey: `module:${active.name}`
+      };
+    }
+    if (!isSignaturePath(active.name)) {
+      return {
+        kind: "standalone",
+        cfg: null,
+        paths: [],
+        activeIndex: -1,
+        preludePaths: [],
+        scopeKey: "standalone:"
+      };
+    }
+    let cfgPath = resolveOwningActiveCfg(files, active.name, getText, activeCfgsForDir(dirOf(active.name)));
+    if (!cfgPath) cfgPath = activeCfgForDir(dirOf(active.name));
+    let paths = cfgPath ? resolveActiveChain(files, cfgPath, getText) : [];
+    let activeIndex = paths.indexOf(active.name);
+    if (activeIndex < 0) {
+      cfgPath = owningCfgForFile(files, active.name, getText, cfgPath);
+      if (!cfgPath) return standaloneResult(active);
+      paths = resolveActiveChain(files, cfgPath, getText);
+      activeIndex = paths.indexOf(active.name);
+      if (activeIndex < 0) return standaloneResult(active);
+    }
+    return {
+      kind: "module",
+      cfg: cfgPath,
+      paths,
+      activeIndex,
+      preludePaths: activeIndex > 0 ? paths.slice(0, activeIndex) : [],
+      scopeKey: `module:${cfgPath}`
+    };
+  }
+  function cfgPathForActive(files, activeId, getText, options = {}) {
+    const dev = developmentForFile(files, activeId, getText, options);
+    return dev.kind === "module" && dev.cfg ? dev.cfg : null;
+  }
+  function visibilityPaths(dev) {
+    if (!dev || !dev.paths.length) return [];
+    const active = dev.paths[dev.activeIndex >= 0 ? dev.activeIndex : dev.paths.length - 1];
+    const out = [...dev.preludePaths];
+    if (active && out.indexOf(active) === -1) out.push(active);
+    return out;
+  }
+  function workspaceDevelopments(files, getText) {
+    const sigPaths = allSignaturePaths(files);
+    const cfgByDir = cfgByDirFromFiles(files, getText);
+    const allSet = pathSetFrom(sigPaths);
+    const developments = [];
+    const covered = {};
+    for (const cfgPath of topLevelCfgPaths(files, getText)) {
+      const dir = dirOf(cfgPath);
+      const base = cfgPath.slice(cfgPath.lastIndexOf("/") + 1);
+      const map = cfgByDir[dir];
+      if (!map?.[base]) continue;
+      const ordered = resolveCfgOrder(dir, map[base], cfgByDir, allSet, /* @__PURE__ */ new Set());
+      if (!ordered.length) continue;
+      for (const p of ordered) covered[p] = true;
+      developments.push({
+        kind: "config",
+        name: baseNoExt(cfgPath),
+        cfg: cfgPath,
+        paths: ordered
+      });
+    }
+    for (const p of sigPaths) {
+      if (covered[p]) continue;
+      developments.push({ kind: "orphan", name: p, cfg: null, paths: [p] });
+    }
+    return developments;
+  }
+  function orderedDevelopmentPaths(files, activeId, getText, options = {}) {
+    return developmentForFile(files, activeId, getText, options).paths;
+  }
+  function preludePathsFor(files, activeId, getText, options = {}) {
+    return developmentForFile(files, activeId, getText, options).preludePaths;
+  }
+  function listDevelopmentMembers(files, activeId, getText, options = {}, liveActiveText = null) {
+    const dev = developmentForFile(files, activeId, getText, options);
+    const byName = new Map(files.map((f) => [f.name, f]));
+    const members = [];
+    for (const path of dev.paths) {
+      const f = byName.get(path);
+      if (!f) continue;
+      const text = f.id === activeId && liveActiveText != null ? liveActiveText : String(getText(f.id) ?? "");
+      members.push({ id: f.id, name: f.name, text });
+    }
+    if (!members.length) {
+      const f = files.find((x) => x.id === activeId);
+      if (f) {
+        members.push({
+          id: f.id,
+          name: f.name,
+          text: String(liveActiveText != null && f.id === activeId ? liveActiveText : getText(f.id) ?? "")
+        });
+      }
+    }
+    return { members, paths: dev.paths };
+  }
+
+  // js/workspace/project-source.mjs
+  function concat(files) {
+    const parts = [];
+    const spans = [];
+    let cursor = 1;
+    for (const f of files) {
+      const text = String(f.text != null ? f.text : "");
+      const lineCount = text.split("\n").length;
+      spans.push({
+        id: f.id,
+        name: f.name,
+        startLine: cursor,
+        endLine: cursor + lineCount - 1
+      });
+      parts.push(text);
+      cursor += lineCount + 1;
+    }
+    return { code: parts.join("\n\n"), spans };
+  }
+  function mapLine(spans, line) {
+    if (!spans || !isFinite(line)) return null;
+    for (const s of spans) {
+      if (line >= s.startLine && line <= s.endLine) {
+        return { id: s.id, name: s.name, line: line - s.startLine + 1 };
+      }
+    }
+    return null;
+  }
+  function remapLocations(text, spans) {
+    if (!text || !spans || !spans.length) return text;
+    let out = String(text);
+    out = out.replace(
+      /File\s+"([^"]*)"\s*,\s*line\s+(\d+)/g,
+      (whole, _fname, line) => {
+        const hit = mapLine(spans, +line);
+        if (!hit) return whole;
+        return `File "${hit.name}", line ${hit.line}`;
+      }
+    );
+    out = out.replace(
+      /([^\s:"]+)\.bel:(\d+)\.(\d+)(?:-(\d+)\.(\d+))?:/g,
+      (whole, _fname, sl, sc, el, ec) => {
+        const start = mapLine(spans, +sl);
+        if (!start) return whole;
+        let token = `${start.name}:${start.line}.${sc}`;
+        if (el != null) {
+          const end = mapLine(spans, +el);
+          if (!end || end.id !== start.id) return whole;
+          token += `-${end.line}.${ec}`;
+        }
+        return `${token}:`;
+      }
+    );
+    out = out.replace(
+      /(^|\n)(\s*)at line\s+(\d+),(\s*characters?\s+\d+(?:-\d+)?)/g,
+      (whole, lead, ws, line, rest) => {
+        const hit = mapLine(spans, +line);
+        if (!hit) return whole;
+        return `${lead}${ws}in ${hit.name}, at line ${hit.line},${rest}`;
+      }
+    );
+    return out;
+  }
+  function pickCfgForDir(cfgByDir, dir, paths, activeName) {
+    const map = cfgByDir[dir];
+    if (!map) return null;
+    const names = Object.keys(map);
+    if (!names.length) return null;
+    const pathSet = {};
+    for (const p of paths) {
+      if (dirOf(p) === dir) pathSet[p] = true;
+    }
+    if (activeName) {
+      for (const name of names) {
+        const ord = resolveCfgOrder(dir, map[name], cfgByDir, pathSet, /* @__PURE__ */ new Set());
+        if (ord.indexOf(activeName) !== -1) return map[name];
+      }
+    }
+    if (names.length === 1) return map[names[0]];
+    let best = null;
+    let bestCount = -1;
+    for (const name of names) {
+      const resolved = resolveCfgOrder(dir, map[name], cfgByDir, pathSet, /* @__PURE__ */ new Set());
+      if (resolved.length > bestCount) {
+        bestCount = resolved.length;
+        best = map[name];
+      }
+    }
+    return best;
+  }
+  function orderSignaturePaths(paths, cfgByDir) {
+    cfgByDir = cfgByDir || {};
+    const byDir = {};
+    for (const p of paths) {
+      const d = dirOf(p);
+      if (!byDir[d]) byDir[d] = [];
+      byDir[d].push(p);
+    }
+    const out = [];
+    for (const dir of Object.keys(byDir).sort()) {
+      const inDir = byDir[dir].slice().sort();
+      const cfgText = pickCfgForDir(cfgByDir, dir, paths, null);
+      if (cfgText) {
+        const pathSet = Object.fromEntries(inDir.map((p) => [p, true]));
+        const ordered = resolveCfgOrder(dir, cfgText, cfgByDir, pathSet, /* @__PURE__ */ new Set());
+        const seen = {};
+        for (const p of ordered) {
+          if (!seen[p]) {
+            seen[p] = true;
+            out.push(p);
+          }
+        }
+        for (const p of inDir) {
+          if (!seen[p]) out.push(p);
+        }
+      } else {
+        out.push(...inDir);
+      }
+    }
+    return out;
+  }
+  function orderBelPaths(belPaths, cfgByDir) {
+    cfgByDir = cfgByDir || {};
+    const byDir = {};
+    for (const p of belPaths) {
+      const d = dirOf(p);
+      if (!byDir[d]) byDir[d] = [];
+      byDir[d].push(p);
+    }
+    const out = [];
+    for (const dir of Object.keys(byDir).sort()) {
+      const files = byDir[dir].slice().sort();
+      const cfgText = pickCfgForDir(cfgByDir, dir, belPaths, null);
+      if (cfgText) {
+        const belSet = Object.fromEntries(files.map((p) => [p, true]));
+        const ordered = resolveCfgOrder(dir, cfgText, cfgByDir, belSet, /* @__PURE__ */ new Set());
+        const seen = Object.fromEntries(ordered.map((p) => [p, true]));
+        out.push(...ordered);
+        for (const p of files) {
+          if (!seen[p]) out.push(p);
+        }
+      } else {
+        out.push(...files);
+      }
+    }
+    return out;
+  }
+  function developmentFilesFor(files, activeId, getText, options) {
+    const ordered = orderedDevelopmentPaths(files, activeId, getText, options);
+    const out = [];
+    for (const name of ordered) {
+      for (const f of files) {
+        if (f.name === name) {
+          out.push(f);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+  function orderedPathsForCfg(files, cfgPath, getText) {
+    if (!cfgPath) return [];
+    const dir = dirOf(cfgPath);
+    const base = cfgPath.slice(cfgPath.lastIndexOf("/") + 1);
+    const paths = [];
+    for (const f of files) {
+      const fn = String(f.name || "");
+      if (dirOf(fn) === dir && isSignaturePath(fn)) paths.push(fn);
+    }
+    const cfgByDir = cfgByDirFromFiles(files, getText);
+    const map = cfgByDir[dir];
+    if (!map || !map[base]) return [];
+    const pathSet = Object.fromEntries(paths.map((p) => [p, true]));
+    return resolveCfgOrder(dir, map[base], cfgByDir, pathSet, /* @__PURE__ */ new Set());
+  }
+  function developmentFilesForCfg(files, cfgPath, getText) {
+    const ordered = orderedPathsForCfg(files, cfgPath, getText);
+    const out = [];
+    for (const name of ordered) {
+      for (const f of files) {
+        if (f.name === name) {
+          out.push(f);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+  function inferDefaultCfgPath(files, getText) {
+    const cfgFiles = files.filter((f) => String(f.name || "").toLowerCase().endsWith(".cfg"));
+    if (!cfgFiles.length) return null;
+    const cfgByDir = cfgByDirFromFiles(files, getText);
+    const sigPaths = allSignaturePaths(files);
+    let best = null;
+    let bestCount = -1;
+    for (const cfg of cfgFiles) {
+      const cfgPath = cfg.name;
+      const dir = dirOf(cfgPath);
+      const base = cfgPath.slice(cfgPath.lastIndexOf("/") + 1);
+      const map = cfgByDir[dir];
+      if (!map || !map[base]) continue;
+      const pathSet = {};
+      for (const p of sigPaths) {
+        if (dirOf(p) === dir) pathSet[p] = true;
+      }
+      const ord = resolveCfgOrder(dir, map[base], cfgByDir, pathSet, /* @__PURE__ */ new Set());
+      if (!best || ord.length > bestCount || ord.length === bestCount && cfgPath < best) {
+        bestCount = ord.length;
+        best = cfgPath;
+      }
+    }
+    return best;
+  }
+  function preludeFilesFor(files, activeId, getText, options) {
+    const paths = preludePathsFor(files, activeId, getText, options || {});
+    if (!paths.length) return [];
+    const out = [];
+    for (const name of paths) {
+      for (const f of files) {
+        if (f.name === name) {
+          out.push(f);
+          break;
+        }
+      }
+    }
+    return out;
+  }
+  var GLOBAL_FILE_PRAGMA_LINE = /^\s*--(?:nostrengthen|coverage|warncoverage)\s*\.?\s*(?:%.*)?$/i;
+  function peelGlobalFilePragmas(fileCode) {
+    const text = String(fileCode != null ? fileCode : "");
+    const lines = text.split("\n");
+    let start = -1;
+    if (lines[0] && GLOBAL_FILE_PRAGMA_LINE.test(lines[0])) start = 0;
+    else if (lines[0] && lines[0].trim() === "" && lines[1] && GLOBAL_FILE_PRAGMA_LINE.test(lines[1])) start = 1;
+    if (start < 0) {
+      return { hoisted: "", rest: text, hoistLineCount: 0 };
+    }
+    const hoisted = [];
+    let i = start;
+    while (i < lines.length && GLOBAL_FILE_PRAGMA_LINE.test(lines[i])) {
+      hoisted.push(lines[i]);
+      i += 1;
+    }
+    while (i < lines.length && lines[i].trim() === "") i += 1;
+    const hoistedText = hoisted.join("\n");
+    return {
+      hoisted: hoistedText,
+      rest: lines.slice(i).join("\n"),
+      hoistLineCount: hoistedText ? hoistedText.split("\n").length : 0
+    };
+  }
+  function peelGlobalFilePragmasInPlace(fileCode) {
+    const text = String(fileCode != null ? fileCode : "");
+    const peeled = peelGlobalFilePragmas(text);
+    if (!peeled.hoisted) return { hoisted: "", body: text };
+    const lines = text.split("\n");
+    let blanked = 0;
+    for (let i = 0; i < lines.length && blanked < peeled.hoistLineCount; i += 1) {
+      if (GLOBAL_FILE_PRAGMA_LINE.test(lines[i])) {
+        lines[i] = "";
+        blanked += 1;
+      }
+    }
+    return { hoisted: peeled.hoisted, body: lines.join("\n") };
+  }
+  function joinCheckerParts(parts) {
+    return parts.filter((p) => p != null && p !== "").join("\n\n");
+  }
+  function assembleCheckerCode(fileCode, prelude) {
+    if (!prelude) {
+      return { code: String(fileCode != null ? fileCode : ""), prelude: null };
+    }
+    const peeled = peelGlobalFilePragmasInPlace(fileCode);
+    if (!peeled.hoisted) {
+      return { code: joinCheckerParts([prelude.code, peeled.body]), prelude };
+    }
+    const hoistOffset = peeled.hoisted.split("\n").length + 1;
+    const adjustedPrelude = {
+      code: prelude.code,
+      spans: prelude.spans.map((s) => ({
+        id: s.id,
+        name: s.name,
+        startLine: s.startLine + hoistOffset,
+        endLine: s.endLine + hoistOffset
+      })),
+      offsetLines: prelude.offsetLines + hoistOffset,
+      names: prelude.names
+    };
+    return {
+      code: joinCheckerParts([peeled.hoisted, prelude.code, peeled.body]),
+      prelude: adjustedPrelude
+    };
+  }
+  function assembleProjectCode(files) {
+    const hoistedLines = [];
+    const stripped = [];
+    for (const f of files) {
+      const peeled = peelGlobalFilePragmas(String(f.text != null ? f.text : ""));
+      if (peeled.hoisted) {
+        for (const line of peeled.hoisted.split("\n")) {
+          if (line && hoistedLines.indexOf(line) === -1) hoistedLines.push(line);
+        }
+      }
+      stripped.push({ id: f.id, name: f.name, text: peeled.rest });
+    }
+    const hoisted = hoistedLines.join("\n");
+    const parts = [];
+    const spans = [];
+    let cursor = hoisted ? hoistedLines.length + 2 : 1;
+    for (const s of stripped) {
+      const text = String(s.text != null ? s.text : "");
+      const lineCount = text.split("\n").length;
+      spans.push({
+        id: s.id,
+        name: s.name,
+        startLine: cursor,
+        endLine: cursor + lineCount - 1
+      });
+      parts.push(text);
+      cursor += lineCount + 1;
+    }
+    const body = parts.join("\n\n");
+    return {
+      code: hoisted ? joinCheckerParts([hoisted, body]) : body,
+      spans
+    };
+  }
+  function buildPrelude(files, activeId, getText, options) {
+    const pre = preludeFilesFor(files, activeId, getText, options);
+    if (!pre.length) return null;
+    const parts = [];
+    const spans = [];
+    let cursor = 1;
+    for (const f of pre) {
+      const text = String(getText(f.id) != null ? getText(f.id) : "");
+      const lineCount = text.split("\n").length;
+      spans.push({ id: f.id, name: f.name, startLine: cursor, endLine: cursor + lineCount - 1 });
+      parts.push(text);
+      cursor += lineCount + 1;
+    }
+    const last = spans[spans.length - 1];
+    return {
+      code: parts.join("\n\n"),
+      spans,
+      offsetLines: last.endLine + 1
+    };
+  }
+  function preludeFileAt(spans, line) {
+    for (const s of spans) {
+      if (line >= s.startLine && line <= s.endLine) {
+        return { name: s.name, line: line - s.startLine + 1 };
+      }
+    }
+    return null;
+  }
+  function messageAfter(text, index) {
+    const lines = String(text).slice(index, index + 400).split("\n");
+    for (const line of lines) {
+      const t = line.trim().replace(/^(Error|Warning):\s*/i, "");
+      if (t && !/^[-^~\s]+$/.test(t)) return t.slice(0, 160);
+    }
+    return "";
+  }
+  function shiftCheckerOutput(text, prelude) {
+    if (!text || !prelude) return { text: text || "", preludeIssues: [] };
+    const offset = prelude.offsetLines;
+    const issues = [];
+    const seen = /* @__PURE__ */ new Set();
+    function noteIssue(hit, src, index) {
+      const k = `${hit.name}:${hit.line}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      issues.push({ name: hit.name, line: hit.line, message: messageAfter(src, index) });
+    }
+    let out = String(text);
+    out = out.replace(/File\s+"([^"]*)"\s*,\s*line\s+(\d+)/g, (whole, fname, line, idx, src) => {
+      const L = +line;
+      if (L > offset) return `File "${fname}", line ${L - offset}`;
+      const hit = preludeFileAt(prelude.spans, L);
+      if (hit) noteIssue(hit, src, idx + whole.length);
+      return `(project prelude ${hit ? hit.name : "?"} line ${hit ? hit.line : L})`;
+    });
+    out = out.replace(
+      /([^\s:"]+)\.bel:(\d+)\.(\d+)(?:-(\d+)\.(\d+))?:/g,
+      (whole, fname, sl, sc, el, ec, idx, src) => {
+        const SL = +sl;
+        if (SL > offset) {
+          const EL = el != null ? +el - offset : null;
+          if (el != null && EL < 1) return whole;
+          return `${fname}.bel:${SL - offset}.${sc}${el != null ? `-${EL}.${ec}` : ""}:`;
+        }
+        const hit = preludeFileAt(prelude.spans, SL);
+        if (hit) noteIssue(hit, src, idx + whole.length);
+        return `(project prelude ${hit ? hit.name : "?"} line ${hit ? hit.line : SL})`;
+      }
+    );
+    out = out.replace(
+      /(^|\n)(\s*)at line\s+(\d+),(\s*characters?\s+\d+(?:-\d+)?)/g,
+      (whole, lead, ws, line, rest, idx, src) => {
+        const L = +line;
+        if (L > offset) return `${lead}${ws}at line ${L - offset},${rest}`;
+        const hit = preludeFileAt(prelude.spans, L);
+        if (hit) noteIssue(hit, src, idx + whole.length);
+        return `${lead}${ws}(project prelude ${hit ? hit.name : "?"} line ${hit ? hit.line : L})${rest.replace(/^\s*/, " ")}`;
+      }
+    );
+    return { text: out, preludeIssues: issues };
+  }
+  function scanProjectText(files, query2, limit) {
+    const cap = limit || 60;
+    const q = String(query2 || "").toLowerCase();
+    if (!q) return [];
+    const out = [];
+    for (const f of files) {
+      const text = String(f.text != null ? f.text : "");
+      const lines = text.split("\n");
+      let offset = 0;
+      for (let li = 0; li < lines.length; li += 1) {
+        const lower = lines[li].toLowerCase();
+        let k = lower.indexOf(q);
+        while (k !== -1) {
+          out.push({
+            id: f.id,
+            name: f.name,
+            line: li + 1,
+            col: k + 1,
+            lineText: lines[li].trim(),
+            from: offset + k,
+            to: offset + k + q.length
+          });
+          if (out.length >= cap) return out;
+          k = lower.indexOf(q, k + Math.max(1, q.length));
+        }
+        offset += lines[li].length + 1;
+      }
+    }
+    return out;
+  }
+  function reorder(files, id, delta) {
+    const idx = files.findIndex((f) => f.id === id);
+    if (idx === -1) return files;
+    const to = Math.max(0, Math.min(files.length - 1, idx + (delta || 0)));
+    if (to === idx) return files;
+    const next = files.slice();
+    const entry = next.splice(idx, 1)[0];
+    next.splice(to, 0, entry);
+    return next;
+  }
+  var ProjectSource2 = {
+    concat,
+    mapLine,
+    remapLocations,
+    reorder,
+    dirOf,
+    joinPath,
+    baseNoExt,
+    fileBase,
+    isExtensionless,
+    isCfgPath,
+    isElfPath,
+    isBelPath,
+    isSignaturePath,
+    isProjectSourcePath,
+    isCfgEntryToken,
+    isCfgSourceEntry,
+    parseCfg,
+    resolveCfgOrder,
+    allSignaturePaths,
+    orderBelPaths,
+    orderSignaturePaths,
+    pickCfgForDir,
+    cfgByDirFromFiles,
+    developmentForFile,
+    resolveOwningActiveCfg,
+    activeCfgResolver,
+    defaultActiveCfgForDir,
+    defaultActiveCfgsForDir,
+    orderedDevelopmentPaths,
+    visibilityPaths,
+    listDevelopmentMembers,
+    developmentFilesFor,
+    orderedPathsForCfg,
+    developmentFilesForCfg,
+    cfgPathForActive,
+    workspaceDevelopments,
+    inferDefaultCfgPath,
+    inferActiveCfgForDir,
+    inferActiveCfgByDir,
+    preludePathsFor,
+    preludeFilesFor,
+    buildPrelude,
+    assembleCheckerCode,
+    assembleProjectCode,
+    peelGlobalFilePragmas,
+    shiftCheckerOutput,
+    scanProjectText
+  };
+  var g = typeof window !== "undefined" ? window : globalThis;
+  g.ProjectSource = ProjectSource2;
+  g.BelJarProjectSource = g.ProjectSource;
+
+  // js/workspace/import-project.mjs
+  var g2 = typeof window !== "undefined" ? window : globalThis;
+  function relPathFromPickerFile(file, opts) {
+    const rel = file.webkitRelativePath || file.name;
+    const parts = rel.split("/");
+    if (opts && opts.stripRoot && parts.length > 1) return parts.slice(1).join("/");
+    return rel;
+  }
+  function projectEntriesFromRawEntries(rawEntries) {
+    const belEntries = [];
+    const elfEntries = [];
+    const cfgEntries = [];
+    for (const entry of rawEntries) {
+      if (ProjectSource2.isCfgPath(entry.name)) cfgEntries.push(entry);
+      else if (ProjectSource2.isElfPath(entry.name)) elfEntries.push(entry);
+      else if (ProjectSource2.isBelPath(entry.name)) belEntries.push(entry);
+    }
+    const belPaths = belEntries.map((e) => e.name);
+    const sigPaths = belPaths.concat(elfEntries.map((e) => e.name));
+    const cfgByDir = {};
+    for (const entry of cfgEntries) {
+      const dir = ProjectSource2.dirOf(entry.name);
+      const base = entry.name.slice(entry.name.lastIndexOf("/") + 1);
+      if (!cfgByDir[dir]) cfgByDir[dir] = {};
+      cfgByDir[dir][base] = entry.text;
+    }
+    const byPath = new Map([...belEntries, ...elfEntries, ...cfgEntries].map((e) => [e.name, e]));
+    const orderedSig = typeof ProjectSource2.orderSignaturePaths === "function" ? ProjectSource2.orderSignaturePaths(sigPaths, cfgByDir) : sigPaths.slice().sort();
+    const projectEntries = orderedSig.map((p) => byPath.get(p)).filter(Boolean);
+    for (const cfg of cfgEntries) projectEntries.push(cfg);
+    return { projectEntries, belCount: belPaths.length, sigCount: sigPaths.length };
+  }
+  async function projectEntriesFromPickerFiles(all, opts) {
+    const rawEntries = [];
+    for (const file of all) {
+      if (!ProjectSource2.isProjectSourcePath(file.name)) continue;
+      rawEntries.push({ name: relPathFromPickerFile(file, opts), text: await file.text() });
+    }
+    return projectEntriesFromRawEntries(rawEntries);
+  }
+  function activeCfgByDirFor(projectEntries) {
+    if (typeof ProjectSource2.inferActiveCfgByDir !== "function") return null;
+    const tmpFiles = projectEntries.map((e, i) => ({ id: "tmp-" + i, name: e.name }));
+    const tmpText = (id) => (projectEntries[Number(id.slice(4))] || {}).text || "";
+    return ProjectSource2.inferActiveCfgByDir(tmpFiles, tmpText);
+  }
+  async function folderAsProject(all) {
+    const { projectEntries, belCount } = await projectEntriesFromPickerFiles(all, { stripRoot: true });
+    if (!belCount) return null;
+    const first = all[0];
+    const name = first && first.webkitRelativePath ? first.webkitRelativePath.split("/")[0] : "Imported";
+    const bel = projectEntries.filter((e) => ProjectSource2.isBelPath(e.name));
+    return {
+      name,
+      entries: projectEntries,
+      activeCfgByDir: activeCfgByDirFor(projectEntries),
+      firstBel: bel.length ? bel[0].name : null
+    };
+  }
+  function createImportedProject(plan) {
+    const P = g2.Persist;
+    const made = P.createProjectWithFiles(plan.name, plan.entries, {
+      projectName: plan.name,
+      activeCfgByDir: plan.activeCfgByDir || void 0
+    });
+    if (!made || !made.projectId) return null;
+    const open = plan.activePath || plan.firstBel;
+    if (open) {
+      const created = P.listFiles().find((f) => f.name === open);
+      if (created) P.setActiveFileId(created.id);
+    }
+    return made.projectId;
+  }
+  var ImportProject = {
+    relPathFromPickerFile,
+    projectEntriesFromRawEntries,
+    projectEntriesFromPickerFiles,
+    activeCfgByDirFor,
+    folderAsProject,
+    createImportedProject
+  };
+  g2.ImportProject = ImportProject;
 
   // js/app/app-upload-import.mjs
   function create5(deps) {
@@ -450,44 +1428,6 @@
         );
       }
     });
-    function relPathFromPickerFile(file, opts) {
-      const rel = file.webkitRelativePath || file.name;
-      const parts = rel.split("/");
-      if (opts && opts.stripRoot && parts.length > 1) return parts.slice(1).join("/");
-      return rel;
-    }
-    function projectEntriesFromRawEntries(rawEntries) {
-      const belEntries = [];
-      const elfEntries = [];
-      const cfgEntries = [];
-      for (const entry of rawEntries) {
-        if (ProjectSource.isCfgPath(entry.name)) cfgEntries.push(entry);
-        else if (ProjectSource.isElfPath(entry.name)) elfEntries.push(entry);
-        else if (ProjectSource.isBelPath(entry.name)) belEntries.push(entry);
-      }
-      const belPaths = belEntries.map((e) => e.name);
-      const sigPaths = belPaths.concat(elfEntries.map((e) => e.name));
-      const cfgByDir = {};
-      for (const entry of cfgEntries) {
-        const dir = ProjectSource.dirOf(entry.name);
-        const base = entry.name.slice(entry.name.lastIndexOf("/") + 1);
-        if (!cfgByDir[dir]) cfgByDir[dir] = {};
-        cfgByDir[dir][base] = entry.text;
-      }
-      const byPath = new Map([...belEntries, ...elfEntries, ...cfgEntries].map((e) => [e.name, e]));
-      const orderedSig = typeof ProjectSource.orderSignaturePaths === "function" ? ProjectSource.orderSignaturePaths(sigPaths, cfgByDir) : sigPaths.slice().sort();
-      const projectEntries = orderedSig.map((p) => byPath.get(p)).filter(Boolean);
-      for (const cfg of cfgEntries) projectEntries.push(cfg);
-      return { projectEntries, belCount: belPaths.length, sigCount: sigPaths.length };
-    }
-    async function projectEntriesFromPickerFiles(all, opts) {
-      const rawEntries = [];
-      for (const file of all) {
-        if (!ProjectSource.isProjectSourcePath(file.name)) continue;
-        rawEntries.push({ name: relPathFromPickerFile(file, opts), text: await file.text() });
-      }
-      return projectEntriesFromRawEntries(rawEntries);
-    }
     async function exportLibraryAsNewProject(payload) {
       if (!getPersist() || !payload) return;
       const { projectEntries } = projectEntriesFromRawEntries(payload.entries || []);
@@ -505,23 +1445,14 @@
         confirmLabel: "Create"
       });
       if (projName === null) return;
-      const tmpFiles = projectEntries.map((e, i) => ({ id: "tmp-" + i, name: e.name }));
-      const tmpText = (id) => projectEntries[Number(id.slice(4))]?.text ?? "";
-      const activeCfgByDir = typeof ProjectSource.inferActiveCfgByDir === "function" ? ProjectSource.inferActiveCfgByDir(tmpFiles, tmpText) : null;
+      const activeCfgByDir = activeCfgByDirFor(projectEntries);
       let activePath = payload.activeRelPath || null;
       if (!activePath) {
         const orderedBel = projectEntries.filter((e) => ProjectSource.isBelPath(e.name)).map((e) => e.name);
         activePath = orderedBel[0] || projectEntries.find((e) => ProjectSource.isSignaturePath(e.name))?.name || projectEntries.find((e) => ProjectSource.isCfgPath(e.name))?.name || null;
       }
       switchProjectAndReload(() => {
-        Persist.createProjectWithFiles(projName, projectEntries, {
-          projectName: projName,
-          activeCfgByDir: activeCfgByDir || void 0
-        });
-        if (activePath) {
-          const created = Persist.listFiles().find((f) => f.name === activePath);
-          if (created) Persist.setActiveFileId(created.id);
-        }
+        createImportedProject({ name: projName, entries: projectEntries, activeCfgByDir, activePath });
       });
     }
     function applyFileReplacement(id, text) {
@@ -798,26 +1729,13 @@
       const all = Array.from(folderInputEl.files || []);
       folderInputEl.value = "";
       if (!getPersist()) return;
-      const { projectEntries, belCount } = await projectEntriesFromPickerFiles(all, { stripRoot: true });
-      if (!belCount) {
+      const plan = await folderAsProject(all);
+      if (!plan) {
         showToast("No .bel files in that folder.", { kind: "warn" });
         return;
       }
-      const rootName = all[0] && all[0].webkitRelativePath ? all[0].webkitRelativePath.split("/")[0] : "Imported";
-      const orderedPaths = projectEntries.filter((e) => ProjectSource.isBelPath(e.name)).map((e) => e.name);
-      const firstBel = orderedPaths.length ? orderedPaths[0] : null;
-      const tmpFiles = projectEntries.map((e, i) => ({ id: "tmp-" + i, name: e.name }));
-      const tmpText = (id) => projectEntries[Number(id.slice(4))]?.text ?? "";
-      const activeCfgByDir = typeof ProjectSource.inferActiveCfgByDir === "function" ? ProjectSource.inferActiveCfgByDir(tmpFiles, tmpText) : null;
       switchProjectAndReload(() => {
-        Persist.createProjectWithFiles(rootName, projectEntries, {
-          projectName: rootName,
-          activeCfgByDir: activeCfgByDir || void 0
-        });
-        if (firstBel) {
-          const created = Persist.listFiles().find((f) => f.name === firstBel);
-          if (created) Persist.setActiveFileId(created.id);
-        }
+        createImportedProject(plan);
       });
     });
     function baseName(path) {
@@ -1808,6 +2726,56 @@
     };
   }
 
+  // js/ui/menu-trigger.mjs
+  var g3 = typeof window !== "undefined" ? window : globalThis;
+  function wireMenuTrigger(btn, menuOpts) {
+    if (!btn) return;
+    let suppressNextClick = false;
+    function setOpen(open) {
+      btn.classList.toggle("is-active", open);
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    function quietTooltip() {
+      if (!g3.Tooltips) return;
+      g3.Tooltips.suppressAnchor(btn);
+      g3.Tooltips.hide();
+    }
+    function runMenuInteraction() {
+      const Menu2 = g3.Menu;
+      if (!Menu2) return;
+      if (Menu2.isOpen() && Menu2.rootAnchor() === btn) {
+        Menu2.closeAll();
+        return;
+      }
+      const items = typeof menuOpts.items === "function" ? menuOpts.items() : menuOpts.items;
+      Menu2.open({
+        anchor: btn,
+        side: menuOpts.side,
+        align: menuOpts.align,
+        items,
+        onClose: () => setOpen(false)
+      });
+      setOpen(true);
+    }
+    btn.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      suppressNextClick = true;
+      quietTooltip();
+      runMenuInteraction();
+    });
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (suppressNextClick) {
+        suppressNextClick = false;
+        return;
+      }
+      quietTooltip();
+      runMenuInteraction();
+    });
+  }
+  g3.MenuTrigger = { wire: wireMenuTrigger };
+
   // js/app/app-menus.mjs
   function create8(deps) {
     var getEditor = deps.getEditor;
@@ -1849,52 +2817,6 @@
     var getExplorerController = deps.getExplorerController;
     var editorTabsEl = deps.editorTabsEl;
     var projectFileText = deps.projectFileText;
-    function wireMenuTrigger(btn, menuOpts) {
-      if (!btn) return;
-      let suppressNextClick = false;
-      function setOpen(open) {
-        btn.classList.toggle("is-active", open);
-        btn.setAttribute("aria-expanded", open ? "true" : "false");
-      }
-      function runMenuInteraction() {
-        if (typeof Menu !== "undefined" && Menu.isOpen() && Menu.rootAnchor() === btn) {
-          Menu.closeAll();
-          return;
-        }
-        if (typeof Menu === "undefined") return;
-        const items = typeof menuOpts.items === "function" ? menuOpts.items() : menuOpts.items;
-        Menu.open({
-          anchor: btn,
-          side: menuOpts.side,
-          align: menuOpts.align,
-          items,
-          onClose: () => setOpen(false)
-        });
-        setOpen(true);
-      }
-      btn.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0) return;
-        e.stopPropagation();
-        suppressNextClick = true;
-        if (typeof Tooltips !== "undefined") {
-          Tooltips.suppressAnchor(btn);
-          Tooltips.hide();
-        }
-        runMenuInteraction();
-      });
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (suppressNextClick) {
-          suppressNextClick = false;
-          return;
-        }
-        if (typeof Tooltips !== "undefined") {
-          Tooltips.suppressAnchor(btn);
-          Tooltips.hide();
-        }
-        runMenuInteraction();
-      });
-    }
     function signatureFileCount() {
       const files = Persist.listFiles() || [];
       return files.filter((f) => ProjectSource.isSignaturePath(String(f.name || ""))).length;
@@ -1950,6 +2872,8 @@
           disabled: !(Persist.listFiles() || []).length,
           onSelect: downloadProject
         },
+        // Signed in only: the versions are the cloud's.
+        ...window.VersionHistory && window.VersionHistory.available() ? [{ label: "Version history", onSelect: () => window.VersionHistory.open() }] : [],
         {
           label: 'Download "' + (currentFile ? currentFile.name : "file") + '"',
           onSelect: downloadCurrentFile
@@ -2185,12 +3109,12 @@
     }
     function folderRunItems(folderPath) {
       const files = Persist.listFiles() || [];
-      const dirOf = ProjectSource.dirOf;
+      const dirOf2 = ProjectSource.dirOf;
       const hasRunnable = files.some(
-        (f) => dirOf(f.name) === folderPath && ProjectSource.isSignaturePath(String(f.name))
+        (f) => dirOf2(f.name) === folderPath && ProjectSource.isSignaturePath(String(f.name))
       );
       if (!hasRunnable) return [];
-      const cfg = files.find((f) => /\.cfg$/i.test(String(f.name)) && dirOf(f.name) === folderPath);
+      const cfg = files.find((f) => /\.cfg$/i.test(String(f.name)) && dirOf2(f.name) === folderPath);
       return [{
         label: cfg ? "Run suite" : "Run folder",
         onSelect: () => BelugaRun.runFolder(folderPath)
@@ -2433,30 +3357,6 @@
       editorClipboard,
       buildToolsMenuItems
     };
-  }
-
-  // js/editor-src/project-paths.mjs
-  function fileBase(name) {
-    const s = String(name || "");
-    return s.slice(s.lastIndexOf("/") + 1);
-  }
-  function isExtensionless(name) {
-    return !fileBase(name).includes(".");
-  }
-  function isCfgPath(name) {
-    return String(name || "").toLowerCase().endsWith(".cfg");
-  }
-  function isElfPath(name) {
-    return String(name || "").toLowerCase().endsWith(".elf");
-  }
-  function isBelPath(name) {
-    const low = String(name || "").toLowerCase();
-    if (isCfgPath(name) || isElfPath(name)) return false;
-    if (low.endsWith(".bel")) return true;
-    return isExtensionless(name);
-  }
-  function isSignaturePath(name) {
-    return isBelPath(name) || isElfPath(name);
   }
 
   // js/app/app-manuscript-export.mjs
@@ -2786,6 +3686,8 @@ ${doc.documentElement.outerHTML}`;
     { id: "harpoonVerifyMoves", section: "harpoon", default: ON },
     { id: "autosolveFocusNext", section: "harpoon", default: ON },
     { id: "autosolveShowStats", section: "harpoon", default: ON },
+    // Case completion: fill a proof's missing cases when typing pauses, or only on a command.
+    { id: "caseFill", section: "harpoon", default: "auto", values: ["auto", "ask"] },
     // ── REPL ────────────────────────────────────────────────────────────────
     { id: "replAutoscroll", section: "repl", default: ON },
     { id: "replWelcome", section: "repl", default: ON },
@@ -2798,9 +3700,17 @@ ${doc.documentElement.outerHTML}`;
     // Where this browser keeps history: a shared computer is not your laptop.
     { id: "replHistoryPersist", section: "repl", default: "local", values: ["local", "session", "none"], sync: false },
     // ── Workspace ───────────────────────────────────────────────────────────
-    { id: "inspectorFollow", section: "workspace", default: ON },
+    // What a plain arrival at BelJar opens: home, or the project last opened, the
+    // way an IDE reopens its last window. Early boot decides, before first paint
+    // (js/boot/early-boot-core.mjs `startTarget`).
+    { id: "startPage", section: "workspace", default: "home", values: ["home", "last"] },
+    { id: "inspectorFollow", section: "workspace", default: OFF },
     { id: "restorePanels", section: "workspace", default: ON },
     { id: "libraryExpandDefault", section: "workspace", default: OFF },
+    // Tips seen once on any computer stay seen on all of them (js/ui/hint-seen.mjs):
+    // one row per tip, so two computers that each saw a different one never disagree.
+    { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },
@@ -3010,8 +3920,75 @@ ${doc.documentElement.outerHTML}`;
       slug: "hover-sticky",
       title: "Sticky hover",
       setting: "hoverSticky"
+    },
+    // ── the two pages ─────────────────────────────────────────────────────────
+    {
+      slug: "start-page",
+      title: "Start page",
+      pages: "both",
+      labels: { home: "Home", last: "Last project" },
+      setting: "startPage"
+    },
+    // ── the account (Settings > Account; the labels are that panel's) ─────────
+    {
+      slug: "sync-settings",
+      title: "Sync settings",
+      verb: "settings sync",
+      pages: "both",
+      needs: "server",
+      setting: "syncSettings"
+    },
+    {
+      slug: "sync-both-changed",
+      title: "Changed in two places",
+      verb: "files changed in two places",
+      pages: "both",
+      needs: "server",
+      labels: { merge: "Merge them", ask: "Ask me" },
+      setting: "syncBothChanged"
+    },
+    {
+      slug: "sync-overlap",
+      title: "Where edits overlap",
+      pages: "both",
+      needs: "server",
+      labels: { ask: "Ask me", mine: "Keep mine", cloud: "Keep the cloud\u2019s" },
+      setting: "syncOverlap"
+    },
+    {
+      slug: "sync-reconnect",
+      title: "Back online",
+      verb: "edits made offline",
+      pages: "both",
+      needs: "server",
+      labels: { upload: "Upload them", ask: "Ask me first" },
+      setting: "syncReconnect"
+    },
+    {
+      slug: "sync-notices",
+      title: "Say when you go offline",
+      verb: "offline notices",
+      pages: "both",
+      needs: "server",
+      setting: "syncNotices"
+    },
+    {
+      slug: "sign-out-keep",
+      title: "Projects in this browser",
+      verb: "projects kept on sign-out",
+      pages: "both",
+      needs: "server",
+      labels: { remove: "Remove them", keep: "Keep them" },
+      setting: "signOutKeep"
     }
   ];
+  function serverAnswers() {
+    const A = globalThis.Account;
+    return !!(A && typeof A.available === "function" && A.available());
+  }
+  function offered(s) {
+    return s.needs !== "server" || serverAnswers();
+  }
   var SETTINGS2 = ROWS.map((r) => {
     const row = settingRow(r.setting);
     if (!row) throw new Error(`command-settings: "${r.slug}" names no setting "${r.setting}"`);
@@ -3031,12 +4008,13 @@ ${doc.documentElement.outerHTML}`;
       section: "Settings",
       scope: "global",
       keybindable: true,
-      palette: true
+      palette: true,
+      pages: s.pages || "editor"
     }));
   }
   function optionNames() {
     const out = [];
-    for (const s of SETTINGS2) {
+    for (const s of SETTINGS2.filter(offered)) {
       out.push(s.slug);
       for (const a of s.aliases || []) out.push(a);
     }
@@ -3044,11 +4022,11 @@ ${doc.documentElement.outerHTML}`;
   }
   function optionCandidates() {
     const out = [];
-    for (const s of SETTINGS2) {
+    for (const s of SETTINGS2.filter(offered)) {
       out.push({ value: s.slug, label: s.title });
       for (const a of s.aliases || []) out.push({ value: a, label: s.title });
     }
-    for (const s of SETTINGS2) {
+    for (const s of SETTINGS2.filter(offered)) {
       if (s.kind !== "bool" && s.off === void 0) continue;
       out.push({ value: "no" + s.slug, label: s.title + " (off)" });
       for (const a of s.aliases || []) out.push({ value: "no" + a, label: s.title + " (off)" });
@@ -3059,7 +4037,8 @@ ${doc.documentElement.outerHTML}`;
     const key = String(name == null ? "" : name).toLowerCase();
     if (!key) return null;
     const bare = key.startsWith("set.") ? key.slice(4) : key;
-    return SETTINGS2.find((s) => s.slug === bare) || SETTINGS2.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
+    const here = SETTINGS2.filter(offered);
+    return here.find((s) => s.slug === bare) || here.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
   }
   function nextValue(spec, current, requested) {
     if (!spec) return null;
@@ -3175,16 +4154,18 @@ ${doc.documentElement.outerHTML}`;
   }
 
   // js/commands/command-catalog.mjs
-  var CATALOG = [
+  var ROWS2 = [
     // ── File ───────────────────────────────────────────────────────────────────
     { id: "project.new", title: "New Project\u2026", section: "File", scope: "global", palette: true },
-    { id: "file.new", title: "New file\u2026", section: "File", scope: "global", palette: true },
+    { id: "file.new", title: "New File\u2026", section: "File", scope: "global", palette: true },
     { id: "file.upload", title: "Upload File", section: "File", scope: "global", palette: true },
     { id: "file.upload-folder", title: "Upload Folder", section: "File", scope: "global", palette: true },
     { id: "file.import-folder", title: "Import Folder as New Project", section: "File", scope: "global", palette: true },
     { id: "file.download", title: "Download Current File", section: "File", scope: "global", palette: true },
     // The whole project as a zip: how work outlives a browser that clears its storage.
     { id: "project.download", title: "Download Project", section: "File", scope: "global", palette: true },
+    // Every version the cloud keeps, and Restore (js/ui/version-history.mjs): signed in only.
+    { id: "project.history", title: "Version History", section: "File", scope: "global", palette: true },
     { id: "tab.next", title: "Next Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bn"] },
     { id: "tab.prev", title: "Previous Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bp"] },
     { id: "tab.close", title: "Close Tab", section: "File", scope: "global", palette: true, keybindable: true },
@@ -3642,6 +4623,37 @@ ${doc.documentElement.outerHTML}`;
       ex: ["harpoon"],
       styles: { vim: "always" }
     },
+    // Case completion (docs/case-completion.md). The missing cases of a proof are filled
+    // in the background and drawn as faint arms; these act on the one whose ghost hangs
+    // from the caret's line, else on every one of the proof under the caret. Gated on
+    // there being something to act on, so the palette stays quiet otherwise.
+    {
+      id: "prover.case-accept",
+      title: "Accept Filled Case",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "prover.case-fill",
+      title: "Fill This Case",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
+    {
+      id: "prover.case-dismiss",
+      title: "Dismiss Filled Case",
+      section: "Prover",
+      scope: "editor",
+      keybindable: true,
+      palette: true,
+      styles: { vim: "always" }
+    },
     // Reading the proof state, from the editor. Not gated on standing IN a hole:
     // "how many are left" is a question you ask from anywhere in the file.
     {
@@ -3831,6 +4843,10 @@ ${doc.documentElement.outerHTML}`;
      * flush every buffer to storage, so a reload loses nothing.
      */
     { id: "app.reload", title: "Reload BelJar", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["reload", "refresh"] },
+    // Home: your projects and the account (index.html). The brand in the header
+    // is the same link; this is its name, for the palette and the command line.
+    { id: "app.home", title: "Go Home", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["home"] },
+    { id: "app.report-issue", title: "Report an Issue", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "cmdline.repeat", title: "Repeat Last Command", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "cmdline.open", title: "Command Line", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "tools.palette", title: "Open Command Palette", section: "Tools", scope: "global", palette: true, shortcut: "Mod+K" },
@@ -3855,6 +4871,22 @@ ${doc.documentElement.outerHTML}`;
       styles: { emacs: "off" }
     }
   ];
+  var HOME_TOO = [
+    "project.new",
+    "file.import-folder",
+    "nav.anywhere",
+    "view.theme",
+    "account.sign-in",
+    "account.sign-out",
+    "sync.now",
+    "sync.review",
+    "sync.review-offline",
+    "app.reload",
+    "app.report-issue",
+    "tools.palette",
+    "tools.commands"
+  ];
+  var CATALOG = ROWS2.map((row) => Object.assign({ pages: HOME_TOO.includes(row.id) ? "both" : "editor" }, row));
 
   // js/commands/command-shadows.mjs
   var STYLE_TAKES = {
@@ -4053,6 +5085,14 @@ ${doc.documentElement.outerHTML}`;
   var order = [];
   var byId = /* @__PURE__ */ Object.create(null);
   var version = 0;
+  function currentPage() {
+    const routes = global.Routes;
+    if (!routes || typeof routes.pageOf !== "function" || !global.location) return null;
+    return routes.pageOf(global.location) === "edit" ? "editor" : "home";
+  }
+  function runsOn(cmd, page) {
+    return !page || cmd.pages === "both" || cmd.pages === page;
+  }
   function normalize(record) {
     const id = String(record.id);
     return Object.assign({}, record, {
@@ -4060,6 +5100,7 @@ ${doc.documentElement.outerHTML}`;
       title: titleFor(id, record.title),
       section: record.section || "",
       scope: record.scope || "global",
+      pages: record.pages === "home" || record.pages === "both" ? record.pages : "editor",
       keybindable: !!record.keybindable,
       palette: !!record.palette,
       cmdline: record.cmdline === false ? false : true,
@@ -4074,7 +5115,13 @@ ${doc.documentElement.outerHTML}`;
     if (!id) return false;
     const prev = byId[id];
     if (!prev) order.push(id);
-    byId[id] = normalize(Object.assign({}, prev || {}, desc, { id }));
+    const next = normalize(Object.assign({}, prev || {}, desc, { id }));
+    if (!runsOn(next, currentPage())) {
+      delete next.run;
+      delete next.when;
+      delete next.preview;
+    }
+    byId[id] = next;
     version += 1;
     return true;
   }
@@ -4126,6 +5173,7 @@ ${doc.documentElement.outerHTML}`;
       if (f.cmdline === true && !cmd.cmdline) continue;
       if (f.runnable === true && typeof cmd.run !== "function") continue;
       if (f.scope && cmd.scope !== f.scope) continue;
+      if (f.page && !runsOn(cmd, f.page)) continue;
       if (f.section && cmd.section !== f.section) continue;
       if (f.available === true && !isAvailable(cmd, f.ctx)) continue;
       out.push(cmd);
@@ -4233,6 +5281,13 @@ ${doc.documentElement.outerHTML}`;
     run,
     styleFor,
     idsWithStyle,
+    /** 'home' | 'editor', or null with no page (tests). */
+    page: currentPage,
+    /** Whether `id` runs on this page (its `pages` in the catalogue). */
+    runsHere(id) {
+      const cmd = get(id);
+      return !!cmd && runsOn(cmd, currentPage());
+    },
     // The preference table, so the editor's `:set` resolves through the same
     // source as the palette rows without importing across the bundle seam.
     settings: {
@@ -4286,12 +5341,154 @@ ${doc.documentElement.outerHTML}`;
   };
   global.Commands = Commands2;
 
+  // js/frame/routes.mjs
+  var g4 = typeof window !== "undefined" ? window : globalThis;
+  var PROJECT_ID = /^p_[0-9a-hjkmnp-tv-z]{26}$/;
+  var EDIT_SHORT = /(?:^|\/)edit\/?$/;
+  var EDIT_ANY = /(?:^|\/)edit(?:\.html)?\/?$/;
+  var PRIVACY_ANY = /(?:^|\/)privacy(?:\.html)?\/?$/;
+  function short() {
+    if (g4.BELJAR_DEPLOYED) return true;
+    const path = g4.location && typeof g4.location.pathname === "string" ? g4.location.pathname : "";
+    return EDIT_SHORT.test(path);
+  }
+  function query(pairs) {
+    const parts = [];
+    for (const [k, v] of pairs) if (v) parts.push(k + "=" + encodeURIComponent(v));
+    return parts.length ? "?" + parts.join("&") : "";
+  }
+  function startsOnLast() {
+    const S = g4.Settings;
+    try {
+      return !!S && typeof S.get === "function" && S.get("startPage") === "last";
+    } catch (_) {
+      return false;
+    }
+  }
+  function homeUrl(opts) {
+    const base = short() ? "/" : "index.html";
+    if (opts && opts.open) return base + query([["open", opts.open]]);
+    return base + (startsOnLast() ? "?home" : "");
+  }
+  function editUrl(pid) {
+    return (short() ? "/edit" : "edit.html") + query([["p", pid]]);
+  }
+  function privacyUrl() {
+    return short() ? "/privacy" : "privacy.html";
+  }
+  function signInUrl(loc) {
+    const l = loc || g4.location;
+    const back = l ? String(l.pathname || "/") + String(l.search || "") : "/";
+    return "/api/auth/github/start" + query([["return", back]]);
+  }
+  function pageOf(loc) {
+    const p = String(loc && loc.pathname || "");
+    if (EDIT_ANY.test(p)) return "edit";
+    return PRIVACY_ANY.test(p) ? "privacy" : "home";
+  }
+  function projectParam(loc, name) {
+    const pairs = String(loc && loc.search || "").replace(/^\?/, "").split("&");
+    for (const pair of pairs) {
+      const eq = pair.indexOf("=");
+      if (eq === -1 || pair.slice(0, eq) !== name) continue;
+      let v = pair.slice(eq + 1);
+      try {
+        v = decodeURIComponent(v);
+      } catch (_) {
+        return null;
+      }
+      return PROJECT_ID.test(v) ? v : null;
+    }
+    return null;
+  }
+  function projectOf(loc) {
+    return pageOf(loc) === "edit" ? projectParam(loc, "p") : null;
+  }
+  function pendingOf(loc) {
+    return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
+  }
+  var ISSUES_URL = "https://github.com/dpbarry/bel-jar/issues";
+  function reportIssue() {
+    if (typeof g4.open === "function") g4.open(ISSUES_URL, "_blank", "noopener");
+  }
+  function go(url, opts) {
+    if (!g4.location) return;
+    if (opts && opts.replace) g4.location.replace(url);
+    else g4.location.assign(url);
+  }
+  function settle(url) {
+    const h = g4.history;
+    const l = g4.location;
+    if (!h || !l || typeof h.replaceState !== "function") return false;
+    h.replaceState(h.state, "", url + String(l.hash || ""));
+    return true;
+  }
+  function nameProject(pid) {
+    const l = g4.location;
+    if (!l || pageOf(l) !== "edit" || projectOf(l) === pid) return false;
+    return settle(editUrl(pid));
+  }
+  var Routes = {
+    PROJECT_ID,
+    ISSUES_URL,
+    homeUrl,
+    editUrl,
+    privacyUrl,
+    signInUrl,
+    pageOf,
+    projectOf,
+    pendingOf,
+    go,
+    settle,
+    nameProject,
+    reportIssue
+  };
+  g4.Routes = Routes;
+
+  // js/commands/shared-commands.mjs
+  var g5 = globalThis;
+  function attachSharedCommands(page) {
+    const say = page && typeof page.say === "function" ? page.say : () => {
+    };
+    const applied = page && typeof page.applied === "function" ? page.applied : () => {
+    };
+    const on = (id, run2, when) => Commands2.attach(id, when ? { run: run2, when } : { run: run2 });
+    const account = () => g5.Account || null;
+    const sync = () => g5.Persist && typeof g5.Persist.syncSummary === "function" ? g5.Persist.syncSummary() : null;
+    on("account.sign-in", () => account().signIn(), () => !!account() && account().available() && !account().user());
+    on("account.sign-out", () => account().signOut(), () => !!account() && !!account().user());
+    on("sync.now", () => g5.Persist.confirmSynced(), () => {
+      const s = sync();
+      return !!s && s.signedIn && s.state !== "offline" && s.state !== "held";
+    });
+    on("sync.review", () => g5.SyncUI.review(), () => {
+      const s = sync();
+      return !!s && s.differs.length > 0;
+    });
+    on("sync.review-offline", () => g5.SyncUI.reviewOffline(), () => {
+      const s = sync();
+      return !!s && s.state === "held";
+    });
+    on("view.theme", () => g5.Frame.toggleTheme());
+    on("app.report-issue", () => Routes.reportIssue());
+    on("tools.palette", () => g5.CommandPalette.open());
+    for (const spec of SETTINGS2) {
+      const id = settingId(spec.slug);
+      if (!Commands2.runsHere(id)) continue;
+      on(id, () => {
+        const res = applyValue(g5.Settings, spec, void 0);
+        if (res.applied) applied(spec);
+        say(res.message);
+        return res.ok;
+      }, spec.needs === "server" ? serverAnswers : void 0);
+    }
+  }
+
   // js/app/app-command-palette.mjs
   function create10(deps) {
     var getPersist = deps.getPersist;
     var toggleSidePanel = deps.toggleSidePanel;
     var revealActiveFile = deps.revealActiveFile;
-    var toggleTheme = deps.toggleTheme;
     var newProject = deps.newProject;
     var newFile = deps.newFile;
     var fileInputEl = deps.fileInputEl;
@@ -4319,12 +5516,7 @@ ${doc.documentElement.outerHTML}`;
       const reapplyPrefs = () => {
         if (typeof BelEditor !== "undefined" && BelEditor.applyEditorPrefs) BelEditor.applyEditorPrefs();
       };
-      const toggleSetting = (spec) => {
-        const res = applyValue(Settings, spec, void 0);
-        if (res.applied) reapplyPrefs();
-        say(res.message);
-        return res.ok;
-      };
+      attachSharedCommands({ say, applied: reapplyPrefs });
       const runSet = (argText) => {
         const res = runSetOn(Settings, argText);
         if (res.applied) reapplyPrefs();
@@ -4372,22 +5564,7 @@ ${doc.documentElement.outerHTML}`;
       on("file.import-folder", () => folderInputEl.click());
       on("file.download", downloadCurrentFile);
       on("project.download", () => downloadProject(), () => (Persist.listFiles() || []).length > 0);
-      const account = () => typeof Account !== "undefined" ? Account : null;
-      const syncState = () => typeof Persist.syncSummary === "function" ? Persist.syncSummary() : null;
-      on("account.sign-in", () => account().signIn(), () => !!account() && account().available() && !account().user());
-      on("account.sign-out", () => account().signOut(), () => !!account() && !!account().user());
-      on("sync.now", () => Persist.confirmSynced(), () => {
-        const s = syncState();
-        return !!s && s.signedIn && s.state !== "offline" && s.state !== "held";
-      });
-      on("sync.review", () => SyncUI.review(), () => {
-        const s = syncState();
-        return !!s && s.differs.length > 0;
-      });
-      on("sync.review-offline", () => SyncUI.reviewOffline(), () => {
-        const s = syncState();
-        return !!s && s.state === "held";
-      });
+      on("project.history", () => window.VersionHistory.open(), () => !!window.VersionHistory && window.VersionHistory.available());
       on("tab.next", () => stepTab(1), () => openTabIds().length > 1);
       on("tab.prev", () => stepTab(-1), () => openTabIds().length > 1);
       on(
@@ -4505,6 +5682,10 @@ ${doc.documentElement.outerHTML}`;
       onEditor("prover.hole-split", (e) => e.runHoleSplit(), holeAtCaret);
       onEditor("prover.hole-fill", (e) => e.runHoleFill(), holeAtCaret);
       onEditor("prover.open-in-harpoon", (e) => e.openHoleInHarpoon(), holeAtCaret);
+      const caseState = (e) => typeof e.caseCommandState === "function" ? e.caseCommandState() : null;
+      onEditor("prover.case-accept", (e) => e.acceptFilledCase(), (e) => !!caseState(e)?.hasFilled);
+      onEditor("prover.case-fill", (e) => e.fillCaseNow(), (e) => !!caseState(e)?.inProof);
+      onEditor("prover.case-dismiss", (e) => e.dismissFilledCase(), (e) => !!caseState(e)?.hasFilled);
       const lab = () => {
         const H = window.Harpoon;
         return H && typeof H.activeSession === "function" ? H.activeSession() : null;
@@ -4569,9 +5750,6 @@ ${doc.documentElement.outerHTML}`;
         s.backToManual();
         return true;
       }, searching);
-      for (const spec of SETTINGS2) {
-        on(settingId(spec.slug), () => toggleSetting(spec));
-      }
       on("settings.set", (ctx) => runSet(ctx && ctx.argText));
       on("cmdline.open", () => StatusStrip.openCommandLine(""));
       on("nav.goto-line", () => {
@@ -4592,7 +5770,6 @@ ${doc.documentElement.outerHTML}`;
         () => StatusStrip.repeatLastCommand(),
         () => !!(typeof StatusStrip !== "undefined" && StatusStrip.lastCommandLine && StatusStrip.lastCommandLine())
       );
-      on("tools.palette", () => CommandPalette.open());
       on("nav.anywhere", () => CommandPalette.open());
       on("tools.commands", () => CommandPalette.runCommandEntry());
       onEditor("edit.autocomplete", (e) => e.toggleAutocomplete() !== false);
@@ -4629,6 +5806,7 @@ ${doc.documentElement.outerHTML}`;
       on("run.clear-output", () => {
         ReplOutput.clearOutput();
       });
+      on("app.home", () => Account.goHome());
       on("app.reload", () => {
         try {
           flushEverythingToStorage(false);
@@ -4636,7 +5814,6 @@ ${doc.documentElement.outerHTML}`;
         }
         window.location.reload();
       });
-      on("view.theme", toggleTheme);
       on("view.explorer", () => toggleSidePanel("explorer"));
       on("view.reveal-file", () => revealActiveFile(), () => !!Persist.getActiveFileId());
       on("view.library", () => toggleSidePanel("library"));
@@ -4697,9 +5874,9 @@ ${doc.documentElement.outerHTML}`;
         }));
         return corpus;
       };
-      CommandPalette.setProvider("search", (query) => {
-        if (!query) return [];
-        return ProjectSource.scanProjectText(searchCorpus(), query, 60).map((m) => ({
+      CommandPalette.setProvider("search", (query2) => {
+        if (!query2) return [];
+        return ProjectSource.scanProjectText(searchCorpus(), query2, 60).map((m) => ({
           title: m.lineText,
           mono: true,
           detail: m.name.split("/").pop() + ":" + m.line,
@@ -4707,6 +5884,45 @@ ${doc.documentElement.outerHTML}`;
         }));
       });
     }
+  }
+
+  // js/app/suite-notice.mjs
+  function createSuiteWatch() {
+    const last = /* @__PURE__ */ new Map();
+    return {
+      observe(suite, members, openPath) {
+        const bad = members.filter((m) => m.errors > 0);
+        const red = bad.length > 0;
+        const prev = last.get(suite);
+        last.set(suite, { red, bad: new Set(bad.map((m) => m.path)) });
+        if (!prev || prev.red === red) return null;
+        const name = suite.replace(/\.cfg$/i, "").replace(/^.*\//, "");
+        if (red) {
+          const turned = bad.find((m) => !prev.bad.has(m.path)) || bad[0];
+          if (turned.path === openPath) return null;
+          const notice = {
+            kind: "error",
+            category: "ops",
+            source: "suite.colour",
+            dedupeKey: "suite." + suite,
+            title: "Suite " + name + " has errors",
+            body: turned.path.replace(/^.*\//, "") + " has errors now."
+          };
+          if (turned.fileId && Number.isFinite(turned.line)) notice.links = { fileId: turned.fileId, path: turned.path, line: turned.line };
+          return notice;
+        }
+        const fixed = [...prev.bad];
+        if (fixed.length === 1 && fixed[0] === openPath) return null;
+        return {
+          kind: "success",
+          category: "ops",
+          source: "suite.colour",
+          dedupeKey: "suite." + suite,
+          title: "Suite " + name + " checks again",
+          body: fixed.length === 1 ? fixed[0].replace(/^.*\//, "") + " was the last to be fixed." : "Every file in it checks."
+        };
+      }
+    };
   }
 
   // js/app/app.mjs
@@ -4732,6 +5948,10 @@ ${doc.documentElement.outerHTML}`;
     const inspectorProjectEmptyEl = document.getElementById("inspector-project-empty");
     const cmdInput = typeof ReplStream !== "undefined" && ReplStream.getCommandInput ? ReplStream.getCommandInput() : document.getElementById("command-input");
     const btnRun = typeof ReplStream !== "undefined" && ReplStream.getRunButton ? ReplStream.getRunButton() : document.getElementById("btn-run");
+    if (!Persist.leaving()) Routes.nameProject(Persist.getActiveProjectId());
+    onDoc("visibilitychange", () => {
+      if (document.visibilityState === "visible" && !Persist.leaving()) Persist.projectInUse();
+    });
     ensureProjectActiveCfgs();
     if (typeof EditHistoryInstall !== "undefined") {
       EditHistoryInstall.init();
@@ -5097,9 +6317,6 @@ ${doc.documentElement.outerHTML}`;
       if (!el || typeof Tooltips === "undefined" || !Tooltips.set) return;
       Tooltips.set(el, text, opts);
     }
-    function toggleTheme() {
-      return Frame.toggleTheme();
-    }
     window.Repl = {
       appendBuffered: function(text, kind) {
         ReplOutput.appendOutput(text, kind || "auto");
@@ -5115,6 +6332,67 @@ ${doc.documentElement.outerHTML}`;
     const inspectorPanelEl = document.getElementById("inspector-panel");
     const libraryPanelEl = document.getElementById("library-panel");
     const harpoonPanelEl = document.getElementById("harpoon-panel");
+    const INSPECTOR_FOLLOW_HINT = "inspector-cursor";
+    let inspectorFollowHintGen = 0;
+    let inspectorFollowHintWait = 0;
+    function cancelInspectorFollowHintWait() {
+      inspectorFollowHintGen += 1;
+      if (inspectorFollowHintWait) {
+        clearTimeout(inspectorFollowHintWait);
+        inspectorFollowHintWait = 0;
+      }
+    }
+    function hideInspectorFollowHint() {
+      cancelInspectorFollowHintWait();
+      if (typeof Hint === "undefined" || !Hint.isVisible || !Hint.dismiss) return;
+      if (Hint.isVisible(INSPECTOR_FOLLOW_HINT)) Hint.dismiss(INSPECTOR_FOLLOW_HINT);
+    }
+    function acknowledgeInspectorFollowHint() {
+      cancelInspectorFollowHintWait();
+      if (typeof Hint !== "undefined" && Hint.dismiss) Hint.dismiss(INSPECTOR_FOLLOW_HINT);
+    }
+    function pumpInspectorFollowHint(gen, tries) {
+      if (gen !== inspectorFollowHintGen) return;
+      inspectorFollowHintWait = 0;
+      if (!workspaceEl || !workspaceEl.classList.contains("is-inspector-open")) return;
+      if (typeof Hint === "undefined" || !Hint.show) return;
+      if (Hint.wasDismissed && Hint.wasDismissed(INSPECTOR_FOLLOW_HINT)) return;
+      if (Hint.isVisible && Hint.isVisible(INSPECTOR_FOLLOW_HINT)) return;
+      if (Hint.isVisible && Hint.isVisible()) {
+        inspectorFollowHintWait = setTimeout(() => pumpInspectorFollowHint(gen, tries || 0), 200);
+        return;
+      }
+      const anchor = document.getElementById("inspector-sync-toggle");
+      const box = anchor && anchor.getBoundingClientRect();
+      if (!anchor || !box || box.width < 1 || box.height < 1) {
+        if ((tries || 0) > 20) return;
+        inspectorFollowHintWait = setTimeout(() => pumpInspectorFollowHint(gen, (tries || 0) + 1), 50);
+        return;
+      }
+      Hint.show({
+        id: INSPECTOR_FOLLOW_HINT,
+        anchor,
+        text: "Click to make the inspector follow your cursor and vice versa"
+      });
+    }
+    function scheduleInspectorFollowHint() {
+      if (typeof Hint === "undefined" || !Hint.show) return;
+      if (Hint.wasDismissed && Hint.wasDismissed(INSPECTOR_FOLLOW_HINT)) return;
+      if (Hint.isVisible && Hint.isVisible(INSPECTOR_FOLLOW_HINT)) return;
+      cancelInspectorFollowHintWait();
+      const gen = inspectorFollowHintGen;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (gen !== inspectorFollowHintGen) return;
+          if (Hint.wasDismissed && !Hint.wasDismissed("library") && !(Hint.isVisible && Hint.isVisible())) {
+            inspectorFollowHintWait = setTimeout(() => pumpInspectorFollowHint(gen, 0), 50);
+            return;
+          }
+          pumpInspectorFollowHint(gen, 0);
+        });
+      });
+    }
+    teardown.push(cancelInspectorFollowHintWait);
     const SIDE_PANELS = {
       explorer: {
         btn: filesBtn,
@@ -5124,7 +6402,11 @@ ${doc.documentElement.outerHTML}`;
       inspector: {
         btn: inspectorBtn,
         panel: inspectorPanelEl,
-        openClass: "is-inspector-open"
+        openClass: "is-inspector-open",
+        onOpenChange: (open) => {
+          if (open) scheduleInspectorFollowHint();
+          else hideInspectorFollowHint();
+        }
       },
       library: {
         btn: libraryBtn,
@@ -5623,7 +6905,6 @@ ${doc.documentElement.outerHTML}`;
       create10(Object.assign({}, peelHub, {
         toggleSidePanel,
         revealActiveFile,
-        toggleTheme,
         newProject,
         newFile,
         fileInputEl: uploadImportApi.fileInputEl,
@@ -5654,7 +6935,7 @@ ${doc.documentElement.outerHTML}`;
       });
     }
     let suppressUnloadFlush = false;
-    function switchProjectAndReload(mutate) {
+    function switchProjectAndReload(mutate, opts) {
       if (persist) persist.flushCheckpoint();
       WorkspaceState.flushWorkspace();
       suppressUnloadFlush = true;
@@ -5664,7 +6945,7 @@ ${doc.documentElement.outerHTML}`;
         suppressUnloadFlush = false;
         throw e;
       }
-      window.location.reload();
+      Routes.go(Routes.editUrl(Persist.getActiveProjectId()), { replace: !!(opts && opts.replace) });
     }
     async function newProject(name) {
       var projName = name;
@@ -5690,7 +6971,7 @@ ${doc.documentElement.outerHTML}`;
       switchProjectAndReload(() => {
         Persist.setActiveProjectId(target);
         Persist.deleteProject(blank);
-      });
+      }, { replace: true });
       return true;
     }
     resumeDoor = resumeProject;
@@ -5713,7 +6994,7 @@ ${doc.documentElement.outerHTML}`;
       })) return;
       const wasActive = id === Persist.getActiveProjectId();
       if (wasActive) {
-        switchProjectAndReload(() => Persist.deleteProject(id));
+        switchProjectAndReload(() => Persist.deleteProject(id), { replace: true });
         return;
       }
       Persist.deleteProject(id);
@@ -5897,6 +7178,27 @@ ${doc.documentElement.outerHTML}`;
     });
     onWin("beljar:explorer-health-changed", () => scheduleTabLintStyles());
     onWin("beljar:development-checked", () => scheduleTabLintStyles());
+    const suiteWatch = createSuiteWatch();
+    let suiteWatchTimer = 0;
+    function watchSuites() {
+      suiteWatchTimer = 0;
+      const N = window.Notifications;
+      if (!N || typeof N.emit !== "function") return;
+      const files = Persist.listFiles() || [];
+      const open = Persist.getFileById(Persist.getActiveFileId());
+      for (const cfg of files.filter((f) => /\.cfg$/i.test(f.name))) {
+        const members = ProjectSource.developmentFilesForCfg(files, cfg.name, projectFileText).map((f) => {
+          const health = belFileHealth(f.id);
+          const first = (health.items || []).find((it) => it.kind === "error");
+          return { path: f.name, fileId: f.id, errors: health.errors || 0, line: first ? first.line : void 0 };
+        });
+        const notice = suiteWatch.observe(cfg.name, members, open ? open.name : null);
+        if (notice) N.emit(notice);
+      }
+    }
+    onWin("beljar:explorer-health-changed", () => {
+      if (!suiteWatchTimer) suiteWatchTimer = setTimeout(watchSuites, 600);
+    });
     if (activeFileId) Persist.openFile(activeFileId);
     registerWorkspaceProviders();
     renderTabs();
@@ -5929,6 +7231,10 @@ ${doc.documentElement.outerHTML}`;
         if (open) refreshInspector({ live: true });
       });
       onWin("beljar:open-inspector", openInspector);
+    }
+    const inspectorFollowBtn = document.getElementById("inspector-sync-toggle");
+    if (inspectorFollowBtn) {
+      inspectorFollowBtn.addEventListener("click", acknowledgeInspectorFollowHint);
     }
     function openLibrary() {
       if (!workspaceEl) return;
@@ -5972,6 +7278,13 @@ ${doc.documentElement.outerHTML}`;
       }
     }
     ensureLibrary();
+    if (workspaceEl && workspaceEl.classList.contains("is-inspector-open")) {
+      scheduleInspectorFollowHint();
+    }
+    if (libraryBtn && workspaceEl && window.location.hash === "#library") {
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+      if (!workspaceEl.classList.contains("is-library-open")) libraryBtn.click();
+    }
     let harpoonPanelInited = false;
     function ensureHarpoonPanel() {
       if (harpoonPanelInited || typeof HarpoonPanel === "undefined") return;

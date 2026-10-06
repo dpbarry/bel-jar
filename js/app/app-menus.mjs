@@ -1,6 +1,7 @@
 /**
  * Header menus + project/edit/tools + tab/explorer context menus — injected into app.js.
  */
+import { wireMenuTrigger } from '../ui/menu-trigger.mjs';
 
   export function create(deps) {
     var getEditor = deps.getEditor;
@@ -44,57 +45,6 @@
     var projectFileText = deps.projectFileText;
 
     // ── Header menus ──────────────────────────────────────────────────────────────
-
-    function wireMenuTrigger(btn, menuOpts) {
-      if (!btn) return;
-      let suppressNextClick = false;
-
-      function setOpen(open) {
-        btn.classList.toggle('is-active', open);
-        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-      }
-
-      function runMenuInteraction() {
-        if (typeof Menu !== 'undefined' && Menu.isOpen() && Menu.rootAnchor() === btn) {
-          Menu.closeAll();
-          return;
-        }
-        if (typeof Menu === 'undefined') return;
-        const items = typeof menuOpts.items === 'function' ? menuOpts.items() : menuOpts.items;
-        Menu.open({
-          anchor: btn,
-          side: menuOpts.side,
-          align: menuOpts.align,
-          items,
-          onClose: () => setOpen(false),
-        });
-        setOpen(true);
-      }
-
-      btn.addEventListener('pointerdown', (e) => {
-        if (e.button !== 0) return;
-        e.stopPropagation();
-        suppressNextClick = true;
-        if (typeof Tooltips !== 'undefined') {
-          Tooltips.suppressAnchor(btn);
-          Tooltips.hide();
-        }
-        runMenuInteraction();
-      });
-
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (suppressNextClick) {
-          suppressNextClick = false;
-          return;
-        }
-        if (typeof Tooltips !== 'undefined') {
-          Tooltips.suppressAnchor(btn);
-          Tooltips.hide();
-        }
-        runMenuInteraction();
-      });
-    }
 
     // Total signature files (.bel/.elf) in the workspace — gates "Run Project".
     function signatureFileCount() {
@@ -154,6 +104,10 @@
           disabled: !(Persist.listFiles() || []).length,
           onSelect: downloadProject,
         },
+        // Signed in only: the versions are the cloud's.
+        ...(window.VersionHistory && window.VersionHistory.available()
+          ? [{ label: 'Version history', onSelect: () => window.VersionHistory.open() }]
+          : []),
         {
           label: 'Download "' + (currentFile ? currentFile.name : 'file') + '"',
           onSelect: downloadCurrentFile,

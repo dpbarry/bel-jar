@@ -80,7 +80,7 @@ const now = () => ++clock;
   expect(b.resetReason === null, 'the same schema does not wipe');
   expect(b.get('beljar/settings').values.theme === 'light', 'data survives a reload');
   const c = createStore({ storage: s, now, schema: 99, events: fakeEvents() });
-  expect(c.resetReason === 'schema-changed', 'an older schema with no migration is wiped (the pre-launch policy)');
+  expect(c.resetReason === 'schema-changed', "an older schema with no migration is wiped under the default policy (a store of conveniences; the app's store refuses: test-migrations)");
   expect(c.get('beljar/settings') === undefined, 'and starts empty');
 }
 

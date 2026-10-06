@@ -1,0 +1,124 @@
+/* The kit page's own layout: frames and labels around the specimens, and
+   nothing else. ⛔ No component is styled here. What a specimen looks like is
+   the app's stylesheets alone, or the kit would be showing something that does
+   not ship. The one thing the kit does to a specimen is PLACE it: a menu or a
+   toast floats over the app, and here it sits in its frame (`.kit-inflow`).
+   Every value is a token (css/tokens.css). */
+.kit-page {
+  /* The app's body is one screen that never scrolls; this page is a long one. */
+  display: block;
+  height: auto;
+  min-height: 100dvh;
+  overflow: visible;
+  background: var(--base-lowest);
+  color: var(--base-highest);
+}
+
+.kit-frame > .kit-inflow {
+  position: static;
+}
+
+.kit-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1.5rem;
+  border-bottom: 1px solid var(--chrome-divider);
+  background: var(--base-lowest);
+}
+
+.kit-bar__title {
+  font-weight: 600;
+}
+
+.kit-bar__note {
+  flex: 1;
+  color: var(--muted-high);
+  font-size: 0.8125rem;
+}
+
+.kit-bar__themes {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.kit {
+  display: grid;
+  gap: 2rem;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.kit-section__title {
+  margin: 0 0 0.25rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.kit-section__about {
+  margin: 0 0 0.75rem;
+  color: var(--muted-high);
+  font-size: 0.8125rem;
+}
+
+.kit-specimens {
+  display: grid;
+  gap: 1rem;
+}
+
+.kit-specimen__label {
+  margin: 0 0 0.375rem;
+  color: var(--muted-high);
+  font-size: 0.75rem;
+}
+
+/* A frame, so a specimen that has no edge of its own can be seen to end. */
+.kit-frame {
+  position: relative;
+  border: 1px dashed var(--chrome-divider);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+}
+
+.kit-frame--flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* As wide as the panel the workspace opens, and no wider. */
+.kit-frame--panel {
+  width: max-content;
+}
+
+.kit-frame--row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Home's page fills its window; here the frame is the window it fills. */
+.kit-frame--home {
+  display: flex;
+  flex-direction: column;
+  height: 38rem;
+}
+
+.kit-cloud {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--muted-high);
+  font-size: 0.6875rem;
+}
+
+.kit-missing {
+  margin: 0;
+  color: var(--muted-high);
+  font-size: 0.8125rem;
+}

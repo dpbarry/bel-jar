@@ -847,6 +847,14 @@
     if (v === null) return null;
     return Array.isArray(v) ? v : void 0;
   }
+  function cleanDismissed(raw) {
+    if (!Array.isArray(raw)) return void 0;
+    const out = [];
+    for (const id of raw) {
+      if (typeof id === "string" && id && !out.includes(id)) out.push(id);
+    }
+    return out;
+  }
   var ON = true;
   var OFF = false;
   var SETTINGS = [
@@ -905,6 +913,9 @@
     { id: "vimLeader", section: "keybindings", default: "\\", values: ["\\", ",", " "] },
     { id: "vimInsertEscape", section: "keybindings", default: "", values: ["", "jk", "jj", "kj"] },
     { id: "emacsYankSource", section: "keybindings", default: "system", values: ["system", "kill-ring"] },
+    // Clipboard dialogs this browser has closed. The grant is per browser, so it
+    // does not follow the account, and Reset does not ask again.
+    { id: "clipboardReadDismissed", section: "keybindings", default: [], type: "json", normalize: cleanDismissed, sync: false, reset: false },
     { id: "doubleTapTrigger", section: "keybindings", default: "off", values: ["off", "shift", "control", "alt"] },
     { id: "doubleTapCommand", section: "keybindings", default: "tools.palette", type: "string" },
     { id: "doubleTapSpeed", section: "keybindings", default: "normal", values: ["normal", "fast", "relaxed"] },
@@ -945,6 +956,7 @@
     // one row per tip, so two computers that each saw a different one never disagree.
     { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
     { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenSignIn", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },
@@ -2067,6 +2079,8 @@
     return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
   }
   var ISSUES_URL = "https://github.com/dpbarry/bel-jar/issues";
+  var CONTACT_EMAIL = "dean.barry@mail.mcgill.ca";
+  var CONTACT_URL = "mailto:" + CONTACT_EMAIL;
   function reportIssue() {
     if (typeof g2.open === "function") g2.open(ISSUES_URL, "_blank", "noopener");
   }
@@ -2090,6 +2104,7 @@
   var Routes = {
     PROJECT_ID,
     ISSUES_URL,
+    CONTACT_URL,
     homeUrl,
     editUrl,
     privacyUrl,
@@ -2148,6 +2163,10 @@
     }
     track2(document.getElementById("btn-theme"), "click", toggleTheme);
     track2(document.getElementById("btn-settings"), "click", onSettings);
+    track2(document.getElementById("btn-go-home"), "click", () => {
+      if (global3.Commands && global3.Commands.run("app.home")) return;
+      if (global3.Account && global3.Account.goHome) global3.Account.goHome();
+    });
     nameHome();
   }
   function unmount() {

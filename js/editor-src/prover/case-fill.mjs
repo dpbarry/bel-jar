@@ -18,6 +18,7 @@ import { parseHoles } from './hole-report.mjs';
 import { belJarSplit } from './split-skeleton.mjs';
 import { transportArm } from './case-lookup.mjs';
 import { proveProgram } from './prover-orchestrator.mjs';
+import { coverageCases } from '../ide/coverage-card.mjs';
 import { theoremUnderProof } from './prover-hyp.mjs';
 
 // ── what a `checked` is evidence OF ──────────────────────────────────────────
@@ -183,27 +184,14 @@ export function bodyIsClosed(armText) {
  * the text after each item's top-level turnstile (there is one; turnstiles inside a type are
  * nested), with the `_` Beluga prints for the context variable replaced by the proof's
  * own (`ctxVar`). A pattern carrying an internal name (`"i`) cannot be written and is
- * left out.
+ * left out. The split itself lives in coverage-card.mjs, shared with the hover.
  */
 export function coverageMissing(output, ctxVar) {
-  const text = String(output || '');
-  const at = text.indexOf('NOT COVERED');
-  if (at < 0) return [];
-  const end = text.indexOf('\n##', at);
-  const block = text.slice(text.indexOf('\n', at) + 1, end < 0 ? text.length : end);
   const out = [];
-  for (const item of block.split(/^\(\d+\)/m).map((s) => s.trim()).filter(Boolean)) {
-    let depth = 0; let cut = -1;
-    for (let i = 0; i < item.length - 1; i += 1) {
-      const c = item[i];
-      if (c === '(' || c === '[' || c === '{') depth += 1;
-      else if (c === ')' || c === ']' || c === '}') depth -= 1;
-      else if (depth === 0 && c === '|' && item[i + 1] === '-') cut = i + 2;
-    }
-    if (cut < 0) continue;
-    let pat = item.slice(cut).replace(/\s+/g, ' ').trim();
-    if (!pat || pat.includes('"')) continue;
-    const cv = ctxVar || itemContextVar(item.slice(0, cut - 2));
+  for (const item of coverageCases(output)) {
+    if (!item.pattern || item.pattern.includes('"')) continue;
+    const cv = ctxVar || itemContextVar(item.prefix);
+    let pat = item.pattern;
     if (cv) pat = pat.replace(/^\[\s*_(?=\s*(?:,|\|-))/, `[${cv}`);
     out.push(pat);
   }

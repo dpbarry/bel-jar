@@ -16,6 +16,7 @@ import {
   NOTIFICATIONS_KEY,
   REPL_TRANSCRIPT_KEY,
   REPL_COMMANDS_KEY,
+  replKey,
   tabMessageKey,
   foldsKey,
   undoKey,
@@ -57,34 +58,51 @@ export function create(deps) {
     });
   }
 
-  // ── the REPL: transcript and command history ───────────────────────────────
+  // ── the REPL: one transcript and command history per project ───────────────
 
   const replStore = () => storeFor(settings.get('replHistoryPersist'));
-  followSetting('replHistoryPersist', () => [REPL_TRANSCRIPT_KEY, REPL_COMMANDS_KEY]);
+  followSetting('replHistoryPersist', (s) => {
+    const keys = s.keys('beljar/p/').filter((k) => k.endsWith('/repl'));
+    if (s.get(REPL_TRANSCRIPT_KEY) !== undefined) keys.push(REPL_TRANSCRIPT_KEY);
+    if (s.get(REPL_COMMANDS_KEY) !== undefined) keys.push(REPL_COMMANDS_KEY);
+    return keys;
+  });
 
-  function readReplTranscript() {
-    const s = replStore();
-    const d = s && s.get(REPL_TRANSCRIPT_KEY);
-    if (!d || typeof d !== 'object' || typeof d.html !== 'string') return null;
+  function asRepl(d) {
+    if (!d || typeof d !== 'object') return null;
+    const commands = Array.isArray(d.commands) ? d.commands.filter((x) => typeof x === 'string') : [];
+    const html = typeof d.html === 'string' ? d.html : '';
+    if (!html && !commands.length) return null;
     return {
-      html: d.html,
+      html,
       scrollTop: typeof d.scrollTop === 'number' ? d.scrollTop : 0,
       savedAt: typeof d.savedAt === 'number' ? d.savedAt : 0,
+      commands,
     };
   }
 
-  function writeReplTranscript(snap) {
-    const s = replStore();
-    if (!s) return;
-    if (!snap || typeof snap.html !== 'string' || !snap.html) {
+  // A transcript written before projects each had their own, still sitting in
+  // the shared keys because no project was open when the format moved.
+  function adoptShared(s, key) {
+    const transcript = s.get(REPL_TRANSCRIPT_KEY);
+    const commands = s.get(REPL_COMMANDS_KEY);
+    const html = transcript && typeof transcript === 'object' && typeof transcript.html === 'string' ? transcript.html : '';
+    const list = Array.isArray(commands) ? commands.filter((x) => typeof x === 'string') : [];
+    if (!html && !list.length) {
       s.remove(REPL_TRANSCRIPT_KEY);
-      return;
+      s.remove(REPL_COMMANDS_KEY);
+      return null;
     }
-    s.set(REPL_TRANSCRIPT_KEY, {
-      html: snap.html,
-      scrollTop: typeof snap.scrollTop === 'number' ? snap.scrollTop : 0,
-      savedAt: typeof snap.savedAt === 'number' ? snap.savedAt : Date.now(),
-    });
+    const rec = {
+      html,
+      scrollTop: transcript && typeof transcript.scrollTop === 'number' ? transcript.scrollTop : 0,
+      savedAt: transcript && typeof transcript.savedAt === 'number' ? transcript.savedAt : Date.now(),
+      commands: list,
+    };
+    if (!s.set(key, rec).ok) return rec;
+    s.remove(REPL_TRANSCRIPT_KEY);
+    s.remove(REPL_COMMANDS_KEY);
+    return rec;
   }
 
   function clampCommands(list) {
@@ -93,17 +111,65 @@ export function create(deps) {
     return arr.length > cap ? arr.slice(arr.length - cap) : arr;
   }
 
-  function readReplCommands() {
+  function readRepl() {
     const s = replStore();
-    return s ? clampCommands(s.get(REPL_COMMANDS_KEY)) : [];
+    if (!s) return null;
+    const key = replKey(work.projectId());
+    const own = asRepl(s.get(key));
+    if (own) return own;
+    if (s.get(REPL_TRANSCRIPT_KEY) === undefined && s.get(REPL_COMMANDS_KEY) === undefined) return null;
+    return adoptShared(s, key);
+  }
+
+  function writeRepl(rec) {
+    const s = replStore();
+    if (!s) return;
+    const key = replKey(work.projectId());
+    const html = rec && typeof rec.html === 'string' ? rec.html : '';
+    const commands = clampCommands(rec && rec.commands);
+    if (!html && !commands.length) {
+      s.remove(key);
+      return;
+    }
+    s.set(key, {
+      html,
+      scrollTop: rec && typeof rec.scrollTop === 'number' ? rec.scrollTop : 0,
+      savedAt: rec && typeof rec.savedAt === 'number' ? rec.savedAt : Date.now(),
+      commands,
+    });
+  }
+
+  function readReplTranscript() {
+    const rec = readRepl();
+    if (!rec || !rec.html) return null;
+    return { html: rec.html, scrollTop: rec.scrollTop, savedAt: rec.savedAt };
+  }
+
+  function writeReplTranscript(snap) {
+    if (!replStore()) return;
+    const cur = readRepl() || { html: '', scrollTop: 0, savedAt: 0, commands: [] };
+    if (!snap || typeof snap.html !== 'string' || !snap.html) {
+      cur.html = '';
+      cur.scrollTop = 0;
+      cur.savedAt = 0;
+    } else {
+      cur.html = snap.html;
+      cur.scrollTop = typeof snap.scrollTop === 'number' ? snap.scrollTop : 0;
+      cur.savedAt = typeof snap.savedAt === 'number' ? snap.savedAt : Date.now();
+    }
+    writeRepl(cur);
+  }
+
+  function readReplCommands() {
+    const rec = readRepl();
+    return rec ? clampCommands(rec.commands) : [];
   }
 
   function writeReplCommands(list) {
-    const s = replStore();
-    if (!s) return;
-    const arr = clampCommands(list);
-    if (arr.length) s.set(REPL_COMMANDS_KEY, arr);
-    else s.remove(REPL_COMMANDS_KEY);
+    if (!replStore()) return;
+    const cur = readRepl() || { html: '', scrollTop: 0, savedAt: 0, commands: [] };
+    cur.commands = clampCommands(list);
+    writeRepl(cur);
   }
 
   // ── editor folds, per file of this project ────────────────────────────────

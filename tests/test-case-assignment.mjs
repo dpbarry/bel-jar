@@ -116,7 +116,11 @@ expect(
 const untotalied = 'rec f : T =\nfn n => ?;';
 expect(
   strengthOf(untotalied, '--coverage\nLF nat : type = | z : nat;\n' + untotalied) === STRENGTH.covering,
-  'a coverage pragma without a totality declaration is covering, not total',
+  'a file-level --coverage is coverage without termination',
+);
+expect(
+  strengthOf(untotalied, '--warncoverage\n' + untotalied) === STRENGTH.covering,
+  'a file-level --warncoverage checks coverage the same way, and only softens the report',
 );
 expect(
   !STRENGTH.covering.guarantees.includes('terminating'),

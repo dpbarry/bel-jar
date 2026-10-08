@@ -107,4 +107,31 @@ const untouched = (storage) => Object.entries(seed).every(([k, v]) => storage.ge
   expect(at > 0 && mig > at && read > mig, '⛔ early boot migrates before it reads anything: the first paint shows the person\'s settings (scripts/probe-migration.mjs sees it in Chrome)');
 }
 
+// ── format 4 kept one REPL for the browser; 5 gives it to the open project ──
+{
+  const storage = makeBrowserStorage({
+    [SCHEMA_KEY]: '4',
+    'beljar/device': JSON.stringify({ at: 1, data: { values: { activeProject: 'p_a' } } }),
+    'beljar/repl/transcript': JSON.stringify({ at: 8, data: { html: '<p>hi</p>', scrollTop: 3, savedAt: 4 } }),
+    'beljar/repl/commands': JSON.stringify({ at: 8, data: ['types'] }),
+    'beljar/p/p_b/meta': JSON.stringify({ at: 1, data: { name: 'Other', createdAt: 1, owner: null } }),
+  });
+  createStore({ storage, migrations: MIGRATIONS, now: () => 9, events: new EventTarget() });
+  expect(storage.getItem(SCHEMA_KEY) === '5', 'format 4 moves to 5');
+  expect(storage.getItem('beljar/repl/transcript') == null && storage.getItem('beljar/repl/commands') == null,
+    'the shared REPL keys are gone');
+  const moved = JSON.parse(storage.getItem('beljar/p/p_a/repl'));
+  expect(moved && moved.data.html === '<p>hi</p>' && moved.data.commands.join() === 'types' && moved.data.scrollTop === 3,
+    'the project that was open keeps the transcript and the commands');
+  expect(storage.getItem('beljar/p/p_b/repl') == null, 'another project does not receive them');
+
+  const held = makeBrowserStorage({
+    [SCHEMA_KEY]: '4',
+    'beljar/repl/transcript': JSON.stringify({ at: 2, data: { html: '<p>wait</p>', scrollTop: 0, savedAt: 2 } }),
+  });
+  createStore({ storage: held, migrations: MIGRATIONS, now: () => 9, events: new EventTarget() });
+  expect(held.getItem(SCHEMA_KEY) === '5' && held.getItem('beljar/repl/transcript') != null,
+    'with no project open, the shared transcript is left where it is');
+}
+
 console.log(`OK migrations (${n} checks: every live format has its step, older data is refused not wiped, the page still works)`);

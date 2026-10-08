@@ -1,7 +1,7 @@
 import { declaresName } from './tree-helpers.mjs';
 
 export const GAP_PRAGMA_LINE =
-  /^\s*--(?:open|abbrev|name|infix|prefix|assoc|not|nostrengthen|opaque|coverage|warncoverage|query)\b/i;
+  /^\s*--(?:open|abbrev|name|infix|prefix|postfix|assoc|not|nostrengthen|coverage|warncoverage|query)\b/i;
 
 export const TOP_LEVEL_PRAGMA_INNER = new Set([
   'OpenPragma',
@@ -9,10 +9,10 @@ export const TOP_LEVEL_PRAGMA_INNER = new Set([
   'NamePragma',
   'InfixPragma',
   'PrefixPragma',
+  'PostfixPragma',
   'AssocPragma',
   'NotPragma',
   'NoStrengthenPragma',
-  'OpaquePragma',
   'CoveragePragma',
   'WarnCoveragePragma',
   'QueryPragma',

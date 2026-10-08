@@ -67,6 +67,31 @@ function hasCls(h, text, cls) {
   expect(has(h, '3', 'num'), 'prefix precedence is number');
 }
 
+// --postfix
+{
+  const h = hits('--postfix bang 9.');
+  expect(has(h, 'bang', 'fn'), 'postfix operator is function');
+  expect(has(h, '9', 'num'), 'postfix precedence is number');
+}
+
+// qualified infix, precedence before associativity
+{
+  const h = hits('--infix M.op 1 left.');
+  expect(has(h, 'M', 'fn'), 'qualified infix head is function');
+  expect(has(h, '.op', 'fn'), 'qualified infix tail is function');
+  expect(has(h, 'left', 'mod'), 'associativity after precedence');
+  let errs = 0;
+  parser.parse('--infix app left 1.').iterate({
+    enter(n) { if (n.type.isError && n.from < n.to) errs++; },
+  });
+  expect(errs > 0, 'associativity before precedence is not Beluga syntax');
+  errs = 0;
+  parser.parse('--infix app.').iterate({
+    enter(n) { if (n.type.isError && n.from < n.to) errs++; },
+  });
+  expect(errs === 0, 'precedence and associativity are optional');
+}
+
 // --open / --abbrev
 {
   const ho = hits('--open MyModule.');
@@ -74,12 +99,6 @@ function hasCls(h, text, cls) {
   const ha = hits('--abbrev FullName Short.');
   expect(has(ha, 'FullName', 'ns'), 'abbrev module is namespace');
   expect(has(ha, 'Short', 'ns'), 'abbrev alias is namespace');
-}
-
-// --opaque
-{
-  const h = hits('--opaque secret.');
-  expect(has(h, 'secret', 'prop'), 'opaque subject is propertyName');
 }
 
 // --assoc
@@ -95,7 +114,7 @@ for (const kw of ['--not', '--nostrengthen', '--coverage', '--warncoverage']) {
   expect(hasCls(h, kw, 'meta'), `${kw} is meta`);
 }
 
-// --query: bounds, optional label, comp-type goal (real Beluga LP syntax)
+// --query: bounds, optional label, LF goal (real Beluga LP syntax)
 {
   const h = hits('--query * 5 P : oft X nat -> oft (suc X) nat.');
   expect(has(h, '--query', 'meta'), '--query directive is meta');

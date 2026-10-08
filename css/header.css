@@ -229,7 +229,8 @@ html.light .theme-toggle .icon-moon {
   height: 0.8125rem;
 }
 
-.notif-bell svg {
+.notif-bell svg,
+.header-home svg {
   width: 0.875rem;
   height: 0.875rem;
 }

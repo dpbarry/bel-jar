@@ -69,6 +69,12 @@ export const SNIPPETS = Object.freeze({
       insert: '--prefix ? ?.',
       boost: 30,
     },
+    {
+      label: '--postfix',
+      detail: '--postfix … ….',
+      insert: '--postfix ? ?.',
+      boost: 30,
+    },
   ]),
   'lf-kind': Object.freeze([
     {
@@ -397,6 +403,14 @@ function isTopDeclKeywordPrefix(text) {
   return TOP_DECL_LABELS.some((label) => label.toLowerCase().startsWith(tl));
 }
 
+function blankLineAfterNode(node, doc, pos) {
+  let end = node.from;
+  for (let k = node.firstChild; k; k = k.nextSibling) {
+    if (k.to <= pos && k.to > end) end = k.to;
+  }
+  return /[\n\r]/.test(doc.sliceString(end, pos));
+}
+
 export function isTopDeclSlot(tree, doc, pos) {
   if (!tree || pos == null) return false;
   const prog = tree.topNode;
@@ -409,7 +423,13 @@ export function isTopDeclSlot(tree, doc, pos) {
       if (pos > c.from && pos <= c.to) {
         // Typing `LF` / `rec` / `--in` parses as an incomplete Declaration —
         // still a top-decl site while the text is only a keyword prefix.
-        return isTopDeclKeywordPrefix(doc.sliceString(c.from, pos));
+        if (isTopDeclKeywordPrefix(doc.sliceString(c.from, pos))) return true;
+        // A pragma that never reached its dot still owns the trailing blank
+        // lines. Those lines are the next declaration.
+        for (let k = c.firstChild; k; k = k.nextSibling) {
+          if (/Pragma$/.test(k.name) && blankLineAfterNode(k, doc, pos)) return true;
+        }
+        return false;
       }
       lastDecl = c;
       continue;
@@ -703,6 +723,13 @@ export function isInfixAssocSlot(tree, doc, pos, query = '') {
 
     const kw = cur.firstChild;
     if (!kw || pos <= kw.to) return false;
+    // An unclosed pragma reaches the end of the buffer. A later line is a new
+    // declaration; associativity is only offered on the pragma's own line.
+    let end = kw.to;
+    for (let c = cur.firstChild; c; c = c.nextSibling) {
+      if (c.to > end && c.from < pos) end = c.to < pos ? c.to : end;
+    }
+    if (/[\n\r]/.test(doc.sliceString(end, pos))) return false;
     return true;
   }
 

@@ -10,6 +10,8 @@
  * still counts, and is carried into the rows at boot, so the cloud hears of a
  * tip seen before this change.
  *
+ * A tip is seen the moment it is shown. The countdown and the close button
+ * only take the box down; a refresh before either does not show it again.
  * Signed in on a device that has not finished a round yet, the cloud's answer
  * is still on its way: a tip waits for that round, however long it takes (a
  * tip shown on a slow first round is a tip shown twice), and one already
@@ -22,6 +24,7 @@
 export const SEEN_SETTING = {
   library: 'hintSeenLibrary',
   'inspector-cursor': 'hintSeenInspectorCursor',
+  'sign-in': 'hintSeenSignIn',
 };
 
 export function seenSetting(id) {

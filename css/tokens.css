@@ -258,6 +258,13 @@
 
   --search-drop-radius: var(--radius-md);
   --search-drop-offset: 0.3rem;
+  /* ⛔ Everything that opens from the top bar's buttons drops this far below
+     the bar's bottom edge, whichever button opened it and however tall that
+     button is: the menus (js/ui/menu-trigger.mjs → Menu `dropFrom`) and the
+     notifications panel. One rule, inherited: a menu placed by its own button
+     sat inside the bar, under a button shorter than it (Dean, 2026-10-06). The
+     menu bar's items (Project, Edit, Tools) open flush under themselves. */
+  --header-menu-gap: var(--search-drop-offset);
   --search-drop-bg: var(--menu-bg);
   --search-drop-border: var(--menu-border);
   --search-drop-shadow: var(--shadow-popover);

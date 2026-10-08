@@ -332,7 +332,7 @@ export function stickyDeclHeader() {
       };
       this.bar.addEventListener('mouseenter', this.onEnter);
       this.bar.addEventListener('mousedown', this.onMouseDown, true);
-      // In-flow flex sibling above the scroller — never overlays line 1.
+      // Out of flow: the bar paints over the editor and must not change its height.
       view.dom.insertBefore(this.bar, view.scrollDOM);
       syncStructureBar(view, this.bar, this.cache);
     }

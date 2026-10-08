@@ -29,6 +29,7 @@ const MAY_CALL = new Set([
   'js/persist/persist.mjs', // only to probe that an area is usable at all
   'js/persist/table.mjs', // readBootRows, readBootRecord: early boot's reads of a table and of one record
   'js/persist/keys.mjs', // readBootSession: early boot's read of the session
+  'js/persist/migrations.mjs', // a format step runs on the raw area, before the store will read it
 ]);
 
 const NAMES = /\b(localStorage|sessionStorage)\b/;

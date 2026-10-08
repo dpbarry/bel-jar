@@ -48,16 +48,16 @@ const noComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/<!--[\s\S]
   const imports = [...src.matchAll(/(?:^import\b[^'\n]*\bfrom\s*|\bawait import\()'([^']+)'/gm)].map((m) => m[1]);
   expect(imports.length >= 6 && imports.every((p) => p.startsWith('../js/')), `it imports only from the app's sources (${imports.join(', ')})`);
   for (const p of imports) expect(fs.existsSync(path.join(ROOT, 'dev', p)), `${p} exists`);
-  for (const used of ['home.rowNode(', 'home.startNodes(', 'home.linkNodes(', 'home.findNodes(', 'home.signInLine(', 'cloudSvg(cloudLook(', 'buildActions(', 'PromptDialog.open(', 'window.Menu.open(', 'window.Toasts.']) {
+  for (const used of ['home.rowNode(', 'home.emptyRow(', 'home.startNodes(', 'home.linkNodes(', 'home.findNodes(', 'home.SIGN_IN_HINT_TEXT', 'window.Hint.show(', 'cloudSvg(cloudLook(', 'buildActions(', 'PromptDialog.open(', 'window.Menu.open(', 'window.Toasts.']) {
     expect(src.includes(used), `it draws with the app's own ${used.replace(/[(.]$/, '')}`);
   }
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   expect(!/class(Name)?\s*=\s*['"](menu|toast|home-row|jar-dialog)\b/.test(code), 'and builds no menu, toast, row or dialog by hand');
   // What home exports for it is what home itself draws with.
   const home = read('js/home/home.mjs');
-  expect(/export \{ rowNode, startNodes, linkNodes, findNodes, signInLine \};/.test(home), 'home exports its builders for the kit');
-  for (const call of ['list.replaceChildren(...ordered.map((p) => rowNode(', 'actions.append(...startNodes())',
-    'links.append(...linkNodes())', 'btn.replaceChildren(...findNodes(chord))', 'signInLine(box, ']) {
+  expect(/export \{ rowNode, emptyRow, startNodes, linkNodes, findNodes \};/.test(home), 'home exports its builders for the kit');
+  for (const call of ['ordered.map((p) => rowNode(', 'emptyRow()', 'actions.append(...startNodes())',
+    'links.append(...linkNodes())', 'btn.replaceChildren(...findNodes(chord))', 'text: SIGN_IN_HINT_TEXT']) {
     expect(home.includes(call), `and draws its own page with the same one: ${call}`);
   }
   expect(/main\.home'\)\.cloneNode\(true\)/.test(src), 'the kit takes home\'s frame from home\'s own document');

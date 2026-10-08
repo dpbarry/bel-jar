@@ -8,6 +8,8 @@ import { EditorView, Decoration } from '@codemirror/view';
 import { walkTree } from '../tree-walk.mjs';
 import { collectUndefinedApplicationDiags } from '../name-resolve.mjs';
 import { lintQueryPragmaBounds, mergeDiagnostics as mergeDiagLists } from './query-diag.mjs';
+import { collectFixityDiagnostics } from '../infix.mjs';
+import { rewriteNotGuarded } from '../semantic/pragma-scope.mjs';
 import { timeSync } from '../perf/check-trace.mjs';
 import { checkerSnapshot } from '../semantic/checker-snapshot.mjs';
 import { LINT_TOOLTIP_FILTER } from './hover.mjs';
@@ -28,7 +30,11 @@ function syntaxLintTreeInner(tree, doc) {
   const { blockAt, parseDiags } = timeSync('walkTree', () => walkTree(tree, doc));
   const queryDiags = lintQueryPragmaBounds(tree, doc);
   const appDiags = timeSync('undefAppDiags', () => collectUndefinedApplicationDiags(tree, doc));
-  const merged = mergeDiagLists(mergeDiagLists(parseDiags, queryDiags), appDiags);
+  const fixityDiags = collectFixityDiagnostics(tree, doc);
+  const merged = rewriteNotGuarded(tree, mergeDiagLists(
+    mergeDiagLists(mergeDiagLists(parseDiags, queryDiags), appDiags),
+    fixityDiags,
+  ));
   for (const d of merged) {
     const hit = blockAt(d.from);
     if (hit) d.blockIndex = hit.index;

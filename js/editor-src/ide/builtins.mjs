@@ -28,7 +28,6 @@ export const BUILTIN_TOOLTIPS = new Map([
   ['CoinductiveKeyword',{ label: 'COINDUCTIVE TYPE',   desc: 'Declares a coinductive (codata) type, defined by its observations.' }],
   ['CTypeKeyword',      { label: 'COMPUTATION KIND',   desc: 'The kind `ctype`, classifying computation-level types.' }],
   ['PropKeyword',       { label: 'PROPOSITION KIND',   desc: 'The kind `prop`, classifying computation-level propositions.' }],
-
   // ── Keywords: expressions ──────────────────────────────────────────────────
   ['FnKeyword',         { label: 'FN ABSTRACTION',     desc: 'Computation-level function abstraction (`fn x => e`).' }],
   ['FunKeyword',        { label: 'FUN (COFUNCTION)',   desc: 'Pattern- and copattern-matching function with branches (`fun .obs p => e | …`).' }],
@@ -95,15 +94,15 @@ export const BUILTIN_TOOLTIPS = new Map([
   // ── Pragma tokens ──────────────────────────────────────────────────────────
   ['--name',         { label: 'PRAGMA', desc: 'Sets the preferred name for variables generated for a constant’s type.' }],
   ['--infix',        { label: 'PRAGMA', desc: 'Makes a two-argument constant infix, with associativity and precedence.' }],
-  ['--prefix',       { label: 'PRAGMA', desc: 'Makes a constant prefix, with an optional precedence.' }],
+  ['--prefix',       { label: 'PRAGMA', desc: 'Makes a one-argument constant prefix, with an optional precedence.' }],
+  ['--postfix',      { label: 'PRAGMA', desc: 'Makes a one-argument constant postfix, with an optional precedence.' }],
   ['--assoc',        { label: 'PRAGMA', desc: 'Sets the default operator associativity for following declarations.' }],
   ['--abbrev',       { label: 'PRAGMA', desc: 'Abbreviates a module’s qualified name.' }],
-  ['--not',          { label: 'PRAGMA', desc: 'Guards the following declaration from type-checking.' }],
+  ['--not',          { label: 'PRAGMA', desc: 'The next declaration must fail reconstruction.' }],
   ['--open',         { label: 'PRAGMA', desc: 'Opens a module so its names are available unqualified.' }],
   ['--query',        { label: 'PRAGMA', desc: 'Runs a logic-programming query against the LF signature.' }],
-  ['--opaque',       { label: 'PRAGMA', desc: 'Keeps a function’s definition from being unfolded during coverage checking.' }],
   ['--coverage',     { label: 'PRAGMA', desc: 'Enables coverage (exhaustiveness) checking.' }],
-  ['--warncoverage', { label: 'PRAGMA', desc: 'Reports missing cases as warnings instead of errors.' }],
+  ['--warncoverage', { label: 'PRAGMA', desc: 'Turns coverage checking on and reports missing cases as warnings.' }],
   ['--nostrengthen', { label: 'PRAGMA', desc: 'Disables automatic meta-variable strengthening.' }],
 ]);
 

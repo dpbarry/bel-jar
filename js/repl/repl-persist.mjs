@@ -6,6 +6,7 @@ var SAVE_DEBOUNCE_MS = 300;
 var HTML_CAP = 400 * 1024;
 var saveTimer = null;
 var restoring = false;
+var held = false;
 
 function getOutput() {
   return document.getElementById('output');
@@ -67,7 +68,7 @@ function persistCommandHistory() {
 }
 
 function writeSnapshot() {
-  if (restoring) return;
+  if (restoring || held) return;
   var p = getPersist();
   if (!p || typeof p.writeReplTranscript !== 'function') return;
   if (Settings.get('replHistoryPersist') === 'none') {
@@ -108,6 +109,15 @@ function saveNow() {
     saveTimer = null;
   }
   writeSnapshot();
+}
+
+/** The page is leaving this project. A later save would file this transcript under the next one. */
+function hold() {
+  held = true;
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
 }
 
 /**
@@ -157,6 +167,8 @@ function restore() {
     if (typeof ReplOutput !== 'undefined' && ReplOutput.settleInterruptedPendingRuns) {
       ReplOutput.settleInterruptedPendingRuns(output);
     }
+    // The banner kept with the transcript is redrawn in today's words (repl-output.mjs).
+    if (typeof ReplOutput !== 'undefined' && ReplOutput.refreshBanners) ReplOutput.refreshBanners(output);
 
     if (typeof snap.scrollTop === 'number') {
       output.scrollTop = snap.scrollTop;
@@ -183,6 +195,8 @@ global.ReplPersist = {
   scheduleSave: scheduleSave,
   saveNow: saveNow,
   saveIfPending: saveIfPending,
+  hold: hold,
+  isHeld: function () { return held; },
   restore: restore,
 };
 global.BelJarReplPersist = global.ReplPersist;

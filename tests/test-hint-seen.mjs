@@ -20,9 +20,23 @@ function expect(cond, msg) {
 
 // Every once-ever tip the app shows has a row, and every row syncs and survives Reset.
 const app = readFileSync(join(root, 'js/app/app.mjs'), 'utf8');
-const shown = [...app.matchAll(/Hint\.show\(\{\s*id:\s*'([^']+)'/g)].map((m) => m[1])
-  .concat([...app.matchAll(/const INSPECTOR_FOLLOW_HINT = '([^']+)'/g)].map((m) => m[1]));
-expect(shown.length === 2 && shown.every((id) => seenSetting(id)), `every tip the editor shows has a seen setting (${shown.join(', ')})`);
+const home = readFileSync(join(root, 'js/home/home.mjs'), 'utf8');
+function tipIds(src) {
+  return [...src.matchAll(/Hint\.show\(\{[^}]*\bid:\s*'([^']+)'/g)].map((m) => m[1])
+    .concat([...src.matchAll(/const (?:INSPECTOR_FOLLOW_HINT|SIGN_IN_HINT) = '([^']+)'/g)].map((m) => m[1]));
+}
+const shown = tipIds(app).concat(tipIds(home));
+expect(shown.length === Object.keys(SEEN_SETTING).length && shown.every((id) => seenSetting(id))
+  && Object.keys(SEEN_SETTING).every((id) => shown.includes(id)),
+  `every tip shown has a seen setting, and every setting is a tip (${shown.join(', ')})`);
+const signIn = home.slice(home.indexOf('Hint.show({'), home.indexOf('Hint.show({') + 400);
+expect(/side: 'below'/.test(signIn) && !/hold:/.test(signIn) && /wait: false/.test(signIn) && /anchor\.click\(\)/.test(signIn),
+  'the sign-in box sits under the account button, counts down, and opens that menu');
+const hint = readFileSync(join(root, 'js/ui/hint.mjs'), 'utf8');
+const shownAt = hint.indexOf("rootEl.classList.add('is-visible')");
+const rememberedAt = hint.indexOf('if (once && id) persistDismissed(id);');
+expect(shownAt > 0 && rememberedAt > shownAt && hint.indexOf('if (!o.hold)') > rememberedAt,
+  'a tip is remembered the moment it is shown, and the countdown still runs');
 for (const row of Object.values(SEEN_SETTING)) {
   const r = settingRow(row);
   expect(r && r.default === false && isSyncedSetting(r) && r.reset === false, `${row}: a synced row, false until seen, kept through Reset`);

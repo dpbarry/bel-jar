@@ -1,5 +1,11 @@
 // Lightweight coachmark balloons. One at a time; optional once-ever via id.
-// Hint.show({ id, anchor, text, duration?, onClick? })
+// Hint.show({ id, anchor, text, duration?, onClick?, side?, align?, hold?, wait? })
+// side 'right' (the default) sits beside the anchor; 'below' sits under it
+// (align 'end' keeps a top-right anchor's box on the screen). The countdown
+// runs unless hold (no countdown, no close, until dismiss). A once-ever id is
+// remembered the moment the box is shown, so a refresh does not show it again.
+// wait: false shows without waiting for a sync round (a tip for someone signed
+// out has no account answer to wait for).
 // Once-ever follows the account: a tip seen on one computer is seen on all of
 // them (hint-seen.mjs).
 import { seenSetting, wasSeen, carryForward, settingsKnown } from './hint-seen.mjs';
@@ -25,6 +31,8 @@ const DEFAULT_DURATION_MS = 10000;
   let dismissing = false;
   let resizeBound = false;
   let actionFn = null;
+  let placeSide = 'right';
+  let placeAlign = 'end';
 
   function setting(row) {
     return typeof Settings !== 'undefined' && Settings.get ? Settings.get(row) : undefined;
@@ -125,12 +133,18 @@ const DEFAULT_DURATION_MS = 10000;
     if (cardEl && !cardEl._belHintActionBound) {
       cardEl._belHintActionBound = true;
       cardEl.addEventListener('click', (e) => {
-        if (!actionFn) return;
         if (e.target && e.target.closest && e.target.closest('.hint-close')) return;
+        if (!actionFn) return;
         e.preventDefault();
-        const fn = actionFn;
-        dismiss();
-        fn();
+        e.stopPropagation();
+        runAction();
+      });
+      cardEl.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        if (e.repeat || !actionFn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        runAction();
       });
     }
     if (!resizeBound) {
@@ -153,7 +167,14 @@ const DEFAULT_DURATION_MS = 10000;
     visible = false;
     dismissing = false;
     actionFn = null;
-    if (cardEl) cardEl.classList.remove('is-action');
+    rootEl.classList.remove('is-hold');
+    delete rootEl.dataset.side;
+    rootEl.style.removeProperty('--hint-arrow-x');
+    if (cardEl) {
+      cardEl.classList.remove('is-action');
+      cardEl.removeAttribute('role');
+      cardEl.removeAttribute('tabindex');
+    }
     releaseTooltip();
     anchorEl = null;
     activeId = null;
@@ -193,6 +214,27 @@ const DEFAULT_DURATION_MS = 10000;
     rootEl.style.width = best + 'px';
   }
 
+  /** How far below a header bar a box dropped from it sits: `--header-menu-gap`, in px. */
+  function headerDrop(anchor) {
+    const header = anchor.closest && anchor.closest('header');
+    if (!header) return null;
+    const v = getComputedStyle(header).getPropertyValue('--header-menu-gap').trim();
+    const n = parseFloat(v);
+    let gap = GAP_PX;
+    if (Number.isFinite(n)) {
+      gap = /rem$/.test(v) ? n * parseFloat(getComputedStyle(document.documentElement).fontSize) : n;
+    }
+    return { bottom: header.getBoundingClientRect().bottom, gap };
+  }
+
+  function runAction() {
+    if (!actionFn || dismissing) return;
+    const fn = actionFn;
+    actionFn = null;
+    dismiss();
+    fn();
+  }
+
   function place() {
     if (!rootEl || !cardEl || !anchorEl) return;
     rootEl.hidden = false;
@@ -205,19 +247,44 @@ const DEFAULT_DURATION_MS = 10000;
     fitWidth();
 
     const ar = anchorEl.getBoundingClientRect();
-    const hr = rootEl.getBoundingClientRect();
+    // Layout size, not the scaled box: placement runs before the balloon is
+    // shown, while it is still scaled down, and a scaled measurement sits it short.
+    const width = rootEl.offsetWidth;
+    const height = rootEl.offsetHeight;
     const margin = 8;
-    let left = Math.round(ar.right + GAP_PX);
-    let top = Math.round(ar.top + ar.height / 2 - hr.height / 2);
+    let left;
+    let top;
+    if (placeSide === 'below') {
+      const drop = headerDrop(anchorEl);
+      const anchorBottom = drop ? drop.bottom : ar.bottom;
+      const gap = drop ? drop.gap : GAP_PX;
+      if (placeAlign === 'start') left = Math.round(ar.left);
+      else if (placeAlign === 'center') left = Math.round(ar.left + ar.width / 2 - width / 2);
+      else left = Math.round(ar.right - width);
+      top = Math.round(anchorBottom + gap);
+      rootEl.dataset.side = 'below';
+      cardEl.style.removeProperty('--hint-arrow-y');
+    } else {
+      left = Math.round(ar.right + GAP_PX);
+      top = Math.round(ar.top + ar.height / 2 - height / 2);
+      rootEl.dataset.side = 'right';
+      rootEl.style.removeProperty('--hint-arrow-x');
+    }
 
-    const maxLeft = window.innerWidth - hr.width - margin;
-    const maxTop = window.innerHeight - hr.height - margin;
+    const maxLeft = window.innerWidth - width - margin;
+    const maxTop = window.innerHeight - height - margin;
+    if (left < margin) left = margin;
     if (left > maxLeft) left = Math.max(margin, maxLeft);
     if (top < margin) top = margin;
     if (top > maxTop) top = Math.max(margin, maxTop);
 
-    const arrowY = Math.max(12, Math.min(hr.height - 12, ar.top + ar.height / 2 - top));
-    cardEl.style.setProperty('--hint-arrow-y', arrowY + 'px');
+    if (placeSide === 'below') {
+      const arrowX = Math.max(12, Math.min(width - 12, ar.left + ar.width / 2 - left));
+      rootEl.style.setProperty('--hint-arrow-x', arrowX + 'px');
+    } else {
+      const arrowY = Math.max(12, Math.min(height - 12, ar.top + ar.height / 2 - top));
+      cardEl.style.setProperty('--hint-arrow-y', arrowY + 'px');
+    }
     rootEl.style.left = left + 'px';
     rootEl.style.top = top + 'px';
     rootEl.style.removeProperty('visibility');
@@ -295,7 +362,7 @@ const DEFAULT_DURATION_MS = 10000;
 
     if (!anchor || !text) return false;
     if (once && id && wasDismissed(id)) return false;
-    if (once && id && seenSetting(id) && !o.waited && !accountAnswered()) {
+    if (once && id && seenSetting(id) && o.wait !== false && !o.waited && !accountAnswered()) {
       waitForAccount(o);
       return false;
     }
@@ -308,12 +375,22 @@ const DEFAULT_DURATION_MS = 10000;
 
     activeId = id;
     anchorEl = anchor;
+    placeSide = o.side === 'below' ? 'below' : 'right';
+    placeAlign = o.align === 'start' || o.align === 'center' ? o.align : 'end';
     actionFn = typeof o.onClick === 'function' ? o.onClick : null;
     if (cardEl) {
-      if (actionFn) cardEl.classList.add('is-action');
-      else cardEl.classList.remove('is-action');
+      if (actionFn) {
+        cardEl.classList.add('is-action');
+        cardEl.setAttribute('role', 'button');
+        cardEl.tabIndex = 0;
+      } else {
+        cardEl.classList.remove('is-action');
+        cardEl.removeAttribute('role');
+        cardEl.removeAttribute('tabindex');
+      }
     }
     bodyEl.textContent = text;
+    rootEl.classList.toggle('is-hold', !!o.hold);
     rootEl.style.setProperty('--hint-duration', duration / 1000 + 's');
     clearProgressBarFreeze();
 
@@ -335,10 +412,15 @@ const DEFAULT_DURATION_MS = 10000;
       });
     }
 
-    autoTimer = setTimeout(() => {
-      autoTimer = null;
-      dismiss();
-    }, duration);
+    // Seen as it appears. Waiting for the countdown or a click would show it
+    // again on a refresh in between.
+    if (once && id) persistDismissed(id);
+    if (!o.hold) {
+      autoTimer = setTimeout(() => {
+        autoTimer = null;
+        dismiss();
+      }, duration);
+    }
     return true;
   }
 
@@ -351,7 +433,8 @@ const DEFAULT_DURATION_MS = 10000;
   // the news closes it.
   if (typeof Settings !== 'undefined' && typeof Settings.subscribe === 'function') {
     Settings.subscribe(function (e) {
-      if (!visible || dismissing || !activeId) return;
+      // A value this page just stored is not news from another computer.
+      if (!visible || dismissing || !activeId || !e || e.origin === 'local') return;
       var row = seenSetting(activeId);
       if (row && e && Array.isArray(e.ids) && e.ids.indexOf(row) !== -1 && setting(row) === true) dismiss();
     });

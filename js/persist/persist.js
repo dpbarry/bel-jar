@@ -1,6 +1,6 @@
 (() => {
   // js/persist/store.mjs
-  var SCHEMA = 4;
+  var SCHEMA = 5;
   var SCHEMA_KEY = "beljar/schema";
   function migrateStorage(storage, schema, migrations) {
     const raw = storage.getItem(SCHEMA_KEY);
@@ -27,6 +27,7 @@
     { pattern: /^beljar\/device$/, cls: "device" },
     { pattern: /^beljar\/notifications$/, cls: "device" },
     { pattern: /^beljar\/repl\/(transcript|commands)$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/repl$/, cls: "device" },
     // the tab guard's handshake, and sync telling the other tabs how it is (sync/sync-status.mjs)
     { pattern: /^beljar\/tabs\/(ping|pong|bye|sync-status|sync-ask)$/, cls: "device" },
     { pattern: /^beljar\/tombstones$/, cls: "device" },
@@ -315,7 +316,48 @@
   }
 
   // js/persist/migrations.mjs
-  var MIGRATIONS = {};
+  var MIGRATIONS = {
+    // The REPL was one transcript for the whole browser. It belongs to the
+    // project that was open; every other project starts with none.
+    4: function moveReplOntoItsProject(storage) {
+      const transcriptRaw = storage.getItem("beljar/repl/transcript");
+      const commandsRaw = storage.getItem("beljar/repl/commands");
+      if (transcriptRaw == null && commandsRaw == null) return;
+      let transcript = null;
+      let commands = null;
+      let device = null;
+      try {
+        transcript = JSON.parse(transcriptRaw || "null");
+        commands = JSON.parse(commandsRaw || "null");
+        device = JSON.parse(storage.getItem("beljar/device") || "null");
+      } catch (_) {
+        return;
+      }
+      const values = device && device.data && device.data.values;
+      const pid = values && typeof values.activeProject === "string" ? values.activeProject : "";
+      if (!pid) return;
+      const html = transcript && transcript.data && typeof transcript.data.html === "string" ? transcript.data.html : "";
+      const list = commands && Array.isArray(commands.data) ? commands.data.filter((x) => typeof x === "string") : [];
+      const dest = "beljar/p/" + pid + "/repl";
+      if ((html || list.length) && storage.getItem(dest) == null) {
+        const at = Math.max(
+          transcript && typeof transcript.at === "number" ? transcript.at : 0,
+          commands && typeof commands.at === "number" ? commands.at : 0
+        ) || Date.now();
+        storage.setItem(dest, JSON.stringify({
+          at,
+          data: {
+            html,
+            scrollTop: transcript && transcript.data && typeof transcript.data.scrollTop === "number" ? transcript.data.scrollTop : 0,
+            savedAt: transcript && transcript.data && typeof transcript.data.savedAt === "number" ? transcript.data.savedAt : at,
+            commands: list
+          }
+        }));
+      }
+      storage.removeItem("beljar/repl/transcript");
+      storage.removeItem("beljar/repl/commands");
+    }
+  };
 
   // js/persist/table.mjs
   function typeOf(row) {
@@ -500,6 +542,14 @@
     if (v === null) return null;
     return Array.isArray(v) ? v : void 0;
   }
+  function cleanDismissed(raw) {
+    if (!Array.isArray(raw)) return void 0;
+    const out = [];
+    for (const id of raw) {
+      if (typeof id === "string" && id && !out.includes(id)) out.push(id);
+    }
+    return out;
+  }
   var ON = true;
   var OFF = false;
   var SETTINGS = [
@@ -558,6 +608,9 @@
     { id: "vimLeader", section: "keybindings", default: "\\", values: ["\\", ",", " "] },
     { id: "vimInsertEscape", section: "keybindings", default: "", values: ["", "jk", "jj", "kj"] },
     { id: "emacsYankSource", section: "keybindings", default: "system", values: ["system", "kill-ring"] },
+    // Clipboard dialogs this browser has closed. The grant is per browser, so it
+    // does not follow the account, and Reset does not ask again.
+    { id: "clipboardReadDismissed", section: "keybindings", default: [], type: "json", normalize: cleanDismissed, sync: false, reset: false },
     { id: "doubleTapTrigger", section: "keybindings", default: "off", values: ["off", "shift", "control", "alt"] },
     { id: "doubleTapCommand", section: "keybindings", default: "tools.palette", type: "string" },
     { id: "doubleTapSpeed", section: "keybindings", default: "normal", values: ["normal", "fast", "relaxed"] },
@@ -598,6 +651,7 @@
     // one row per tip, so two computers that each saw a different one never disagree.
     { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
     { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenSignIn", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },
@@ -812,6 +866,9 @@
   function foldsKey(pid) {
     return projectPrefix(pid) + "folds";
   }
+  function replKey(pid) {
+    return projectPrefix(pid) + "repl";
+  }
   function syncKey(pid) {
     return projectPrefix(pid) + "sync";
   }
@@ -821,7 +878,7 @@
   function conflictKey(pid, fid) {
     return projectPrefix(pid) + "conflict/" + fid;
   }
-  var PROJECT_KEY = /^beljar\/p\/([^/]+)\/(meta|tree|session|folds|undo|sync|f|cache|conflict)(?:\/([^/]+))?$/;
+  var PROJECT_KEY = /^beljar\/p\/([^/]+)\/(meta|tree|session|folds|undo|sync|repl|f|cache|conflict)(?:\/([^/]+))?$/;
   function parseKey(key) {
     var m = typeof key === "string" ? PROJECT_KEY.exec(key) : null;
     if (!m) return null;
@@ -2881,45 +2938,104 @@
       });
     }
     const replStore = () => storeFor(settings.get("replHistoryPersist"));
-    followSetting("replHistoryPersist", () => [REPL_TRANSCRIPT_KEY, REPL_COMMANDS_KEY]);
-    function readReplTranscript() {
-      const s = replStore();
-      const d = s && s.get(REPL_TRANSCRIPT_KEY);
-      if (!d || typeof d !== "object" || typeof d.html !== "string") return null;
+    followSetting("replHistoryPersist", (s) => {
+      const keys = s.keys("beljar/p/").filter((k) => k.endsWith("/repl"));
+      if (s.get(REPL_TRANSCRIPT_KEY) !== void 0) keys.push(REPL_TRANSCRIPT_KEY);
+      if (s.get(REPL_COMMANDS_KEY) !== void 0) keys.push(REPL_COMMANDS_KEY);
+      return keys;
+    });
+    function asRepl(d) {
+      if (!d || typeof d !== "object") return null;
+      const commands = Array.isArray(d.commands) ? d.commands.filter((x) => typeof x === "string") : [];
+      const html = typeof d.html === "string" ? d.html : "";
+      if (!html && !commands.length) return null;
       return {
-        html: d.html,
+        html,
         scrollTop: typeof d.scrollTop === "number" ? d.scrollTop : 0,
-        savedAt: typeof d.savedAt === "number" ? d.savedAt : 0
+        savedAt: typeof d.savedAt === "number" ? d.savedAt : 0,
+        commands
       };
     }
-    function writeReplTranscript(snap) {
-      const s = replStore();
-      if (!s) return;
-      if (!snap || typeof snap.html !== "string" || !snap.html) {
+    function adoptShared(s, key) {
+      const transcript = s.get(REPL_TRANSCRIPT_KEY);
+      const commands = s.get(REPL_COMMANDS_KEY);
+      const html = transcript && typeof transcript === "object" && typeof transcript.html === "string" ? transcript.html : "";
+      const list = Array.isArray(commands) ? commands.filter((x) => typeof x === "string") : [];
+      if (!html && !list.length) {
         s.remove(REPL_TRANSCRIPT_KEY);
-        return;
+        s.remove(REPL_COMMANDS_KEY);
+        return null;
       }
-      s.set(REPL_TRANSCRIPT_KEY, {
-        html: snap.html,
-        scrollTop: typeof snap.scrollTop === "number" ? snap.scrollTop : 0,
-        savedAt: typeof snap.savedAt === "number" ? snap.savedAt : Date.now()
-      });
+      const rec = {
+        html,
+        scrollTop: transcript && typeof transcript.scrollTop === "number" ? transcript.scrollTop : 0,
+        savedAt: transcript && typeof transcript.savedAt === "number" ? transcript.savedAt : Date.now(),
+        commands: list
+      };
+      if (!s.set(key, rec).ok) return rec;
+      s.remove(REPL_TRANSCRIPT_KEY);
+      s.remove(REPL_COMMANDS_KEY);
+      return rec;
     }
     function clampCommands(list) {
       const arr = Array.isArray(list) ? list.filter((x) => typeof x === "string") : [];
       const cap = settings.get("replHistoryCap");
       return arr.length > cap ? arr.slice(arr.length - cap) : arr;
     }
-    function readReplCommands() {
+    function readRepl() {
       const s = replStore();
-      return s ? clampCommands(s.get(REPL_COMMANDS_KEY)) : [];
+      if (!s) return null;
+      const key = replKey(work2.projectId());
+      const own = asRepl(s.get(key));
+      if (own) return own;
+      if (s.get(REPL_TRANSCRIPT_KEY) === void 0 && s.get(REPL_COMMANDS_KEY) === void 0) return null;
+      return adoptShared(s, key);
     }
-    function writeReplCommands(list) {
+    function writeRepl(rec) {
       const s = replStore();
       if (!s) return;
-      const arr = clampCommands(list);
-      if (arr.length) s.set(REPL_COMMANDS_KEY, arr);
-      else s.remove(REPL_COMMANDS_KEY);
+      const key = replKey(work2.projectId());
+      const html = rec && typeof rec.html === "string" ? rec.html : "";
+      const commands = clampCommands(rec && rec.commands);
+      if (!html && !commands.length) {
+        s.remove(key);
+        return;
+      }
+      s.set(key, {
+        html,
+        scrollTop: rec && typeof rec.scrollTop === "number" ? rec.scrollTop : 0,
+        savedAt: rec && typeof rec.savedAt === "number" ? rec.savedAt : Date.now(),
+        commands
+      });
+    }
+    function readReplTranscript() {
+      const rec = readRepl();
+      if (!rec || !rec.html) return null;
+      return { html: rec.html, scrollTop: rec.scrollTop, savedAt: rec.savedAt };
+    }
+    function writeReplTranscript(snap) {
+      if (!replStore()) return;
+      const cur = readRepl() || { html: "", scrollTop: 0, savedAt: 0, commands: [] };
+      if (!snap || typeof snap.html !== "string" || !snap.html) {
+        cur.html = "";
+        cur.scrollTop = 0;
+        cur.savedAt = 0;
+      } else {
+        cur.html = snap.html;
+        cur.scrollTop = typeof snap.scrollTop === "number" ? snap.scrollTop : 0;
+        cur.savedAt = typeof snap.savedAt === "number" ? snap.savedAt : Date.now();
+      }
+      writeRepl(cur);
+    }
+    function readReplCommands() {
+      const rec = readRepl();
+      return rec ? clampCommands(rec.commands) : [];
+    }
+    function writeReplCommands(list) {
+      if (!replStore()) return;
+      const cur = readRepl() || { html: "", scrollTop: 0, savedAt: 0, commands: [] };
+      cur.commands = clampCommands(list);
+      writeRepl(cur);
     }
     const foldStore = () => storeFor(settings.get("editorFoldPersist"));
     followSetting("editorFoldPersist", (s) => s.keys("beljar/p/").filter((k) => k.endsWith("/folds")));
@@ -4637,6 +4753,8 @@
     return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
   }
   var ISSUES_URL = "https://github.com/dpbarry/bel-jar/issues";
+  var CONTACT_EMAIL = "dean.barry@mail.mcgill.ca";
+  var CONTACT_URL = "mailto:" + CONTACT_EMAIL;
   function reportIssue() {
     if (typeof g.open === "function") g.open(ISSUES_URL, "_blank", "noopener");
   }
@@ -4660,6 +4778,7 @@
   var Routes = {
     PROJECT_ID,
     ISSUES_URL,
+    CONTACT_URL,
     homeUrl,
     editUrl,
     privacyUrl,

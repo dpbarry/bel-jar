@@ -12,9 +12,10 @@ import { publishNameEnv, preludeCtorNames } from './name-env.mjs';
 import { timeSync } from '../perf/check-trace.mjs';
 import { declarationLabel } from './declaration-labels.mjs';
 import { GLOBAL_DECL_PARENT, declaresName } from '../tree-helpers.mjs';
+import { moduleScope } from './pragma-scope.mjs';
 
 const IDENT = new Set(['LowerIdentifier', 'UpperIdentifier']);
-const NOTATION_PRAGMA = new Set(['InfixPragma', 'PrefixPragma']);
+const NOTATION_PRAGMA = new Set(['InfixPragma', 'PrefixPragma', 'PostfixPragma']);
 const TYPEISH = new Set([
   'LFType',
   'LFKind',
@@ -570,7 +571,7 @@ const EXPR_LOWER = Object.freeze(new Set([NAMESPACE.REC_FUNCTION]));
 const EXPR_UPPER = Object.freeze(new Set([NAMESPACE.COMP_CONSTRUCTOR]));
 // Empty set: no globals. Paired with allowLocals in classify (context variables).
 export const LOCALS_ONLY_NAMESPACES = Object.freeze(new Set());
-const FIXITY_PRAGMA = new Set(['InfixPragma', 'PrefixPragma', 'OpaquePragma']);
+const FIXITY_PRAGMA = new Set(['InfixPragma', 'PrefixPragma', 'PostfixPragma']);
 
 // Syntactic namespace filter for a Lezer parent context (LF type vs term vs
  // comp type). Null = no hard filter (case-compatible globals only).
@@ -612,6 +613,10 @@ export function expectedNamespacesForContext(ctx, refKind) {
 
 export function expectedNamespacesForNode(node, refKind) {
   const parent = node && node.parent;
+  if (parent && parent.name === 'PragmaName') {
+    const gp = parent.parent;
+    if (gp && FIXITY_PRAGMA.has(gp.name)) return LF_TERM_HEAD;
+  }
   return expectedNamespacesForContext(parent ? parent.name : '', refKind);
 }
 
@@ -723,16 +728,44 @@ export function moduleMembersOf(snapshot, moduleSym) {
   return out;
 }
 
-// Nearest MODULE named `name` declared before `pos` (prefix-closed visibility).
-export function resolveModuleNamed(snapshot, name, pos) {
-  if (!snapshot || !name) return null;
+function moduleSymbolNamed(globalSymbols, name, pos) {
+  if (!globalSymbols || !name) return null;
   let best = null;
-  for (const sym of snapshot.globalSymbols) {
+  for (const sym of globalSymbols) {
     if (sym.namespace !== NAMESPACE.MODULE || sym.name !== name) continue;
     if (pos != null && !nameVisible(sym, pos)) continue;
     if (!best || sym.nameRange.from > best.nameRange.from) best = sym;
   }
   return best;
+}
+
+function moduleByPath(globalSymbols, path, pos) {
+  const parts = String(path || '').split('.').filter(Boolean);
+  if (!parts.length) return null;
+  let mod = moduleSymbolNamed(globalSymbols, parts[0], pos);
+  for (let i = 1; mod && i < parts.length; i += 1) {
+    const members = moduleMembersOf({ globalSymbols }, mod) || [];
+    mod = members.find((m) => m.namespace === NAMESPACE.MODULE && m.name === parts[i]) || null;
+  }
+  return mod;
+}
+
+// Nearest MODULE named `name` declared before `pos` (prefix-closed visibility).
+// An `--abbrev` alias resolves to the module it names.
+export function resolveModuleNamed(snapshot, name, pos) {
+  if (!snapshot || !name) return null;
+  const direct = moduleSymbolNamed(snapshot.globalSymbols, name, pos);
+  if (direct) return direct;
+  const aliases = snapshot.moduleScope && snapshot.moduleScope.aliases;
+  if (!aliases) return null;
+  for (let i = aliases.length - 1; i >= 0; i -= 1) {
+    const alias = aliases[i];
+    if (alias.name !== name) continue;
+    if (pos != null && (pos < alias.from || pos > alias.to)) continue;
+    return moduleByPath(snapshot.globalSymbols, alias.moduleName, pos);
+  }
+  if (name.includes('.')) return moduleByPath(snapshot.globalSymbols, name, pos);
+  return null;
 }
 
 // Does any global declaration with this name exist in the snapshot, matching
@@ -837,6 +870,7 @@ export function createSymbolStore() {
       declarations,
       globalsByName,
       localsByName,
+      moduleScope: moduleScope(syntaxSnapshot.tree, syntaxSnapshot.doc),
       syntaxSnapshot,
     };
     incrementalIndex = buildIncrementalIndex(snapshot);
@@ -1558,9 +1592,16 @@ function collectGlobalSymbols(ctx) {
   });
 }
 
+function pragmaOperand(node) {
+  for (let c = node.firstChild; c; c = c.nextSibling) {
+    if (c.name === 'PragmaName') return c;
+  }
+  return firstIdentChild(node);
+}
+
 function registerNotationPragma(ctx, node) {
   const { doc, keyCounts } = ctx;
-  const op = firstIdentChild(node);
+  const op = pragmaOperand(node);
   if (!op) return;
   const nameRange = { from: node.from, to: op.from };
   const opName = slice(doc, op.from, op.to);
@@ -1638,6 +1679,7 @@ function collectReferencesAndLocals(ctx) {
   const localStack = [];
   const localsByName = new Map();
   const refStart = ctx.references.length;
+  const scope = moduleScope(ctx.tree, ctx.doc);
   let globalsByName = ctx.globalsByName;
   if (!globalsByName) {
     globalsByName = new Map();
@@ -1731,20 +1773,25 @@ function collectReferencesAndLocals(ctx) {
         }
       }
 
-      if (!IDENT.has(ref.name)) return;
+      if (!IDENT.has(ref.name) && ref.name !== 'DottedIdent') return;
       // `--name nat N x.` — preferred aliases are pretty-print names, not symbols.
       // Keep the constant (`nat`) as a normal reference.
       for (let p = node; p; p = p.parent) {
         if (p.name === 'NamePreferred') return;
         if (p.name === 'NamePragma' || p.name === 'Program' || GLOBAL_DECL_PARENT.has(p.name)) break;
       }
-      const range = extendedRange(node);
+      if (isAbbrevAlias(node)) return;
+      const range = ref.name === 'DottedIdent'
+        ? { from: node.from + 1, to: node.to }
+        : extendedRange(node);
       if (ctx.defByNameRange.has(`${range.from}:${range.to}`)) return;
 
       const name = slice(ctx.doc, range.from, range.to);
-      const refKind = refKindForNode(node);
+      const refKind = ref.name === 'DottedIdent'
+        ? (/^[A-Z]/.test(name) ? 'upper' : 'lower')
+        : refKindForNode(node);
       const symbol = resolveReference(
-        ctx.globalSymbols, localStack, name, refKind, range.from, node, globalsByName, localsByName,
+        ctx.globalSymbols, localStack, name, refKind, range.from, node, globalsByName, localsByName, scope, ctx.doc,
       );
       const reference = {
         id: referenceId(ctx.documentId, node),
@@ -1787,6 +1834,7 @@ function collectReferencesAndLocals(ctx) {
 
 function resolveReference(
   globalSymbols, localStack, name, refKind, from, node, globalsByName = null, localsByName = null,
+  scope = null, doc = null,
 ) {
   const localBucket = localsByName?.get(name);
   if (localBucket && localBucket.length) {
@@ -1806,6 +1854,12 @@ function resolveReference(
     ? (symbol) => expected.has(symbol.namespace)
     : (symbol) => isCompatibleGlobal(refKind, symbol.namespace);
 
+  const qual = qualifiedParts(node);
+  if (qual && scope) {
+    const hit = memberAt(doc, globalSymbols, scope, qual, name, from, allowed);
+    if (hit) return hit;
+  }
+
   const pool = globalsByName?.get(name) || globalSymbols.filter((symbol) => symbol.name === name);
   let best = null;
   let bestFrom = -1;
@@ -1816,7 +1870,79 @@ function resolveReference(
       bestFrom = symbol.nameRange.from;
     }
   }
-  return best;
+  if (best) return best;
+  if (!scope) return null;
+  for (let i = scope.opens.length - 1; i >= 0; i -= 1) {
+    const opened = scope.opens[i];
+    if (from < opened.from || from > opened.to) continue;
+    const mod = resolveModuleInScope(globalSymbols, scope, opened.moduleName, from);
+    const members = mod ? (moduleMembersOf({ globalSymbols }, mod) || []) : [];
+    const hit = members.find((m) => m.name === name && allowed(m));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function isAbbrevAlias(node) {
+  const parent = node.parent;
+  if (!parent || parent.name !== 'AbbrevPragma') return false;
+  let seen = false;
+  for (let c = parent.firstChild; c; c = c.nextSibling) {
+    if (c.name === 'PragmaName') { seen = true; continue; }
+    if (seen && c.from === node.from) return true;
+  }
+  return false;
+}
+
+function qualifiedParts(node) {
+  let host = null;
+  for (let p = node.parent; p; p = p.parent) {
+    if (p.name === 'QualifiedConstant') { host = p; break; }
+    if (p.name === 'PragmaName' || p.name === 'Program' || GLOBAL_DECL_PARENT.has(p.name)) break;
+  }
+  if (!host) return null;
+  const parts = [];
+  for (let c = host.firstChild; c; c = c.nextSibling) {
+    if (c.name === 'UpperIdentifier' || c.name === 'LowerIdentifier' || c.name === 'DottedIdent') {
+      parts.push(c);
+    }
+  }
+  const index = parts.findIndex((p) => p.from === node.from);
+  if (index < 0) return null;
+  return { parts, index };
+}
+
+function resolveModuleInScope(globalSymbols, scope, path, pos) {
+  const direct = moduleByPath(globalSymbols, path, pos);
+  if (direct) return direct;
+  const aliases = (scope && scope.aliases) || [];
+  const parts = String(path || '').split('.');
+  for (let i = aliases.length - 1; i >= 0; i -= 1) {
+    const alias = aliases[i];
+    if (alias.name !== parts[0]) continue;
+    if (pos < alias.from || pos > alias.to) continue;
+    const rest = parts.slice(1).filter(Boolean).join('.');
+    return moduleByPath(globalSymbols, rest ? `${alias.moduleName}.${rest}` : alias.moduleName, pos);
+  }
+  return null;
+}
+
+function memberAt(doc, globalSymbols, scope, qual, name, from, allowed) {
+  if (!doc) return null;
+  if (qual.index === 0) {
+    const mod = resolveModuleInScope(globalSymbols, scope, name, from);
+    return mod && allowed(mod) ? mod : null;
+  }
+  const path = qual.parts.slice(0, qual.index).map((p) => segmentName(doc, p)).join('.');
+  const mod = resolveModuleInScope(globalSymbols, scope, path, from);
+  if (!mod) return null;
+  const members = moduleMembersOf({ globalSymbols }, mod) || [];
+  return members.find((m) => m.name === name && allowed(m)) || null;
+}
+
+function segmentName(doc, node) {
+  const text = doc.sliceString(node.from, node.to);
+  return node.name === 'DottedIdent' ? text.slice(1) : text;
 }
 
 function nearestDeclarationAt(globalSymbols, from, to) {

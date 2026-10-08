@@ -61,7 +61,8 @@ export const STRENGTH = Object.freeze({
     label: 'Coverage and termination checked',
     guarantees: ['well-typed', 'covering', 'terminating'],
   },
-  // A `--coverage` pragma at the head of the file and no totality declaration.
+  // A `--coverage` or `--warncoverage` pragma at the head of the file and no totality
+  // declaration.
   // ⛔ THE TRAP. Beluga notices a missing case here, so it looks like it is judging
   // candidates, but it checks no termination: a case that calls the theorem on its
   // own unchanged argument is accepted (measured 2026-10-01). A `checked` at this
@@ -101,14 +102,15 @@ export const PROVENANCE = Object.freeze({
  * parser about the text Beluga actually reads.
  *
  * `programText` is the file the declaration sits in. It matters for one thing: a
- * `--coverage` pragma, legal only at the head of a file, turns coverage checking on
- * for every declaration in it (`coverage.ml:3592` reads `Total.enabled ||
- * enableCoverage`). Without the program, a declaration can only be told apart as
+ * `--coverage` or `--warncoverage` pragma, legal only at the head of a file, turns
+ * coverage checking on for every declaration in it (`coverage.ml:3592` reads
+ * `Total.enabled || enableCoverage`; `--warncoverage` sets that flag and
+ * `warningOnly`). Without the program, a declaration can only be told apart as
  * total or not.
  */
 export function strengthOf(declText, programText = '') {
   if (parseTotality(stripLfComments(declText))) return STRENGTH.total;
-  return /^[ \t]*--coverage\b/m.test(stripLfComments(programText))
+  return /^[ \t]*--(?:coverage|warncoverage)\b/m.test(stripLfComments(programText))
     ? STRENGTH.covering
     : STRENGTH.typedOnly;
 }

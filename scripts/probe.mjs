@@ -984,6 +984,24 @@ try {
   await page.evaluate(() => FloatingWindow.closeAll());
   await new Promise((r) => setTimeout(r, 200));
 
+  // ── The REPL's banner is chrome, not output: a transcript kept from an earlier
+  // visit comes back with today's banner, not the words it was saved with. Dean saw
+  // "Beluga 1.1.3 — help to see commands." after its rewording shipped (2026-10-06).
+  const bannerNow = await page.evaluate(() => {
+    const line = document.querySelector('.repl-banner .repl-banner-line');
+    if (!line) return null;
+    const now = line.textContent;
+    line.firstChild.textContent = 'Beluga 1.1.3 — ';
+    ReplPersist.saveNow();
+    return now;
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.Commands && window.StatusStrip && window.ReplOutput, { timeout: 60000 });
+  await new Promise((r) => setTimeout(r, 1500));
+  const bannerAfter = await page.evaluate(() => [...document.querySelectorAll('.repl-banner .repl-banner-line')].map((n) => n.textContent));
+  check(!!bannerNow && bannerAfter.length >= 1 && bannerAfter.every((t) => t === bannerNow),
+    `a transcript kept from an earlier visit shows today's banner, not the words it was saved with (${JSON.stringify(bannerAfter)})`);
+
   // ── Run: a file through BelugaClient, with the page's own Persist and Settings ──
   // Last, so a check in flight cannot colour the status strip checks above. Until
   // 2026-09-28 nothing ran a file with the real Persist on the page, and Run threw

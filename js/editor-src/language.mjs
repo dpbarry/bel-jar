@@ -200,27 +200,43 @@ const belugaHighlight = styleTags({
   TrustKeyword: t.keyword,
   TotalKeyword: t.keyword,
 
-  '--coverage --warncoverage --nostrengthen --infix --prefix --assoc \
-   --name --abbrev --not --open --query --opaque': t.meta,
+  '--coverage --warncoverage --nostrengthen --infix --prefix --postfix --assoc \
+   --name --abbrev --not --open --query': t.meta,
 
   'Associativity/...': t.modifier,
   'QueryBound!': t.number,
 
   // Pragma arguments (opaque so generic ident rules do not win).
-  'NamePragma/LowerIdentifier!':        t.propertyName,
+  'NamePragma/PragmaName/LowerIdentifier!': t.propertyName,
+  'NamePragma/PragmaName/UpperIdentifier!': t.propertyName,
+  'NamePragma/PragmaName/DottedIdent!':     t.propertyName,
   'NamePragma/NamePreferred/UpperIdentifier!': t.modifier,
   'NamePragma/NamePreferred/LowerIdentifier!': t.modifier,
-  'OpenPragma/UpperIdentifier!':        t.namespace,
-  'AbbrevPragma/UpperIdentifier!':      t.namespace,
-  'InfixPragma/LowerIdentifier!':       t.function(t.variableName),
+  'OpenPragma/PragmaName/UpperIdentifier!': t.namespace,
+  'OpenPragma/PragmaName/LowerIdentifier!': t.namespace,
+  'OpenPragma/PragmaName/DottedIdent!':     t.namespace,
+  'AbbrevPragma/PragmaName/UpperIdentifier!': t.namespace,
+  'AbbrevPragma/PragmaName/LowerIdentifier!': t.namespace,
+  'AbbrevPragma/PragmaName/DottedIdent!':     t.namespace,
+  'AbbrevPragma/UpperIdentifier!':          t.namespace,
+  'AbbrevPragma/LowerIdentifier!':          t.namespace,
+  'InfixPragma/PragmaName/LowerIdentifier!': t.function(t.variableName),
+  'InfixPragma/PragmaName/UpperIdentifier!': t.function(t.variableName),
+  'InfixPragma/PragmaName/DottedIdent!':     t.function(t.variableName),
   'InfixPragma/Number!':                t.number,
-  'PrefixPragma/LowerIdentifier!':      t.function(t.variableName),
+  'PrefixPragma/PragmaName/LowerIdentifier!': t.function(t.variableName),
+  'PrefixPragma/PragmaName/UpperIdentifier!': t.function(t.variableName),
+  'PrefixPragma/PragmaName/DottedIdent!':     t.function(t.variableName),
   'PrefixPragma/Number!':               t.number,
-  'OpaquePragma/LowerIdentifier!':      t.propertyName,
-  'QuerySubject/UpperIdentifier!':        t.propertyName,
-  'QueryPragma/QueryBound!':              t.number,
-  'QueryPragma/CompType/CompAppType/CompAtomicType/LowerIdentifier!': t.typeName,
-  'QueryPragma/CompType/CompAppType/CompAtomicType/UpperIdentifier!': t.typeName,
+  'PostfixPragma/PragmaName/LowerIdentifier!': t.function(t.variableName),
+  'PostfixPragma/PragmaName/UpperIdentifier!': t.function(t.variableName),
+  'PostfixPragma/PragmaName/DottedIdent!':     t.function(t.variableName),
+  'PostfixPragma/Number!':              t.number,
+  'QueryLabel/UpperIdentifier!':        t.propertyName,
+  'QueryLabel/LowerIdentifier!':        t.propertyName,
+  'QueryPragma/QueryBound!':            t.number,
+  'Observation/DottedIdent':            t.typeName,
+  DottedIdent:                          t.variableName,
 
   'NotPragma!':                         t.meta,
   'NoStrengthenPragma!':                t.meta,
@@ -446,7 +462,10 @@ export const belugaLanguage = LRLanguage.define({
   languageData: {
     commentTokens: { line: '%', block: { open: '%{', close: '}%' } },
     closeBrackets: { brackets: ['(', '[', '{'] },
-    indentOnInput: /^\s*(=>|→|->|<-|\||end)$/,
+    // `|` and `end` belong to induced layout. This regexp is only consulted if
+    // the stock indent-on-input filter is installed, and that filter measures
+    // the document from before the keystroke.
+    indentOnInput: /^\s*(=>|→|->|<-)$/,
   },
 });
 

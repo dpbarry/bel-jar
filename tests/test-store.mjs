@@ -174,7 +174,7 @@ const now = () => ++clock;
     'beljar/settings': 'settings', 'beljar/device': 'device', 'beljar/notifications': 'device',
     'beljar/p/p_1/sync': 'device', 'beljar/p/p_1/meta': 'work', 'beljar/p/p_1/tree': 'work',
     'beljar/p/p_1/f/f_9': 'work', 'beljar/p/p_1/session': 'device', 'beljar/p/p_1/cache/f_9': 'cache',
-    'beljar/p/p_1/conflict/f_9': 'device',
+    'beljar/p/p_1/conflict/f_9': 'device', 'beljar/p/p_1/repl': 'device',
   };
   for (const [k, cls] of Object.entries(table)) expect(classOf(k) === cls, `${k} is ${cls}`);
   for (const k of ['beljar/p/p_1/f/a/b', 'beljar/p//tree', 'beljar/projects', 'beljar/whatever', 'beljar-theme', SCHEMA_KEY, ''])

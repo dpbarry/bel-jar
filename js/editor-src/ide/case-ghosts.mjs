@@ -91,7 +91,6 @@ function rowTip(entry, row) {
     if (entry.eligibility && entry.eligibility.specification === 'data') {
       lines.push('A function: checked, not necessarily the case you meant');
     }
-    lines.push('Tab or click to accept');
   } else if (row.state === 'searching') {
     lines.push('Searching');
   } else if (row.state === 'none') {
@@ -100,6 +99,19 @@ function rowTip(entry, row) {
     lines.push('Not filled yet. Click to search now');
   }
   return lines.join('\n');
+}
+
+// The row is a full-width block, so a tip anchored to it opens at the far side of
+// the editor. This mark is a point the tip sits to the left of. When that point
+// is too close to the window edge for the tip to fit, it slides right until the
+// tip can stay on screen and still point at the case.
+function ghostTipAnchor(line, mark) {
+  const root = document.querySelector('.tooltip-root');
+  const tw = root && root.offsetWidth ? root.offsetWidth : 0;
+  const row = line.getBoundingClientRect();
+  const minLeft = 8 + 8 + tw;
+  mark.style.left = `${Math.max(0, minLeft - row.left)}px`;
+  return mark;
 }
 
 class GhostWidget extends WidgetType {
@@ -122,15 +134,25 @@ class GhostWidget extends WidgetType {
       const text = row.state === 'filled'
         ? `${this.indent}| ${row.text}`
         : `${this.indent}| ${notation(`${row.pattern} =>`)} …`;
+      const mark = document.createElement('span');
+      mark.className = 'cm-case-ghost__tip-anchor';
+      line.appendChild(mark);
       if (row.state === 'searching') {
         line.appendChild(document.createTextNode(`${this.indent}| ${notation(`${row.pattern} =>`)} `));
         line.appendChild(createRecalcShimmer('Searching'));
       } else {
-        line.textContent = text;
+        line.appendChild(document.createTextNode(text));
       }
       const tip = rowTip(entry || {}, row);
-      if (g().Tooltips && typeof g().Tooltips.set === 'function') g().Tooltips.set(line, tip);
-      else line.setAttribute('data-tooltip', tip);
+      const tips = g().Tooltips;
+      if (tips && typeof tips.set === 'function') {
+        tips.set(line, tip);
+        if (typeof tips.setRectEl === 'function') tips.setRectEl(line, () => ghostTipAnchor(line, mark));
+        line.setAttribute('data-tooltip-placement', 'left');
+      } else {
+        line.setAttribute('data-tooltip', tip);
+        line.setAttribute('data-tooltip-placement', 'left');
+      }
       line.addEventListener('mousedown', (ev) => {
         ev.preventDefault();
         if (row.state === 'filled') acceptRows(view, this.recKey, [row.key]);

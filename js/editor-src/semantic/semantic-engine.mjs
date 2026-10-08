@@ -15,6 +15,7 @@ import { fileBase } from '../project-paths.mjs';
 import { topDeclSpans } from './scoped-check.mjs';
 import { belugaDiagnosticsFromOutput, createSettlement } from './settlement.mjs';
 import { polishBelugaMessage } from '../ide/beluga-diag.mjs';
+import { rewriteNotGuarded } from './pragma-scope.mjs';
 import { proofProgress } from './proof-progress.mjs';
 import { settlementTrigger } from './check-gate.mjs';
 import { getCheckTrace, timeSync } from '../perf/check-trace.mjs';
@@ -129,7 +130,9 @@ export function createSemanticEngine(options = {}) {
     const filtered = !getSuiteOverlayDiagnostics
       ? raw
       : raw.filter((d) => !isLegacyPreludeBanner(d));
-    return filtered.map((d) => (d.message
+    const syntax = syntaxStore.getSnapshot();
+    const shown = syntax ? rewriteNotGuarded(syntax.tree, filtered) : filtered;
+    return shown.map((d) => (d.message
       ? { ...d, message: polishBelugaMessage(d.message) }
       : d));
   }
@@ -623,7 +626,7 @@ export function createSemanticEngine(options = {}) {
     // reason about a partial tree; the incremental path's own length/probe guards
     // then keep the fast path a pure win when it does engage.
     const symbols = symbolStore.update(syntax, { changes: symbolChanges });
-    const belugaDiags = belugaDiagnosticsForVersion(syntax.version);
+    const belugaDiags = rewriteNotGuarded(syntax.tree, belugaDiagnosticsForVersion(syntax.version));
     const graph = timeSync('graphUpdate', () => semanticGraph.update(symbols, syntax, {
       belugaDiagnostics: belugaDiags,
       previous: semanticGraph.getSnapshot(),

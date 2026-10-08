@@ -4,6 +4,7 @@
 // device state surviving a settings reset.
 // Every setting's own values and defaults are pinned by test-settings.mjs.
 import vm from 'node:vm';
+import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { runPersistStackInContext } from './persist-stack.mjs';
 import { TOAST_DURATION_MS, CHECK_DELAY_SCALE, prefersReducedMotion } from '../js/persist/settings-apply.mjs';
@@ -57,7 +58,9 @@ function freshPersist(seed = {}, opts = {}) {
 // ── the REPL history follows its setting, wherever the setting changes ──────
 {
   const { P, S, ls, ss } = freshPersist();
-  const T = 'beljar/repl/transcript';
+  const pid = P.getActiveProjectId();
+  const T = 'beljar/p/' + pid + '/repl';
+  const other = P.createProject('Other');
   assert.equal(S.get('replHistoryPersist'), 'local');
   assert.equal(P.readReplTranscript(), null);
   P.writeReplTranscript({ html: '<div>local</div>', scrollTop: 12, savedAt: 99 });
@@ -95,6 +98,16 @@ function freshPersist(seed = {}, opts = {}) {
   assert.equal(S.get('replEcho'), true, 'resetting the REPL section restores its settings');
   assert.deepEqual(here(P.readReplCommands()), before,
     'history is data, not a setting: a reset does not throw it away');
+
+  P.setActiveProjectId(other);
+  assert.equal(P.readReplTranscript(), null, 'another project has its own transcript');
+  assert.deepEqual(here(P.readReplCommands()), [], 'and its own command history');
+  P.writeReplTranscript({ html: '<div>other</div>', scrollTop: 0, savedAt: 3 });
+  P.writeReplCommands(['other']);
+  P.setActiveProjectId(pid);
+  assert.equal(P.readReplTranscript(), null, 'coming back does not bring the other project’s transcript');
+  assert.deepEqual(here(P.readReplCommands()), before, 'and this project’s commands are still here');
+  assert.equal(ls.getItem('beljar/p/' + other + '/repl') != null, true, 'the other project kept what was written there');
 }
 
 // ── device state is untouched by settings resets, and has its own ───────────
@@ -137,5 +150,17 @@ assert.deepEqual(TOAST_DURATION_MS, { short: 2000, normal: 3500, long: 5000 });
 assert.deepEqual(CHECK_DELAY_SCALE, { responsive: 0.7, balanced: 1, thorough: 1.45 });
 assert.equal(prefersReducedMotion('reduce'), true);
 assert.equal(prefersReducedMotion('full'), false);
+
+{
+  const app = fs.readFileSync(new URL('../js/app/app.mjs', import.meta.url), 'utf8');
+  const start = app.indexOf('function switchProjectAndReload');
+  const end = app.indexOf('async function newProject');
+  const fn = app.slice(start, end);
+  const saveAt = fn.indexOf('ReplPersist.saveNow');
+  const holdAt = fn.indexOf('ReplPersist.hold');
+  const mutateAt = fn.indexOf('mutate()');
+  assert.ok(saveAt > 0 && holdAt > saveAt && mutateAt > holdAt,
+    'leaving a project saves its REPL, then freezes it, before the page settles on the next one');
+}
 
 console.log('OK settings persist (one Settings and one Device per page, clean first boot, REPL history follows its setting, device state survives resets, full disk reported)');

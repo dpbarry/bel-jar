@@ -1,10 +1,11 @@
 /* Home (index.html, js/home/home.mjs): your projects and the account.
  *
  * One column, set at the left of a measure and read from the top (docs/UI.md
- * §0): the name of the thing you are in, the ways to start, then what you have,
- * as plain lines. Every line in the column starts at the same edge, and every
- * right-hand date ends at the tiles' right edge. Nothing is boxed but the three
- * things you can start, and they are boxed only by a step in the ground.
+ * §0): the ways to start, then what you have, as plain lines. The
+ * name lives in the strip, beside the mark. Every line in the column starts at
+ * the same edge, and every right-hand date ends at the tiles' right edge.
+ * Nothing is boxed but the three things you can start, and they are boxed only
+ * by a step in the ground.
  *
  * A row says a project's name and when it was last touched, and nothing else
  * unless something needs you (docs/UI.md §2). */
@@ -13,9 +14,31 @@
   overflow: hidden;
 }
 
-/* The mark in the strip is where you are: not a link, and no hover. */
-.home-brand {
+/* The mark in the strip is where you are: the name beside it, not a link, and no hover.
+   The icon stays where the editor's brand box put it; the name follows it. */
+.home-page .header-brand {
+  width: auto;
+  justify-content: flex-start;
+  gap: 0.4rem;
+  margin: 0;
+  padding-left: calc((var(--sidebar-w) - var(--header-logo-size)) / 2);
+  color: var(--header-menu-fg-active);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
   cursor: default;
+  user-select: none;
+}
+.home-brand__name {
+  position: relative;
+  top: 1px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .home-page .header-brand:hover .header-logo {
+    color: var(--accent-high);
+  }
 }
 
 /* The cloud has no name beside it here: it sits in its button like any icon. */
@@ -25,7 +48,6 @@
 
 .home-projects[hidden],
 .home-find[hidden],
-.home-head__line[hidden],
 .home__note[hidden] {
   display: none;
 }
@@ -33,12 +55,56 @@
 /* ── the column ───────────────────────────────────────────────────────────── */
 
 .home {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
 }
 
+/* An X in the top left and a lambda in the bottom right, in the accent.
+   Each is a line across an arc. They leave when the column has no margin. */
+.home-field {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  color: var(--accent-mid);
+}
+
+html.light .home-field {
+  color: var(--accent-high);
+}
+
+.home-stroke {
+  position: absolute;
+  display: block;
+}
+
+.home-stroke--x {
+  top: -1.5rem;
+  left: -2rem;
+  width: min(15.5rem, calc((100% - 35rem) / 2 + 0.25rem));
+  aspect-ratio: 220 / 210;
+}
+
+.home-stroke--lambda {
+  right: -1.75rem;
+  bottom: -12%;
+  width: min(15rem, calc((100% - 35rem) / 2 - 1rem));
+  aspect-ratio: 310 / 400;
+}
+
+@media (max-width: 52rem) {
+  .home-field {
+    display: none;
+  }
+}
+
 .home__column {
+  position: relative;
+  z-index: 1;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -47,86 +113,6 @@
   min-height: 100%;
   margin: 0 auto;
   padding: clamp(2.5rem, 18vh, 10rem) 1.5rem 1.25rem;
-}
-
-/* ── the name ─────────────────────────────────────────────────────────────── */
-
-.home-head {
-  margin-bottom: 1.75rem;
-}
-
-.home-mark {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0;
-  color: var(--base-highest);
-  font-size: 1.25rem;
-  font-weight: 600;
-  letter-spacing: -0.012em;
-  line-height: 1.2;
-  user-select: none;
-}
-
-.home-mark svg {
-  flex: 0 0 auto;
-  width: 1.625rem;
-  height: 1.625rem;
-  color: var(--accent-mid);
-}
-
-/* Under the name, where the name's letters start. */
-.home-head__line {
-  margin: 0.25rem 0 0;
-  padding-left: 2.125rem;
-  color: var(--muted-high);
-  font-size: 0.8125rem;
-  line-height: 1.5;
-}
-
-/* A way on, written into a sentence. */
-.home-link-btn {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--accent-mid);
-  font: inherit;
-  cursor: pointer;
-}
-
-.home-link-btn:focus-visible {
-  outline: none;
-  border-radius: var(--radius-sm);
-  box-shadow: var(--focus-ring);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .home-link-btn:hover {
-    color: var(--accent-high);
-    text-decoration: underline;
-    text-underline-offset: 0.15em;
-  }
-}
-
-/* What signing in keeps: in the line's own grey, a link only by its underline. */
-.home-head__more {
-  border-radius: var(--radius-sm);
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--muted-low);
-  text-underline-offset: 0.2em;
-}
-
-.home-head__more:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .home-head__more:hover {
-    color: var(--base-highest);
-    text-decoration-color: currentColor;
-  }
 }
 
 /* ── the ways to start ────────────────────────────────────────────────────── */
@@ -154,6 +140,10 @@
   font-weight: 500;
   text-align: left;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 light-dark(
+    color-mix(in srgb, white 72%, transparent),
+    color-mix(in srgb, var(--base-highest) 14%, transparent)
+  );
   transition: background-color var(--transition);
 }
 
@@ -172,7 +162,10 @@
 }
 
 .home[data-keys] .home-tile:focus-visible {
-  box-shadow: var(--focus-ring);
+  box-shadow: var(--focus-ring), inset 0 1px 0 light-dark(
+    color-mix(in srgb, white 72%, transparent),
+    color-mix(in srgb, var(--base-highest) 14%, transparent)
+  );
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -181,7 +174,7 @@
   }
 
   .home-tile:hover .home-tile__icon {
-    color: var(--base-highest);
+    color: var(--accent-high);
   }
 }
 
@@ -284,6 +277,17 @@
   white-space: nowrap;
 }
 
+/* No project: the words sit where the first name would, quieter and a step smaller, and nothing else. */
+.home-row--empty .home-row__name {
+  color: var(--muted-high);
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+.home-row--empty .home-row__open {
+  cursor: default;
+}
+
 /* Only when something needs the person: files changed in two places. */
 .home-row__mark {
   flex: 0 0 auto;
@@ -345,7 +349,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .home-row__open:hover {
+  .home-row:not(.home-row--empty) .home-row__open:hover {
     background: var(--menu-item-hover-wash);
   }
 

@@ -1,6 +1,6 @@
 (() => {
   // js/persist/store.mjs
-  var SCHEMA = 4;
+  var SCHEMA = 5;
   var SCHEMA_KEY = "beljar/schema";
   function migrateStorage(storage, schema, migrations) {
     const raw = storage.getItem(SCHEMA_KEY);
@@ -24,7 +24,48 @@
   }
 
   // js/persist/migrations.mjs
-  var MIGRATIONS = {};
+  var MIGRATIONS = {
+    // The REPL was one transcript for the whole browser. It belongs to the
+    // project that was open; every other project starts with none.
+    4: function moveReplOntoItsProject(storage) {
+      const transcriptRaw = storage.getItem("beljar/repl/transcript");
+      const commandsRaw = storage.getItem("beljar/repl/commands");
+      if (transcriptRaw == null && commandsRaw == null) return;
+      let transcript = null;
+      let commands = null;
+      let device = null;
+      try {
+        transcript = JSON.parse(transcriptRaw || "null");
+        commands = JSON.parse(commandsRaw || "null");
+        device = JSON.parse(storage.getItem("beljar/device") || "null");
+      } catch (_) {
+        return;
+      }
+      const values = device && device.data && device.data.values;
+      const pid = values && typeof values.activeProject === "string" ? values.activeProject : "";
+      if (!pid) return;
+      const html = transcript && transcript.data && typeof transcript.data.html === "string" ? transcript.data.html : "";
+      const list = commands && Array.isArray(commands.data) ? commands.data.filter((x) => typeof x === "string") : [];
+      const dest = "beljar/p/" + pid + "/repl";
+      if ((html || list.length) && storage.getItem(dest) == null) {
+        const at = Math.max(
+          transcript && typeof transcript.at === "number" ? transcript.at : 0,
+          commands && typeof commands.at === "number" ? commands.at : 0
+        ) || Date.now();
+        storage.setItem(dest, JSON.stringify({
+          at,
+          data: {
+            html,
+            scrollTop: transcript && transcript.data && typeof transcript.data.scrollTop === "number" ? transcript.data.scrollTop : 0,
+            savedAt: transcript && transcript.data && typeof transcript.data.savedAt === "number" ? transcript.data.savedAt : at,
+            commands: list
+          }
+        }));
+      }
+      storage.removeItem("beljar/repl/transcript");
+      storage.removeItem("beljar/repl/commands");
+    }
+  };
 
   // js/persist/table.mjs
   function typeOf(row) {
@@ -107,6 +148,14 @@
     if (v === null) return null;
     return Array.isArray(v) ? v : void 0;
   }
+  function cleanDismissed(raw) {
+    if (!Array.isArray(raw)) return void 0;
+    const out = [];
+    for (const id of raw) {
+      if (typeof id === "string" && id && !out.includes(id)) out.push(id);
+    }
+    return out;
+  }
   var ON = true;
   var OFF = false;
   var SETTINGS = [
@@ -165,6 +214,9 @@
     { id: "vimLeader", section: "keybindings", default: "\\", values: ["\\", ",", " "] },
     { id: "vimInsertEscape", section: "keybindings", default: "", values: ["", "jk", "jj", "kj"] },
     { id: "emacsYankSource", section: "keybindings", default: "system", values: ["system", "kill-ring"] },
+    // Clipboard dialogs this browser has closed. The grant is per browser, so it
+    // does not follow the account, and Reset does not ask again.
+    { id: "clipboardReadDismissed", section: "keybindings", default: [], type: "json", normalize: cleanDismissed, sync: false, reset: false },
     { id: "doubleTapTrigger", section: "keybindings", default: "off", values: ["off", "shift", "control", "alt"] },
     { id: "doubleTapCommand", section: "keybindings", default: "tools.palette", type: "string" },
     { id: "doubleTapSpeed", section: "keybindings", default: "normal", values: ["normal", "fast", "relaxed"] },
@@ -205,6 +257,7 @@
     // one row per tip, so two computers that each saw a different one never disagree.
     { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
     { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenSignIn", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },
@@ -421,6 +474,8 @@
     return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
   }
   var ISSUES_URL = "https://github.com/dpbarry/bel-jar/issues";
+  var CONTACT_EMAIL = "dean.barry@mail.mcgill.ca";
+  var CONTACT_URL = "mailto:" + CONTACT_EMAIL;
   function reportIssue() {
     if (typeof g.open === "function") g.open(ISSUES_URL, "_blank", "noopener");
   }
@@ -444,6 +499,7 @@
   var Routes = {
     PROJECT_ID,
     ISSUES_URL,
+    CONTACT_URL,
     homeUrl,
     editUrl,
     privacyUrl,

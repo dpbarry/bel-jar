@@ -157,7 +157,15 @@ const FRP = global.FloatingRectPlacement;
       return { anchorRef, align };
     }
 
-    function layoutMenuEl(menuEl, anchor, side, align, isSubmenu) {
+    /** How far below `from` a menu dropped from it sits: its `--header-menu-gap`, in px. */
+    function dropGap(from) {
+      const v = getComputedStyle(from).getPropertyValue('--header-menu-gap').trim();
+      const n = parseFloat(v);
+      if (!Number.isFinite(n)) return 0;
+      return /rem$/.test(v) ? n * parseFloat(getComputedStyle(document.documentElement).fontSize) : n;
+    }
+
+    function layoutMenuEl(menuEl, anchor, side, align, isSubmenu, dropFrom) {
       let ar;
       if (isSubmenu && anchor instanceof Element) {
         const placed = submenuPlacementAnchor(anchor);
@@ -165,6 +173,12 @@ const FRP = global.FloatingRectPlacement;
         align = placed.align;
       } else {
         ar = anchorRect(anchor);
+      }
+      // Dropped from a bar (`dropFrom`, the top bar's menus): the menu hangs from
+      // the bar's bottom edge, not its button's, so every one sits the same.
+      if (dropFrom && !isSubmenu) {
+        const bar = dropFrom.getBoundingClientRect();
+        ar = { left: ar.left, right: ar.right, top: ar.top, bottom: bar.bottom + dropGap(dropFrom) };
       }
       // Initial layout measures off-screen to read the intrinsic size. A
       // RE-layout (resize/scroll while open) measures the already-visible panel
@@ -225,8 +239,8 @@ const FRP = global.FloatingRectPlacement;
 
     function relayoutAll() {
       for (let i = 0; i < openMenus.length; i++) {
-        const { el, anchorRef, side, align, isSubmenu } = openMenus[i];
-        layoutMenuEl(el, anchorRef, side, align, isSubmenu);
+        const { el, anchorRef, side, align, isSubmenu, dropFrom } = openMenus[i];
+        layoutMenuEl(el, anchorRef, side, align, isSubmenu, dropFrom);
       }
     }
 
@@ -720,8 +734,9 @@ const FRP = global.FloatingRectPlacement;
           side,
           align,
           isSubmenu: false,
+          dropFrom: opts.dropFrom || null,
         });
-        layoutMenuEl(menuEl, anchor, side, align, false);
+        layoutMenuEl(menuEl, anchor, side, align, false, opts.dropFrom || null);
         setActiveController(controller);
         rovingTabIndexForPanel(menuEl);
         focusMenuItem(menuEl, 0);
@@ -773,6 +788,31 @@ const FRP = global.FloatingRectPlacement;
       return () => targetEl.removeEventListener('contextmenu', handler);
     }
 
+    /**
+     * The open menu anchored at `anchor` says what is true now: rebuilt in place,
+     * where it is, its submenus closed. A menu that describes a state (the
+     * account's, the cloud's) follows that state while it is open: opened while
+     * the account was being checked, it said "Checking" for good (Dean,
+     * 2026-10-06). False, and nothing done, when that menu is not open.
+     */
+    function update(anchor, items) {
+      if (!openMenus.length || !anchor || rootAnchorEl !== anchor) return false;
+      const root = openMenus[0];
+      while (openMenus.length > 1) openMenus.pop().el.remove();
+      submenuSourceRow = null;
+      const fresh = buildMenu(items, 0);
+      for (const c of root.el.classList) if (c !== 'menu' && c !== 'menu--has-icons') fresh.classList.add(c);
+      fresh.style.left = root.el.style.left;
+      fresh.style.top = root.el.style.top;
+      const hadFocus = root.el.contains(document.activeElement);
+      root.el.replaceWith(fresh);
+      root.el = fresh;
+      layoutMenuEl(fresh, root.anchorRef, root.side, root.align, false, root.dropFrom);
+      rovingTabIndexForPanel(fresh);
+      if (hadFocus) focusMenuItem(fresh, 0);
+      return true;
+    }
+
     function destroy() {
       allControllers.delete(controller);
       if (activeController === controller) setActiveController(null);
@@ -785,6 +825,7 @@ const FRP = global.FloatingRectPlacement;
     controller.closeAll = closeAll;
     controller.isOpen = isOpen;
     controller.rootAnchor = rootAnchor;
+    controller.update = update;
     controller.relayoutAll = relayoutAll;
     controller.forceCloseSync = forceCloseSync;
     controller.destroy = destroy;
@@ -832,6 +873,11 @@ const FRP = global.FloatingRectPlacement;
     },
     openContext(opts) {
       if (defaultMenu) defaultMenu.openContext(opts);
+    },
+    /** The open menu anchored at `anchor`, rebuilt from `items` in place: false when it is not open. */
+    update(anchor, items) {
+      const ctrl = menuControllerForAnchor(anchor instanceof Element ? anchor : null);
+      return ctrl ? ctrl.update(anchor, items) : false;
     },
     bindContextMenu(targetEl, itemsOrFn, opts) {
       if (defaultMenu) return defaultMenu.bindContextMenu(targetEl, itemsOrFn, opts);

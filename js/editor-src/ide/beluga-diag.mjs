@@ -1,4 +1,5 @@
 import { parser } from '../beluga-parser.js';
+import { formatCoverageCard } from './coverage-card.mjs';
 
 function stripAnsi(s) {
   return String(s != null ? s : '')
@@ -25,6 +26,8 @@ function trimMessageLines(parts) {
 // Beluga's menhir wrapper uses Format `@[Failed to parse %t@]`, which prints the
 // detail flush on the same line ? "Failed to parse Expected the parser input?".
 export function polishBelugaMessage(message) {
+  const coverage = formatCoverageCard(message);
+  if (coverage) return coverage;
   return String(message != null ? message : '')
     .replace(/;\s*$/, '')
     .replace(

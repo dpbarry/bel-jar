@@ -6,6 +6,7 @@ import {
   formatBelugaErrorReport,
   locateToken,
   parseBelugaDiagnostics,
+  polishBelugaMessage,
   spanFirstLineDiagnostic,
 } from '../js/editor-src/ide/beluga-diag.mjs';
 
@@ -139,6 +140,31 @@ assert.equal(
 
   // Nonexistent identifier returns null.
   assert.equal(locateToken(codeDoc, 'nonexistent'), null);
+}
+
+{
+  const covDoc = Text.of(['fn d1 => fn d2 => case d1 of', '| [ |- D1] => ?', ';']);
+  const covRaw = `File "input.bel", line 1, column 20
+Error:
+######   COVERAGE FAILURE: Case expression doesn't cover: ######
+##       CASE(S) NOT COVERED:
+(1) X4 : ( |- dual X X1), X5 : ( |- dual X2 X3) ; |- [ |- D⊕ X4 X5]
+##`;
+  const [cov] = parseBelugaDiagnostics(covRaw, covDoc);
+  assert.equal(cov.severity, 'error');
+  assert.equal(cov.message, [
+    'This case is not exhaustive.',
+    '',
+    '[ |- D⊕ X4 X5]',
+    '  X4 : ( |- dual X X1)',
+    '  X5 : ( |- dual X2 X3)',
+  ].join('\n'));
+  assert.equal(covDoc.lineAt(cov.from).number, 1);
+  assert.ok(!cov.message.includes('#####'));
+
+  const warnRaw = 'WARNING: Cases didn\'t cover: CASE(S) NOT COVERED:\n(1) ; |- [ |- z]\n';
+  assert.equal(parseBelugaDiagnostics(warnRaw, covDoc).length, 0, 'an unlocated coverage warning is left for the REPL');
+  assert.equal(polishBelugaMessage(warnRaw), 'This case is not exhaustive.\n\n[ |- z]');
 }
 
 console.log('OK jar-beluga-diag parses File/line/column errors + first-line span rule + locateToken uses AST');

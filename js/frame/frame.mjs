@@ -83,6 +83,11 @@ function mount() {
 
   track(document.getElementById('btn-theme'), 'click', toggleTheme);
   track(document.getElementById('btn-settings'), 'click', onSettings);
+  // The editor's Home button is the Go Home command (what is typed is saved first).
+  track(document.getElementById('btn-go-home'), 'click', () => {
+    if (global.Commands && global.Commands.run('app.home')) return;
+    if (global.Account && global.Account.goHome) global.Account.goHome();
+  });
   nameHome();
 }
 

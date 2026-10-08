@@ -55,6 +55,11 @@ export function foldsKey(pid) {
   return projectPrefix(pid) + 'folds';
 }
 
+/** This project's REPL transcript and command history. */
+export function replKey(pid) {
+  return projectPrefix(pid) + 'repl';
+}
+
 /** The version of this project this device last synced, and its manifest (docs/PERSIST.md §5). */
 export function syncKey(pid) {
   return projectPrefix(pid) + 'sync';
@@ -73,7 +78,7 @@ export function conflictKey(pid, fid) {
   return projectPrefix(pid) + 'conflict/' + fid;
 }
 
-var PROJECT_KEY = /^beljar\/p\/([^/]+)\/(meta|tree|session|folds|undo|sync|f|cache|conflict)(?:\/([^/]+))?$/;
+var PROJECT_KEY = /^beljar\/p\/([^/]+)\/(meta|tree|session|folds|undo|sync|repl|f|cache|conflict)(?:\/([^/]+))?$/;
 
 /** What a project key names: { pid, kind, fid? }, or null for any other key. */
 export function parseKey(key) {

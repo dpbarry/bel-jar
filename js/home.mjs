@@ -13,6 +13,7 @@
 import './frame/routes.mjs';
 import './persist/persist.mjs';
 import './ui/tooltips.mjs';
+import './ui/hint.mjs';
 import './ui/menu.mjs';
 import './ui/menu-trigger.mjs';
 import './ui/floating-window.mjs';

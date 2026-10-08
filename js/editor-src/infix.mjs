@@ -36,28 +36,51 @@ function assocOf(node) {
   return 'none';
 }
 
+const DEFAULT_PRECEDENCE = 20;
+
+function operandText(node, doc) {
+  for (let c = node.firstChild; c; c = c.nextSibling) {
+    if (c.name === 'PragmaName' || c.name === 'LowerIdentifier' || c.name === 'UpperIdentifier') {
+      return slice(doc, c.from, c.to);
+    }
+  }
+  return null;
+}
+
 function parseInfixPragma(node, doc, defaultAssoc) {
   let op = null;
-  let prec = 0;
+  let prec = null;
   let assoc = defaultAssoc;
   for (let c = node.firstChild; c; c = c.nextSibling) {
-    if (c.name === 'LowerIdentifier') op = slice(doc, c.from, c.to);
-    else if (c.name === 'Number') prec = parseInt(slice(doc, c.from, c.to), 10) || 0;
+    if (!op && (c.name === 'PragmaName' || c.name === 'LowerIdentifier' || c.name === 'UpperIdentifier')) {
+      op = slice(doc, c.from, c.to);
+    } else if (c.name === 'Number') prec = parseInt(slice(doc, c.from, c.to), 10) || 0;
     else if (c.name === 'Associativity') assoc = assocOf(c);
     else if (ASSOC_KW.has(c.name)) {
       assoc = c.name === 'LeftKeyword' ? 'left' : c.name === 'RightKeyword' ? 'right' : 'none';
     }
   }
   if (!op) return null;
-  return { op, precedence: prec, associativity: assoc };
+  return { op, precedence: prec == null ? DEFAULT_PRECEDENCE : prec, associativity: assoc };
 }
 
-function applyPragmaEvents(events, ops, defaultAssocRef) {
+function parseUnaryPragma(node, doc) {
+  const op = operandText(node, doc);
+  if (!op) return null;
+  let prec = null;
+  for (let c = node.firstChild; c; c = c.nextSibling) {
+    if (c.name === 'Number') prec = parseInt(slice(doc, c.from, c.to), 10) || 0;
+  }
+  return { op, precedence: prec == null ? DEFAULT_PRECEDENCE : prec };
+}
+
+function applyPragmaEvents(events, ops, prefix, postfix, defaultAssocRef) {
   for (const ev of events) {
     if (ev.kind === 'assoc') defaultAssocRef.value = ev.assoc;
     else if (ev.kind === 'infix') {
       ops.set(ev.op, { precedence: ev.precedence, associativity: ev.associativity });
-    }
+    } else if (ev.kind === 'prefix') prefix.set(ev.op, ev.precedence);
+    else if (ev.kind === 'postfix') postfix.set(ev.op, ev.precedence);
   }
 }
 
@@ -73,6 +96,13 @@ function collectPragmaEvents(tree, doc, beforePos) {
       } else if (ref.name === 'InfixPragma') {
         const p = parseInfixPragma(ref.node, doc, defaultAssoc);
         if (p) events.push({ kind: 'infix', ...p, from: ref.from });
+      } else if (ref.name === 'PrefixPragma' || ref.name === 'PostfixPragma') {
+        const p = parseUnaryPragma(ref.node, doc);
+        if (p) events.push({
+          kind: ref.name === 'PrefixPragma' ? 'prefix' : 'postfix',
+          ...p,
+          from: ref.from,
+        });
       }
     },
   });
@@ -121,11 +151,13 @@ export function buildInfixState(tree, doc, pos) {
   if (perTree && perTree.has(key)) return perTree.get(key);
 
   const ops = new Map();
+  const prefix = new Map();
+  const postfix = new Map();
   const defaultAssocRef = { value: 'none' };
-  applyPragmaEvents(preludePragmaEvents(), ops, defaultAssocRef);
-  applyPragmaEvents(collectPragmaEvents(tree, doc, pos), ops, defaultAssocRef);
+  applyPragmaEvents(preludePragmaEvents(), ops, prefix, postfix, defaultAssocRef);
+  applyPragmaEvents(collectPragmaEvents(tree, doc, pos), ops, prefix, postfix, defaultAssocRef);
 
-  const state = { ops, defaultAssoc: defaultAssocRef.value };
+  const state = { ops, prefix, postfix, defaultAssoc: defaultAssocRef.value };
   if (!perTree) { perTree = new Map(); _stateCache.set(tree, perTree); }
   perTree.set(key, state);
   return state;
@@ -212,67 +244,30 @@ function flattenJuxtapositional(root, family) {
   return out;
 }
 
-function isInfixOp(atom, state) {
-  return !!(atom.name && state.ops.has(atom.name));
+function opInfo(atom, state) {
+  if (!atom || !atom.name || !state) return null;
+  if (state.ops.has(atom.name)) {
+    return { fixity: 'infix', ...state.ops.get(atom.name) };
+  }
+  if (state.prefix && state.prefix.has(atom.name)) {
+    return { fixity: 'prefix', precedence: state.prefix.get(atom.name) };
+  }
+  if (state.postfix && state.postfix.has(atom.name)) {
+    return { fixity: 'postfix', precedence: state.postfix.get(atom.name) };
+  }
+  return null;
 }
 
 function containsIdent(ast, from, to) {
   if (!ast) return false;
   if (ast.kind === 'atom') return ast.from <= from && ast.to >= to;
-  if (ast.kind === 'prefix') return containsIdent(ast.head, from, to) || containsIdent(ast.arg, from, to);
+  if (ast.kind === 'prefix' || ast.kind === 'prefixOp' || ast.kind === 'postfix') {
+    return containsIdent(ast.head, from, to) || containsIdent(ast.arg, from, to);
+  }
   if (ast.kind === 'infix') {
     return containsIdent(ast.left, from, to) || containsIdent(ast.right, from, to);
   }
   return false;
-}
-
-function parseInfixFlat(atoms, doc, state) {
-  let i = 0;
-
-  function spanOf(a, b) {
-    return { from: Math.min(a.from, b.from), to: Math.max(a.to, b.to) };
-  }
-
-  function parseAtom() {
-    if (i >= atoms.length) return { kind: 'atom', from: 0, to: 0, name: null };
-    const raw = atoms[i++];
-    if (raw.sub) return raw.sub;
-    return { kind: 'atom', from: raw.from, to: raw.to, name: raw.name };
-  }
-
-  function parsePrefixExpr() {
-    let left = parseAtom();
-    while (i < atoms.length && !isInfixOp(atoms[i], state)) {
-      const arg = parseAtom();
-      const sp = spanOf(left, arg);
-      left = { kind: 'prefix', head: left, arg, from: sp.from, to: sp.to };
-    }
-    return left;
-  }
-
-  function parseExpr(minPrec) {
-    let left = parsePrefixExpr();
-    while (i < atoms.length && isInfixOp(atoms[i], state)) {
-      const opAtom = atoms[i];
-      const info = state.ops.get(opAtom.name);
-      if (!info || info.precedence < minPrec) break;
-      i += 1;
-      let right;
-      if (info.associativity === 'right') {
-        right = parseExpr(info.precedence);
-      } else if (info.associativity === 'left') {
-        right = parseExpr(info.precedence + 1);
-      } else {
-        right = parsePrefixExpr();
-      }
-      const sp = spanOf(left, right);
-      left = { kind: 'infix', op: opAtom.name, left, right, from: sp.from, to: sp.to };
-    }
-    return left;
-  }
-
-  if (!atoms.length) return null;
-  return parseExpr(0);
 }
 
 function appFamilyOf(node) {
@@ -323,8 +318,79 @@ function parseAppExpr(root, doc, state) {
     const wrap = ATOMIC_WRAP.has(n.name) ? n : n;
     return atomFromNode(wrap, doc, state);
   });
-  if (!atoms.some((a) => isInfixOp(a, state))) return null;
-  return parseInfixFlat(atoms, doc, state);
+  if (!atoms.some((a) => opInfo(a, state))) return null;
+  const parsed = parseMixfix(atoms, state);
+  return parsed.ast;
+}
+
+const MISSING_LEFT = 'This operator is missing its left argument.';
+
+function parseMixfix(atoms, state) {
+  let i = 0;
+  const faults = [];
+  const JUXT = 1000000;
+
+  function atomOf(raw) {
+    if (!raw) return { kind: 'atom', from: 0, to: 0, name: null };
+    if (raw.sub) return raw.sub;
+    return { kind: 'atom', from: raw.from, to: raw.to, name: raw.name };
+  }
+
+  function parseExpr(minPrec) {
+    if (i >= atoms.length) return null;
+    const start = opInfo(atoms[i], state);
+    let left;
+    if (start && start.fixity === 'prefix' && start.precedence >= minPrec) {
+      const raw = atoms[i++];
+      const arg = parseExpr(start.precedence + 1);
+      left = {
+        kind: 'prefixOp',
+        op: raw.name,
+        arg: arg || { kind: 'atom', from: raw.to, to: raw.to, name: null },
+        from: raw.from,
+        to: arg ? arg.to : raw.to,
+      };
+    } else if (start && start.fixity !== 'prefix') {
+      if (minPrec !== 0) return null;
+      const raw = atoms[i++];
+      faults.push({ from: raw.from, to: raw.to, severity: 'error', message: MISSING_LEFT });
+      left = atomOf(raw);
+    } else if (start) {
+      return null;
+    } else {
+      left = atomOf(atoms[i++]);
+    }
+
+    while (left && i < atoms.length) {
+      const ni = opInfo(atoms[i], state);
+      if (ni && ni.fixity === 'postfix' && ni.precedence >= minPrec) {
+        const raw = atoms[i++];
+        left = { kind: 'postfix', op: raw.name, arg: left, from: left.from, to: raw.to };
+        continue;
+      }
+      if (ni && ni.fixity === 'infix' && ni.precedence >= minPrec) {
+        const raw = atoms[i++];
+        const nextMin = ni.associativity === 'right' ? ni.precedence : ni.precedence + 1;
+        const right = parseExpr(nextMin);
+        if (!right) {
+          faults.push({ from: raw.from, to: raw.to, severity: 'error', message: MISSING_LEFT });
+          break;
+        }
+        left = { kind: 'infix', op: raw.name, left, right, from: left.from, to: right.to };
+        continue;
+      }
+      if ((!ni || ni.fixity === 'prefix') && JUXT >= minPrec) {
+        const arg = ni ? parseExpr(ni.precedence) : atomOf(atoms[i++]);
+        if (!arg) break;
+        left = { kind: 'prefix', head: left, arg, from: left.from, to: arg.to };
+        continue;
+      }
+      break;
+    }
+    return left;
+  }
+
+  return { ast: parseExpr(0), faults };
 }
 
 function slotInAst(ast, from, to) {
@@ -340,17 +406,46 @@ function slotInAst(ast, from, to) {
     if (deep) return deep;
     return null;
   }
-  if (ast.kind === 'prefix') {
+  if (ast.kind === 'prefix' || ast.kind === 'prefixOp' || ast.kind === 'postfix') {
+    if ((ast.kind === 'prefixOp' || ast.kind === 'postfix') && containsIdent(ast.arg, from, to)) {
+      return { headName: ast.op, argIndex: 0, arg: ast.arg, from: ast.arg.from, to: ast.arg.to };
+    }
     return slotInAst(ast.head, from, to) || slotInAst(ast.arg, from, to);
   }
   return null;
 }
 
 export function infixSlotForIdent(tree, doc, ident, state) {
-  if (!state || !state.ops.size) return null;
+  if (!state) return null;
+  const any = state.ops.size
+    || (state.prefix && state.prefix.size)
+    || (state.postfix && state.postfix.size);
+  if (!any) return null;
   const root = infixExprRoot(ident);
   if (!root) return null;
   const ast = parseAppExpr(root, doc, state);
   if (!ast) return null;
   return slotInAst(ast, ident.from, ident.to);
+}
+
+export function collectFixityDiagnostics(tree, doc) {
+  if (!tree || !doc) return [];
+  const state = buildInfixState(tree, doc, doc.length);
+  const any = state.ops.size || state.prefix.size || state.postfix.size;
+  if (!any) return [];
+  const faults = [];
+  tree.iterate({
+    enter(ref) {
+      if (ref.name !== 'LFAppTerm' && ref.name !== 'LFAppType' && ref.name !== 'AppExpression') return;
+      const parent = ref.node.parent;
+      if (parent && parent.name === ref.name) return;
+      const fam = appFamilyOf(ref.node);
+      if (!fam) return;
+      const chunks = flattenJuxtapositional(ref.node, fam);
+      const atoms = chunks.map((n) => atomFromNode(ATOMIC_WRAP.has(n.name) ? n : n, doc, state));
+      if (!atoms.some((a) => opInfo(a, state))) return;
+      faults.push(...parseMixfix(atoms, state).faults);
+    },
+  });
+  return faults;
 }

@@ -28,7 +28,7 @@ expect(newId('p', (id) => id.endsWith('0') || id.endsWith('1')).match(/[^01]$/) 
 
 expect(JSON.stringify(parseKey('beljar/p/p_x/f/f_y')) === '{"pid":"p_x","kind":"f","fid":"f_y"}', 'a file key names its project and file');
 expect(JSON.stringify(parseKey('beljar/p/p_x/meta')) === '{"pid":"p_x","kind":"meta"}', 'a project key names its project');
-expect(parseKey('beljar/p/p_x/conflict/f_y').kind === 'conflict', 'conflict records parse');
+expect(parseKey('beljar/p/p_x/repl').kind === 'repl', 'a project REPL record parses');
 for (const bad of ['beljar/p/p_x/f', 'beljar/p/p_x/meta/extra', 'beljar/p//tree', 'beljar/settings', 'beljar/projects', '', null]) {
   expect(parseKey(bad) === null, `"${bad}" is not a project key`);
 }

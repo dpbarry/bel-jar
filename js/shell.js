@@ -157,12 +157,12 @@
       return;
     }
     var phase = (msg.phase || "").trim();
-    var state2 = (msg.state || "").trim();
+    var state3 = (msg.state || "").trim();
     if (!phase) return;
     var w = phaseWeights(phase);
-    if (state2 === "begin") {
+    if (state3 === "begin") {
       bumpTarget(w.begin);
-    } else if (state2 === "done") {
+    } else if (state3 === "done") {
       bumpTarget(w.done);
     }
   }
@@ -180,7 +180,7 @@
     void fillEl.offsetWidth;
     fillEl.style.opacity = "0";
     var finished = false;
-    function finish() {
+    function finish2() {
       if (finished) return;
       finished = true;
       fillEl.style.transition = "";
@@ -191,9 +191,9 @@
     fillEl.addEventListener("transitionend", function onEnd(e) {
       if (e.propertyName !== "opacity") return;
       fillEl.removeEventListener("transitionend", onEnd);
-      finish();
+      finish2();
     });
-    setTimeout(finish, FADE_OUT_MS + 50);
+    setTimeout(finish2, FADE_OUT_MS + 50);
   }
   global.RunProgress = {
     /** Fold one finished run into the device's model (what complete() does with its timing). */
@@ -327,6 +327,8 @@
     return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
   }
   var ISSUES_URL = "https://github.com/dpbarry/bel-jar/issues";
+  var CONTACT_EMAIL = "dean.barry@mail.mcgill.ca";
+  var CONTACT_URL = "mailto:" + CONTACT_EMAIL;
   function reportIssue() {
     if (typeof g.open === "function") g.open(ISSUES_URL, "_blank", "noopener");
   }
@@ -350,6 +352,7 @@
   var Routes = {
     PROJECT_ID,
     ISSUES_URL,
+    CONTACT_URL,
     homeUrl,
     editUrl,
     privacyUrl,
@@ -365,7 +368,7 @@
   g.Routes = Routes;
 
   // js/persist/store.mjs
-  var SCHEMA = 4;
+  var SCHEMA = 5;
   var SCHEMA_KEY = "beljar/schema";
   function migrateStorage(storage, schema, migrations) {
     const raw = storage.getItem(SCHEMA_KEY);
@@ -392,6 +395,7 @@
     { pattern: /^beljar\/device$/, cls: "device" },
     { pattern: /^beljar\/notifications$/, cls: "device" },
     { pattern: /^beljar\/repl\/(transcript|commands)$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/repl$/, cls: "device" },
     // the tab guard's handshake, and sync telling the other tabs how it is (sync/sync-status.mjs)
     { pattern: /^beljar\/tabs\/(ping|pong|bye|sync-status|sync-ask)$/, cls: "device" },
     { pattern: /^beljar\/tombstones$/, cls: "device" },
@@ -680,7 +684,48 @@
   }
 
   // js/persist/migrations.mjs
-  var MIGRATIONS = {};
+  var MIGRATIONS = {
+    // The REPL was one transcript for the whole browser. It belongs to the
+    // project that was open; every other project starts with none.
+    4: function moveReplOntoItsProject(storage) {
+      const transcriptRaw = storage.getItem("beljar/repl/transcript");
+      const commandsRaw = storage.getItem("beljar/repl/commands");
+      if (transcriptRaw == null && commandsRaw == null) return;
+      let transcript = null;
+      let commands = null;
+      let device = null;
+      try {
+        transcript = JSON.parse(transcriptRaw || "null");
+        commands = JSON.parse(commandsRaw || "null");
+        device = JSON.parse(storage.getItem("beljar/device") || "null");
+      } catch (_) {
+        return;
+      }
+      const values = device && device.data && device.data.values;
+      const pid = values && typeof values.activeProject === "string" ? values.activeProject : "";
+      if (!pid) return;
+      const html = transcript && transcript.data && typeof transcript.data.html === "string" ? transcript.data.html : "";
+      const list3 = commands && Array.isArray(commands.data) ? commands.data.filter((x) => typeof x === "string") : [];
+      const dest = "beljar/p/" + pid + "/repl";
+      if ((html || list3.length) && storage.getItem(dest) == null) {
+        const at = Math.max(
+          transcript && typeof transcript.at === "number" ? transcript.at : 0,
+          commands && typeof commands.at === "number" ? commands.at : 0
+        ) || Date.now();
+        storage.setItem(dest, JSON.stringify({
+          at,
+          data: {
+            html,
+            scrollTop: transcript && transcript.data && typeof transcript.data.scrollTop === "number" ? transcript.data.scrollTop : 0,
+            savedAt: transcript && transcript.data && typeof transcript.data.savedAt === "number" ? transcript.data.savedAt : at,
+            commands: list3
+          }
+        }));
+      }
+      storage.removeItem("beljar/repl/transcript");
+      storage.removeItem("beljar/repl/commands");
+    }
+  };
 
   // js/persist/table.mjs
   function typeOf(row) {
@@ -865,6 +910,14 @@
     if (v === null) return null;
     return Array.isArray(v) ? v : void 0;
   }
+  function cleanDismissed(raw) {
+    if (!Array.isArray(raw)) return void 0;
+    const out = [];
+    for (const id of raw) {
+      if (typeof id === "string" && id && !out.includes(id)) out.push(id);
+    }
+    return out;
+  }
   var ON = true;
   var OFF = false;
   var SETTINGS = [
@@ -923,6 +976,9 @@
     { id: "vimLeader", section: "keybindings", default: "\\", values: ["\\", ",", " "] },
     { id: "vimInsertEscape", section: "keybindings", default: "", values: ["", "jk", "jj", "kj"] },
     { id: "emacsYankSource", section: "keybindings", default: "system", values: ["system", "kill-ring"] },
+    // Clipboard dialogs this browser has closed. The grant is per browser, so it
+    // does not follow the account, and Reset does not ask again.
+    { id: "clipboardReadDismissed", section: "keybindings", default: [], type: "json", normalize: cleanDismissed, sync: false, reset: false },
     { id: "doubleTapTrigger", section: "keybindings", default: "off", values: ["off", "shift", "control", "alt"] },
     { id: "doubleTapCommand", section: "keybindings", default: "tools.palette", type: "string" },
     { id: "doubleTapSpeed", section: "keybindings", default: "normal", values: ["normal", "fast", "relaxed"] },
@@ -963,6 +1019,7 @@
     // one row per tip, so two computers that each saw a different one never disagree.
     { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
     { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenSignIn", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },
@@ -1004,6 +1061,10 @@
   function readSetting(id) {
     const S = globalThis.Settings;
     return S ? S.get(id) : defaultOf(id);
+  }
+  function writeSetting(id, value) {
+    const S = globalThis.Settings;
+    return S ? S.set(id, value) : false;
   }
 
   // js/persist/settings.mjs
@@ -1197,6 +1258,9 @@
   function foldsKey(pid) {
     return projectPrefix(pid) + "folds";
   }
+  function replKey(pid) {
+    return projectPrefix(pid) + "repl";
+  }
   function syncKey(pid) {
     return projectPrefix(pid) + "sync";
   }
@@ -1206,7 +1270,7 @@
   function conflictKey(pid, fid) {
     return projectPrefix(pid) + "conflict/" + fid;
   }
-  var PROJECT_KEY = /^beljar\/p\/([^/]+)\/(meta|tree|session|folds|undo|sync|f|cache|conflict)(?:\/([^/]+))?$/;
+  var PROJECT_KEY = /^beljar\/p\/([^/]+)\/(meta|tree|session|folds|undo|sync|repl|f|cache|conflict)(?:\/([^/]+))?$/;
   function parseKey(key) {
     var m = typeof key === "string" ? PROJECT_KEY.exec(key) : null;
     if (!m) return null;
@@ -1962,7 +2026,7 @@
   // js/persist/work-files.mjs
   function create(deps) {
     var work2 = deps.work;
-    var settings2 = deps.settings;
+    var settings3 = deps.settings;
     function dirOf5(name) {
       var i = String(name || "").lastIndexOf("/");
       return i === -1 ? "" : name.slice(0, i);
@@ -2330,7 +2394,7 @@
     }
     function expandAliasesForStorage(text, fileName) {
       var s = String(text != null ? text : "");
-      if (settings2.get("aliasActivation") !== "greedy") return s;
+      if (settings3.get("aliasActivation") !== "greedy") return s;
       if (!isAliasExpandablePath(fileName)) return s;
       if (typeof BelEditor !== "undefined" && typeof BelEditor.expandBelAliases === "function") {
         return BelEditor.expandBelAliases(s);
@@ -2338,7 +2402,7 @@
       return s;
     }
     function expandAliasesInAllFiles() {
-      if (settings2.get("aliasActivation") !== "greedy") return 0;
+      if (settings3.get("aliasActivation") !== "greedy") return 0;
       var files2 = listFiles2();
       var changed = 0;
       for (var i = 0; i < files2.length; i++) {
@@ -2539,7 +2603,7 @@
       return changed ? out.join("\n") : null;
     }
     function rewriteCfgsForOp(oldName, newName) {
-      if (!settings2.get("cfgAutoSync")) return [];
+      if (!settings3.get("cfgAutoSync")) return [];
       var files2 = listFiles2();
       var updatedIds = [];
       for (var i = 0; i < files2.length; i++) {
@@ -2715,20 +2779,20 @@
   }
   function lcsMatch(a, b) {
     const match = new Int32Array(a.length).fill(-1);
-    let start = 0;
+    let start2 = 0;
     let endA = a.length;
     let endB = b.length;
-    while (start < endA && start < endB && a[start] === b[start]) {
-      match[start] = start;
-      start += 1;
+    while (start2 < endA && start2 < endB && a[start2] === b[start2]) {
+      match[start2] = start2;
+      start2 += 1;
     }
-    while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+    while (endA > start2 && endB > start2 && a[endA - 1] === b[endB - 1]) {
       endA -= 1;
       endB -= 1;
       match[endA] = endB;
     }
-    const n = endA - start;
-    const m = endB - start;
+    const n = endA - start2;
+    const m = endB - start2;
     if (n === 0 || m === 0 || n + m > MAX_DIFF_LINES) return match;
     const max = n + m;
     const off = max + 1;
@@ -2740,7 +2804,7 @@
       for (let k = -d; k <= d; k += 2) {
         let x2 = k === -d || k !== d && v[off + k - 1] < v[off + k + 1] ? v[off + k + 1] : v[off + k - 1] + 1;
         let y2 = x2 - k;
-        while (x2 < n && y2 < m && a[start + x2] === b[start + y2]) {
+        while (x2 < n && y2 < m && a[start2 + x2] === b[start2 + y2]) {
           x2++;
           y2++;
         }
@@ -2763,7 +2827,7 @@
       while (x > prevX && y > prevY) {
         x -= 1;
         y -= 1;
-        match[start + x] = start + y;
+        match[start2 + x] = start2 + y;
       }
       if (d > 0) {
         x = prevX;
@@ -2905,7 +2969,7 @@
   }
   function createDocuments(deps) {
     var work2 = deps.work;
-    var settings2 = deps.settings;
+    var settings3 = deps.settings;
     var files2 = deps.files || null;
     var open11 = /* @__PURE__ */ new Set();
     work2.onFileChange(function(e) {
@@ -2943,22 +3007,22 @@
       var documentId = opts.documentId;
       if (!documentId) throw new Error("createPersist needs a documentId");
       var loaded = load(documentId);
-      var state2 = loaded.state;
+      var state3 = loaded.state;
       var base = loaded.base;
       var conflicted = loaded.conflicted;
       var saveTimer3 = null;
       var providers3 = null;
       var reconciling = false;
       var reconcileQueued = false;
-      var savedView = JSON.stringify(state2.editor.local);
-      var savedSemantic = JSON.stringify(state2.semantic);
+      var savedView = JSON.stringify(state3.editor.local);
+      var savedSemantic = JSON.stringify(state3.semantic);
       function collectSemantic() {
-        if (!providers3 || typeof providers3.getSemantic !== "function") return state2.semantic;
+        if (!providers3 || typeof providers3.getSemantic !== "function") return state3.semantic;
         var exported = providers3.getSemantic();
-        if (!exported) return state2.semantic;
-        var text = state2.editor.text;
+        if (!exported) return state3.semantic;
+        var text = state3.editor.text;
         var docFp = typeof providers3.getDocFp === "function" ? providers3.getDocFp(text) : documentFingerprint(text);
-        var belugaBuild = typeof providers3.getBelugaBuild === "function" ? providers3.getBelugaBuild() : settings2.get("belugaMode");
+        var belugaBuild = typeof providers3.getBelugaBuild === "function" ? providers3.getBelugaBuild() : settings3.get("belugaMode");
         var scopeKey = typeof exported.scopeKey === "string" ? exported.scopeKey : typeof providers3.getScopeKey === "function" ? providers3.getScopeKey() : "";
         var semantic = {
           docFp,
@@ -2974,7 +3038,7 @@
         if (providers3 && typeof providers3.getViewport === "function") {
           return normalizeView(providers3.getViewport());
         }
-        return state2.editor.local || {};
+        return state3.editor.local || {};
       }
       function collectText() {
         if (providers3 && typeof providers3.getText === "function") {
@@ -2984,7 +3048,7 @@
           } catch (_) {
           }
         }
-        return state2.editor.text;
+        return state3.editor.text;
       }
       function peekText() {
         var read2 = providers3 && (typeof providers3.peekText === "function" ? providers3.peekText : typeof providers3.getText === "function" ? providers3.getText : null);
@@ -2995,13 +3059,13 @@
           } catch (_) {
           }
         }
-        return state2.editor.text;
+        return state3.editor.text;
       }
       function canShow() {
         return !providers3 || typeof providers3.applyExternalText === "function";
       }
       function show3(text) {
-        state2.editor.text = text;
+        state3.editor.text = text;
         if (providers3 && typeof providers3.applyExternalText === "function") providers3.applyExternalText(text);
       }
       function announceConflict(source) {
@@ -3077,38 +3141,38 @@
         }
         var exists = work2.hasFile(documentId);
         if (exists && !conflicted && work2.getText(documentId) !== base) reconcile();
-        state2.editor.text = collectText();
-        state2.editor.local = collectView();
-        state2.semantic = collectSemantic();
+        state3.editor.text = collectText();
+        state3.editor.local = collectView();
+        state3.semantic = collectSemantic();
         if (!exists) return;
         if (conflicted) {
           var rec = work2.readConflict(documentId);
-          if (rec && rec.mine !== state2.editor.text) {
-            rec.mine = state2.editor.text;
+          if (rec && rec.mine !== state3.editor.text) {
+            rec.mine = state3.editor.text;
             work2.writeConflict(documentId, rec);
           }
-        } else if (state2.editor.text !== base) {
-          if (work2.setText(documentId, state2.editor.text).ok) base = state2.editor.text;
+        } else if (state3.editor.text !== base) {
+          if (work2.setText(documentId, state3.editor.text).ok) base = state3.editor.text;
         }
-        var view = JSON.stringify(state2.editor.local);
-        if (view !== savedView) {
-          var local = state2.editor.local;
+        var view2 = JSON.stringify(state3.editor.local);
+        if (view2 !== savedView) {
+          var local = state3.editor.local;
           if (work2.updateSession(function(s) {
             s.views[documentId] = local;
-          }).ok) savedView = view;
+          }).ok) savedView = view2;
         }
-        var semantic = JSON.stringify(state2.semantic);
+        var semantic = JSON.stringify(state3.semantic);
         if (semantic !== savedSemantic) {
-          if (work2.writeCache(documentId, state2.semantic).ok) savedSemantic = semantic;
+          if (work2.writeCache(documentId, state3.semantic).ok) savedSemantic = semantic;
         }
       }
       function scheduleSave3() {
         clearTimeout(saveTimer3);
-        var delay = opts.debounceMs != null ? opts.debounceMs : settings2.get("autosaveDelay");
+        var delay = opts.debounceMs != null ? opts.debounceMs : settings3.get("autosaveDelay");
         saveTimer3 = globalThis.setTimeout(persistNow, delay);
       }
       function scheduleEditorPersist(text) {
-        if (text != null) state2.editor.text = String(text);
+        if (text != null) state3.editor.text = String(text);
         scheduleSave3();
       }
       function markEditorDirty() {
@@ -3120,8 +3184,8 @@
       }
       function replaceEditorText(text) {
         cancelPendingSave();
-        state2.editor.text = String(text != null ? text : "");
-        if (!conflicted && work2.getText(documentId) === state2.editor.text) base = state2.editor.text;
+        state3.editor.text = String(text != null ? text : "");
+        if (!conflicted && work2.getText(documentId) === state3.editor.text) base = state3.editor.text;
       }
       function hasPendingSave() {
         return saveTimer3 != null;
@@ -3130,7 +3194,7 @@
         if (saveTimer3 != null) persistNow();
       }
       function getInitialCheckpoint() {
-        return JSON.parse(JSON.stringify(state2));
+        return JSON.parse(JSON.stringify(state3));
       }
       function setCheckpointProviders(next) {
         providers3 = next || null;
@@ -3141,11 +3205,11 @@
         providers3 = null;
         documentId = newId3;
         var next = load(documentId);
-        state2 = next.state;
+        state3 = next.state;
         base = next.base;
         conflicted = next.conflicted;
-        savedView = JSON.stringify(state2.editor.local);
-        savedSemantic = JSON.stringify(state2.semantic);
+        savedView = JSON.stringify(state3.editor.local);
+        savedSemantic = JSON.stringify(state3.semantic);
         return getInitialCheckpoint();
       }
       function getConflict() {
@@ -3183,7 +3247,7 @@
         }
         if (!work2.setText(documentId, mine).ok) return { ok: false, reason: "write-failed", copyId };
         base = mine;
-        state2.editor.text = mine;
+        state3.editor.text = mine;
         conflicted = false;
         work2.removeConflict(documentId);
         return { ok: true, copyId };
@@ -3192,13 +3256,13 @@
       open11.add(handle);
       return {
         getEditorText: function() {
-          return state2.editor.text;
+          return state3.editor.text;
         },
         getEditorLocal: function() {
-          return normalizeView(state2.editor.local);
+          return normalizeView(state3.editor.local);
         },
         getSemanticCheckpoint: function() {
-          return state2.semantic ? JSON.parse(JSON.stringify(state2.semantic)) : null;
+          return state3.semantic ? JSON.parse(JSON.stringify(state3.semantic)) : null;
         },
         getInitialCheckpoint,
         getCurrentFileId: function() {
@@ -3241,18 +3305,18 @@
     return Array.isArray(raw) ? raw.filter((x) => typeof x === "string" && x) : [];
   }
   function create2(deps) {
-    const { store: store3, tabStore: tabStore2, work: work2, settings: settings2 } = deps;
+    const { store: store3, tabStore: tabStore2, work: work2, settings: settings3 } = deps;
     function storeFor(mode) {
       if (mode === "local") return store3;
       if (mode === "session") return tabStore2;
       return null;
     }
     function followSetting(settingId2, keysIn) {
-      let last = settings2.get(settingId2);
-      settings2.subscribe((e) => {
+      let last = settings3.get(settingId2);
+      settings3.subscribe((e) => {
         if (e.ids.indexOf(settingId2) === -1) return;
         const prev = last;
-        const next = settings2.get(settingId2);
+        const next = settings3.get(settingId2);
         last = next;
         if (prev === next) return;
         const from2 = storeFor(prev);
@@ -3265,48 +3329,107 @@
         }
       });
     }
-    const replStore = () => storeFor(settings2.get("replHistoryPersist"));
-    followSetting("replHistoryPersist", () => [REPL_TRANSCRIPT_KEY, REPL_COMMANDS_KEY]);
-    function readReplTranscript() {
-      const s = replStore();
-      const d = s && s.get(REPL_TRANSCRIPT_KEY);
-      if (!d || typeof d !== "object" || typeof d.html !== "string") return null;
+    const replStore = () => storeFor(settings3.get("replHistoryPersist"));
+    followSetting("replHistoryPersist", (s) => {
+      const keys = s.keys("beljar/p/").filter((k) => k.endsWith("/repl"));
+      if (s.get(REPL_TRANSCRIPT_KEY) !== void 0) keys.push(REPL_TRANSCRIPT_KEY);
+      if (s.get(REPL_COMMANDS_KEY) !== void 0) keys.push(REPL_COMMANDS_KEY);
+      return keys;
+    });
+    function asRepl(d) {
+      if (!d || typeof d !== "object") return null;
+      const commands = Array.isArray(d.commands) ? d.commands.filter((x) => typeof x === "string") : [];
+      const html = typeof d.html === "string" ? d.html : "";
+      if (!html && !commands.length) return null;
       return {
-        html: d.html,
+        html,
         scrollTop: typeof d.scrollTop === "number" ? d.scrollTop : 0,
-        savedAt: typeof d.savedAt === "number" ? d.savedAt : 0
+        savedAt: typeof d.savedAt === "number" ? d.savedAt : 0,
+        commands
       };
     }
-    function writeReplTranscript(snap) {
-      const s = replStore();
-      if (!s) return;
-      if (!snap || typeof snap.html !== "string" || !snap.html) {
+    function adoptShared(s, key) {
+      const transcript = s.get(REPL_TRANSCRIPT_KEY);
+      const commands = s.get(REPL_COMMANDS_KEY);
+      const html = transcript && typeof transcript === "object" && typeof transcript.html === "string" ? transcript.html : "";
+      const list3 = Array.isArray(commands) ? commands.filter((x) => typeof x === "string") : [];
+      if (!html && !list3.length) {
         s.remove(REPL_TRANSCRIPT_KEY);
-        return;
+        s.remove(REPL_COMMANDS_KEY);
+        return null;
       }
-      s.set(REPL_TRANSCRIPT_KEY, {
-        html: snap.html,
-        scrollTop: typeof snap.scrollTop === "number" ? snap.scrollTop : 0,
-        savedAt: typeof snap.savedAt === "number" ? snap.savedAt : Date.now()
-      });
+      const rec = {
+        html,
+        scrollTop: transcript && typeof transcript.scrollTop === "number" ? transcript.scrollTop : 0,
+        savedAt: transcript && typeof transcript.savedAt === "number" ? transcript.savedAt : Date.now(),
+        commands: list3
+      };
+      if (!s.set(key, rec).ok) return rec;
+      s.remove(REPL_TRANSCRIPT_KEY);
+      s.remove(REPL_COMMANDS_KEY);
+      return rec;
     }
     function clampCommands(list3) {
       const arr = Array.isArray(list3) ? list3.filter((x) => typeof x === "string") : [];
-      const cap = settings2.get("replHistoryCap");
+      const cap = settings3.get("replHistoryCap");
       return arr.length > cap ? arr.slice(arr.length - cap) : arr;
     }
-    function readReplCommands() {
+    function readRepl() {
       const s = replStore();
-      return s ? clampCommands(s.get(REPL_COMMANDS_KEY)) : [];
+      if (!s) return null;
+      const key = replKey(work2.projectId());
+      const own = asRepl(s.get(key));
+      if (own) return own;
+      if (s.get(REPL_TRANSCRIPT_KEY) === void 0 && s.get(REPL_COMMANDS_KEY) === void 0) return null;
+      return adoptShared(s, key);
     }
-    function writeReplCommands(list3) {
+    function writeRepl(rec) {
       const s = replStore();
       if (!s) return;
-      const arr = clampCommands(list3);
-      if (arr.length) s.set(REPL_COMMANDS_KEY, arr);
-      else s.remove(REPL_COMMANDS_KEY);
+      const key = replKey(work2.projectId());
+      const html = rec && typeof rec.html === "string" ? rec.html : "";
+      const commands = clampCommands(rec && rec.commands);
+      if (!html && !commands.length) {
+        s.remove(key);
+        return;
+      }
+      s.set(key, {
+        html,
+        scrollTop: rec && typeof rec.scrollTop === "number" ? rec.scrollTop : 0,
+        savedAt: rec && typeof rec.savedAt === "number" ? rec.savedAt : Date.now(),
+        commands
+      });
     }
-    const foldStore = () => storeFor(settings2.get("editorFoldPersist"));
+    function readReplTranscript() {
+      const rec = readRepl();
+      if (!rec || !rec.html) return null;
+      return { html: rec.html, scrollTop: rec.scrollTop, savedAt: rec.savedAt };
+    }
+    function writeReplTranscript(snap) {
+      if (!replStore()) return;
+      const cur = readRepl() || { html: "", scrollTop: 0, savedAt: 0, commands: [] };
+      if (!snap || typeof snap.html !== "string" || !snap.html) {
+        cur.html = "";
+        cur.scrollTop = 0;
+        cur.savedAt = 0;
+      } else {
+        cur.html = snap.html;
+        cur.scrollTop = typeof snap.scrollTop === "number" ? snap.scrollTop : 0;
+        cur.savedAt = typeof snap.savedAt === "number" ? snap.savedAt : Date.now();
+      }
+      writeRepl(cur);
+    }
+    function readReplCommands() {
+      const rec = readRepl();
+      return rec ? clampCommands(rec.commands) : [];
+    }
+    function writeReplCommands(list3) {
+      if (!replStore()) return;
+      const cur = readRepl() || { html: "", scrollTop: 0, savedAt: 0, commands: [] };
+      cur.commands = clampCommands(list3);
+      writeRepl(cur);
+    }
+    const foldStore = () => storeFor(settings3.get("editorFoldPersist"));
     followSetting("editorFoldPersist", (s) => s.keys("beljar/p/").filter((k) => k.endsWith("/folds")));
     function readFileFolds(fid) {
       const s = foldStore();
@@ -3617,9 +3740,9 @@
   function sameList(a, b) {
     return a.length === b.length && a.every((x, i) => x === b[i]);
   }
-  function pick(base, mine, theirs, same) {
-    if (same(mine, theirs)) return mine;
-    if (same(mine, base)) return theirs;
+  function pick(base, mine, theirs, same2) {
+    if (same2(mine, theirs)) return mine;
+    if (same2(mine, base)) return theirs;
     return mine;
   }
   var is = (a, b) => a === b;
@@ -3777,7 +3900,7 @@
       const rec = store3.get(SETTINGS_KEY);
       return cleanSyncedValues(rec && rec.values);
     }
-    function apply3(values) {
+    function apply4(values) {
       const rec = store3.get(SETTINGS_KEY);
       const cur = rec && rec.values && typeof rec.values === "object" ? rec.values : {};
       const next = {};
@@ -3829,7 +3952,7 @@
           continue;
         }
         const merged = mergeSettingValues(rec ? rec.values : {}, mine, head.values);
-        if (!sameValues(merged, mine)) apply3(merged);
+        if (!sameValues(merged, mine)) apply4(merged);
         writeRecord({ account, version: head.version, values: head.values, pending: null });
       }
       return { status: "busy" };
@@ -4334,14 +4457,14 @@
           projects[pid] = { pid, status: "error", message: String(err && err.message || err), code: err && err.code || null };
         }
       }
-      let settings2;
+      let settings3;
       try {
-        settings2 = await settingsSync.sync({ head: list3.settings });
+        settings3 = await settingsSync.sync({ head: list3.settings });
       } catch (err) {
         if (err && err.stopsRound) throw err;
-        settings2 = { status: "error", message: String(err && err.message || err), code: err && err.code || null };
+        settings3 = { status: "error", message: String(err && err.message || err), code: err && err.code || null };
       }
-      return { projects, settings: settings2 };
+      return { projects, settings: settings3 };
     }
     async function history4(pid, o) {
       const list3 = await call("versions", pid, o || {});
@@ -4398,7 +4521,7 @@
     const backoff = o.backoff || [5e3, 15e3, 6e4, 3e5];
     const visible2 = typeof o.visible === "function" ? o.visible : () => true;
     const listeners2 = /* @__PURE__ */ new Set();
-    let status = { state: "waiting", leader: false, lastSync: 0, error: null, reason: null, pending: false, safe: false, held: false };
+    let status2 = { state: "waiting", leader: false, lastSync: 0, error: null, reason: null, pending: false, safe: false, held: false };
     let leader = false;
     let stopped = false;
     let running2 = null;
@@ -4408,15 +4531,15 @@
     let failures = 0;
     let dirty = false;
     let heard = false;
-    let held = false;
+    let held2 = false;
     let release2 = null;
     let abort = null;
     let unsubscribe = null;
     function update2(patch) {
-      status = Object.assign({}, status, patch);
+      status2 = Object.assign({}, status2, patch);
       for (const fn of [...listeners2]) {
         try {
-          fn(status);
+          fn(status2);
         } catch (_) {
         }
       }
@@ -4433,7 +4556,7 @@
       if (!leader || stopped) return;
       dirty = true;
       if (running2) heard = true;
-      if (!status.pending) update2({ pending: true });
+      if (!status2.pending) update2({ pending: true });
       const t = now();
       if (!firstChange) firstChange = t;
       wakeIn(Math.min(quietMs, maxWaitMs - (t - firstChange)));
@@ -4445,7 +4568,7 @@
       return out;
     }
     function round() {
-      if (!leader || stopped || held) return Promise.resolve(null);
+      if (!leader || stopped || held2) return Promise.resolve(null);
       if (running2) {
         again = true;
         return running2;
@@ -4546,11 +4669,11 @@
        * then is theirs to look at first. Returns the projects sent.
        */
       flush(send, budget) {
-        if (!leader || stopped || held || typeof engine.flush !== "function") return [];
+        if (!leader || stopped || held2 || typeof engine.flush !== "function") return [];
         return engine.flush(send, budget);
       },
       status() {
-        return status;
+        return status2;
       },
       /**
        * No round runs until release(): the edits made offline wait for the person
@@ -4558,8 +4681,8 @@
        * connection drops, with "Back online: Ask me first").
        */
       hold() {
-        if (held) return;
-        held = true;
+        if (held2) return;
+        held2 = true;
         if (timer2 != null) {
           timers.clear(timer2);
           timer2 = null;
@@ -4568,10 +4691,10 @@
       },
       /** Let rounds run again, starting one now. */
       release() {
-        if (!held) return Promise.resolve(null);
-        held = false;
+        if (!held2) return Promise.resolve(null);
+        held2 = false;
         if (leader && !stopped && !running2) {
-          status = Object.assign({}, status, { held: false });
+          status2 = Object.assign({}, status2, { held: false });
           return round();
         }
         update2({ held: false });
@@ -4623,18 +4746,18 @@
     const files2 = differs || [];
     if (!account) return { signedIn: false, state: files2.length ? "differs" : "off", lastSync: 0, error: null, reason: null, differs: files2 };
     const st = runner || {};
-    let state2;
-    if (files2.length) state2 = "differs";
-    else if (online === false) state2 = "offline";
-    else if (st.held) state2 = "held";
-    else if (st.state === "offline") state2 = "offline";
-    else if (st.state === "error") state2 = "error";
-    else if (st.state === "syncing") state2 = "syncing";
-    else if (st.pending) state2 = "pending";
-    else if (st.lastSync) state2 = "synced";
-    else state2 = "syncing";
-    const failing2 = state2 === "error";
-    return { signedIn: true, state: state2, lastSync: st.lastSync || 0, error: failing2 ? st.error || null : null, reason: failing2 ? st.reason || null : null, differs: files2 };
+    let state3;
+    if (files2.length) state3 = "differs";
+    else if (online === false) state3 = "offline";
+    else if (st.held) state3 = "held";
+    else if (st.state === "offline") state3 = "offline";
+    else if (st.state === "error") state3 = "error";
+    else if (st.state === "syncing") state3 = "syncing";
+    else if (st.pending) state3 = "pending";
+    else if (st.lastSync) state3 = "synced";
+    else state3 = "syncing";
+    const failing2 = state3 === "error";
+    return { signedIn: true, state: state3, lastSync: st.lastSync || 0, error: failing2 ? st.error || null : null, reason: failing2 ? st.reason || null : null, differs: files2 };
   }
   function createSyncStatus(o) {
     const now = o.now || (() => Date.now());
@@ -4643,16 +4766,16 @@
     let seq2 = 0;
     const newId3 = o.newId || (() => now().toString(36) + "-" + ++seq2 + "-" + Math.random().toString(36).slice(2, 8));
     const listeners2 = /* @__PURE__ */ new Set();
-    const asked = /* @__PURE__ */ new Map();
+    const asked2 = /* @__PURE__ */ new Map();
     let runner = null;
     let unsubscribeRunner = null;
     let local = null;
     let remote = null;
     let lastKey = "";
     const leading = () => !!(local && local.leader);
-    const current = () => leading() ? local : remote || local;
+    const current2 = () => leading() ? local : remote || local;
     function summary2() {
-      return summarize({ account: o.account(), runner: current(), online: online(), differs: o.conflicts() });
+      return summarize({ account: o.account(), runner: current2(), online: online(), differs: o.conflicts() });
     }
     function emit2() {
       const s = summary2();
@@ -4683,9 +4806,9 @@
       if (!msg || typeof msg !== "object") return;
       if (kind === STATUS_MESSAGE) {
         remote = msg;
-        if (msg.answered && asked.has(msg.answered)) {
-          const resolve2 = asked.get(msg.answered);
-          asked.delete(msg.answered);
+        if (msg.answered && asked2.has(msg.answered)) {
+          const resolve2 = asked2.get(msg.answered);
+          asked2.delete(msg.answered);
           resolve2({ ok: !!msg.safe, reason: msg.safe ? null : msg.state || "unsafe" });
         }
         emit2();
@@ -4738,11 +4861,11 @@
         if (leading()) return runner.release().then(() => ({ ok: true, reason: null }));
         const id = newId3();
         return new Promise((resolve2) => {
-          asked.set(id, () => resolve2({ ok: true, reason: null }));
+          asked2.set(id, () => resolve2({ ok: true, reason: null }));
           o.tabs.post(ASK_MESSAGE, { id, release: true, at: now() });
           timers.set(() => {
-            if (!asked.has(id)) return;
-            asked.delete(id);
+            if (!asked2.has(id)) return;
+            asked2.delete(id);
             resolve2({ ok: false, reason: "no-answer" });
           }, timeoutMs);
         });
@@ -4759,11 +4882,11 @@
         }
         const id = newId3();
         return new Promise((resolve2) => {
-          asked.set(id, resolve2);
+          asked2.set(id, resolve2);
           o.tabs.post(ASK_MESSAGE, { id, round: true, at: now() });
           timers.set(() => {
-            if (!asked.has(id)) return;
-            asked.delete(id);
+            if (!asked2.has(id)) return;
+            asked2.delete(id);
             resolve2({ ok: false, reason: "no-answer" });
           }, timeoutMs);
         });
@@ -4781,7 +4904,7 @@
     const asking = () => o.settings.get("syncReconnect") === "ask";
     const heldHere = () => o.device.get(HELD_ROW) === String(o.account);
     const offline = (st) => st.state === "offline" || !online();
-    function hold() {
+    function hold2() {
       o.device.set(HELD_ROW, String(o.account));
       o.runner.hold();
     }
@@ -4816,12 +4939,12 @@
       }
       if (!asking() || !offline(st)) return;
       if (st.pending) {
-        hold();
+        hold2();
         return;
       }
       waiting2().then((any) => {
         const now = o.runner.status();
-        if (!stopped && any && now.leader && !now.held && asking() && offline(now) && !heldHere()) hold();
+        if (!stopped && any && now.leader && !now.held && asking() && offline(now) && !heldHere()) hold2();
       });
     }
     const unsubscribe = o.runner.subscribe(onStatus);
@@ -4859,20 +4982,20 @@
       set: (fn, ms) => globalThis.setTimeout(fn, ms),
       clear: (h) => globalThis.clearTimeout(h)
     };
-    const state2 = { persisted: null, workToLose: false, asked: false, warned: false };
+    const state3 = { persisted: null, workToLose: false, asked: false, warned: false };
     let unsubscribe = null;
     let recount = null;
     let onClick2 = null;
     let disposed = false;
     function warnIfAtRisk() {
-      if (!o.sevenDayRule || state2.persisted || o.device.get("durabilityWarnedAt")) return;
+      if (!o.sevenDayRule || state3.persisted || o.device.get("durabilityWarnedAt")) return;
       o.device.set("durabilityWarnedAt", now());
-      state2.warned = true;
+      state3.warned = true;
       o.warn();
     }
     function settle2(granted) {
-      state2.persisted = !!granted;
-      if (!state2.persisted) warnIfAtRisk();
+      state3.persisted = !!granted;
+      if (!state3.persisted) warnIfAtRisk();
     }
     function askAtNextClick() {
       if (onClick2 || !o.events) return;
@@ -4881,7 +5004,7 @@
         onClick2 = null;
         if (disposed || askedLately()) return;
         o.device.set("persistAskedAt", now());
-        state2.asked = true;
+        state3.asked = true;
         let answer;
         try {
           answer = o.storage.persist();
@@ -4897,13 +5020,13 @@
       return !!last && now() - last < ASK_EVERY;
     }
     function thereIsWork() {
-      state2.workToLose = true;
+      state3.workToLose = true;
       const canAsk = !!(o.storage && typeof o.storage.persist === "function");
       if (canAsk && !askedLately()) askAtNextClick();
       else warnIfAtRisk();
     }
     function count() {
-      if (state2.workToLose || disposed) return;
+      if (state3.workToLose || disposed) return;
       if (countWork(o.work, WORK_TO_LOSE) < WORK_TO_LOSE) return;
       if (unsubscribe) {
         unsubscribe();
@@ -4915,13 +5038,13 @@
       /** Learn whether the browser already keeps the storage; then wait for work to lose. */
       async start() {
         try {
-          state2.persisted = !!(o.storage && typeof o.storage.persisted === "function" && await o.storage.persisted());
+          state3.persisted = !!(o.storage && typeof o.storage.persisted === "function" && await o.storage.persisted());
         } catch (_) {
-          state2.persisted = false;
+          state3.persisted = false;
         }
-        if (state2.persisted || disposed) return;
+        if (state3.persisted || disposed) return;
         count();
-        if (state2.workToLose) return;
+        if (state3.workToLose) return;
         unsubscribe = o.store.subscribe((e) => {
           if (e.cls !== "work" || recount != null) return;
           recount = timers.set(() => {
@@ -4937,7 +5060,7 @@
        * That is state, not news: home shows it for as long as it holds.
        */
       status() {
-        return Object.assign({ atRisk: !!o.sevenDayRule && state2.workToLose && !state2.persisted }, state2);
+        return Object.assign({ atRisk: !!o.sevenDayRule && state3.workToLose && !state3.persisted }, state3);
       },
       dispose() {
         disposed = true;
@@ -5028,8 +5151,8 @@
       alsoWipe,
       migrations: MIGRATIONS,
       onMissingMigration: "refuse",
-      onCapacity: function(state2, detail2) {
-        if (state2 === "blocked") reportCapacityFailure(detail2);
+      onCapacity: function(state3, detail2) {
+        if (state3 === "blocked") reportCapacityFailure(detail2);
         else clearCapacityFailure();
       },
       onVersionAhead: function() {
@@ -5675,10 +5798,10 @@
           }
         }
         have = P3.listEmptyFolders() || [];
-        var present = {};
-        for (i = 0; i < have.length; i++) present[have[i]] = true;
+        var present2 = {};
+        for (i = 0; i < have.length; i++) present2[have[i]] = true;
         for (i = 0; i < (paths || []).length; i++) {
-          if (!present[paths[i]] && typeof P3.addEmptyFolder === "function") {
+          if (!present2[paths[i]] && typeof P3.addEmptyFolder === "function") {
             P3.addEmptyFolder(paths[i]);
           }
         }
@@ -6197,11 +6320,11 @@
     const here = SETTINGS2.filter(offered);
     return here.find((s) => s.slug === bare) || here.find((s) => (s.aliases || []).indexOf(bare) >= 0) || null;
   }
-  function nextValue(spec, current, requested) {
+  function nextValue(spec, current2, requested) {
     if (!spec) return null;
     if (spec.kind === "bool") {
       if (requested === true || requested === false) return requested;
-      if (requested == null || requested === "") return !current;
+      if (requested == null || requested === "") return !current2;
       const word = String(requested).toLowerCase();
       if (["on", "true", "yes", "1"].indexOf(word) >= 0) return true;
       if (["off", "false", "no", "0"].indexOf(word) >= 0) return false;
@@ -6214,7 +6337,7 @@
       const wanted = values.find((v) => String(v) === String(requested));
       return wanted === void 0 ? null : wanted;
     }
-    const at = values.findIndex((v) => String(v) === String(current));
+    const at = values.findIndex((v) => String(v) === String(current2));
     return values[(at + 1) % values.length];
   }
   function nearestSetting(name) {
@@ -6278,16 +6401,16 @@
     const labels = spec.labels || {};
     return spec.title + ": " + (labels[value] != null ? labels[value] : String(value));
   }
-  function applyValue(settings2, spec, requested) {
-    if (!settings2 || typeof settings2.get !== "function" || !spec) {
+  function applyValue(settings3, spec, requested) {
+    if (!settings3 || typeof settings3.get !== "function" || !spec) {
       return { ok: false, message: "Settings are not ready yet." };
     }
-    const value = nextValue(spec, settings2.get(spec.setting), requested);
+    const value = nextValue(spec, settings3.get(spec.setting), requested);
     if (value === null) return { ok: false, message: `${spec.title}: no such value.` };
-    if (!settings2.set(spec.setting, value)) return { ok: false, message: `${spec.title} could not be saved.` };
+    if (!settings3.set(spec.setting, value)) return { ok: false, message: `${spec.title} could not be saved.` };
     return { ok: true, applied: true, spec, value, message: describeChange(spec, value) };
   }
-  function runSetOn(settings2, raw) {
+  function runSetOn(settings3, raw) {
     const res = parseSet(raw);
     if (res.error === "usage") {
       return { ok: false, message: "Usage: :set nu, :set nowrap, :set ts=4" };
@@ -6307,7 +6430,7 @@
         message: `${res.spec.title} is not on or off. Try :set ${res.name}=${res.spec.values[0]}.`
       };
     }
-    return applyValue(settings2, res.spec, res.requested);
+    return applyValue(settings3, res.spec, res.requested);
   }
 
   // js/commands/command-catalog.mjs
@@ -7945,8 +8068,8 @@
       };
     }
   };
-  function buildSegments(state2, detail2) {
-    const s = state2 || {};
+  function buildSegments(state3, detail2) {
+    const s = state3 || {};
     const keys = PRESETS[detail2] || PRESETS.standard;
     const out = [];
     for (const key of keys) {
@@ -8277,13 +8400,13 @@
   }
   function jumpToLine(target) {
     const ed = global5.CurrentEditor;
-    const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
-    if (!view || !target) return false;
-    const doc2 = view.state.doc;
+    const view2 = ed && typeof ed.getView === "function" ? ed.getView() : null;
+    if (!view2 || !target) return false;
+    const doc2 = view2.state.doc;
     const line = doc2.line(Math.max(1, Math.min(target.line, doc2.lines)));
     const pos = Math.min(line.from + Math.max(0, target.col - 1), line.to);
     if (typeof ed.jumpToRange === "function") ed.jumpToRange({ from: pos, to: pos });
-    else view.dispatch({ selection: { anchor: pos, head: pos }, scrollIntoView: true });
+    else view2.dispatch({ selection: { anchor: pos, head: pos }, scrollIntoView: true });
     if (typeof ed.focus === "function") ed.focus();
     return true;
   }
@@ -8347,9 +8470,9 @@
     previewTimer = setTimeout(() => {
       previewTimer = 0;
       const ed = global5.CurrentEditor;
-      const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
-      if (!view || typeof ed.peekRange !== "function") return;
-      const doc2 = view.state.doc;
+      const view2 = ed && typeof ed.getView === "function" ? ed.getView() : null;
+      if (!view2 || typeof ed.peekRange !== "function") return;
+      const doc2 = view2.state.doc;
       const line = doc2.line(Math.max(1, Math.min(parsed.line, doc2.lines)));
       ed.peekRange({ from: line.from, to: line.from });
     }, PREVIEW_MS);
@@ -8359,13 +8482,13 @@
     previewTimer = 0;
     if (savedScroll == null) return;
     const ed = global5.CurrentEditor;
-    const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
+    const view2 = ed && typeof ed.getView === "function" ? ed.getView() : null;
     const target = savedScroll;
     savedScroll = null;
-    if (!view || !view.scrollDOM) return;
-    view.scrollDOM.scrollTop = target;
+    if (!view2 || !view2.scrollDOM) return;
+    view2.scrollDOM.scrollTop = target;
     const settle2 = () => {
-      if (view.dom.isConnected) view.scrollDOM.scrollTop = target;
+      if (view2.dom.isConnected) view2.scrollDOM.scrollTop = target;
     };
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(settle2);
     setTimeout(settle2, 40);
@@ -8515,9 +8638,9 @@
     countEl.classList.toggle("is-empty", !!input.value && !hit);
     if (!hit) return;
     searchAnchor = hit.from;
-    const view = typeof ed.getView === "function" ? ed.getView() : null;
-    if (!view) return;
-    view.dispatch({ selection: { anchor: hit.from, head: hit.to }, scrollIntoView: true });
+    const view2 = typeof ed.getView === "function" ? ed.getView() : null;
+    if (!view2) return;
+    view2.dispatch({ selection: { anchor: hit.from, head: hit.to }, scrollIntoView: true });
   }
   function completeInto(el9) {
     const caret = el9.selectionStart == null ? el9.value.length : el9.selectionStart;
@@ -8838,8 +8961,8 @@
     query2 = "";
     hideList();
     const ed = global5.CurrentEditor;
-    const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
-    searchAnchor = view ? view.state.selection.main.head : 0;
+    const view2 = ed && typeof ed.getView === "function" ? ed.getView() : null;
+    searchAnchor = view2 ? view2.state.selection.main.head : 0;
     return true;
   }
   function openLine(prefix, onClose, opts) {
@@ -8847,9 +8970,9 @@
     onCloseCb = onClose || null;
     loadHistory();
     const ed = global5.CurrentEditor;
-    const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
-    savedScroll = view && view.scrollDOM ? view.scrollDOM.scrollTop : null;
-    savedSelection = view ? { anchor: view.state.selection.main.anchor, head: view.state.selection.main.head } : null;
+    const view2 = ed && typeof ed.getView === "function" ? ed.getView() : null;
+    savedScroll = view2 && view2.scrollDOM ? view2.scrollDOM.scrollTop : null;
+    savedSelection = view2 ? { anchor: view2.state.selection.main.anchor, head: view2.state.selection.main.head } : null;
     searchDir = "";
     setPrompt(opts && opts.prompt || ":");
     if (countEl) countEl.textContent = "";
@@ -8886,8 +9009,8 @@
     setPrompt(":");
     if (wasSearch && savedSelection && (!opts || opts.restore !== false)) {
       const ed = global5.CurrentEditor;
-      const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
-      if (view) view.dispatch({ selection: savedSelection });
+      const view2 = ed && typeof ed.getView === "function" ? ed.getView() : null;
+      if (view2) view2.dispatch({ selection: savedSelection });
     }
     savedSelection = null;
     restoreViewport();
@@ -9392,12 +9515,12 @@
   var active3 = -1;
   var onChanged2 = null;
   var anchor2 = () => anchorAbove(panelEl2, ".jar-strip__seg--keymap", "left", ".jar-style__name");
-  function rowEl2(style, index, current) {
+  function rowEl2(style, index, current2) {
     const el9 = document.createElement("button");
     el9.type = "button";
-    el9.className = "jar-style__row" + (current ? " is-current" : "");
+    el9.className = "jar-style__row" + (current2 ? " is-current" : "");
     el9.setAttribute("role", "option");
-    el9.setAttribute("aria-selected", current ? "true" : "false");
+    el9.setAttribute("aria-selected", current2 ? "true" : "false");
     el9.dataset.index = String(index);
     const name = document.createElement("span");
     name.className = "jar-style__name";
@@ -9419,8 +9542,8 @@
     listEl3 = document.createElement("div");
     listEl3.className = "jar-hist__list";
     listEl3.setAttribute("role", "listbox");
-    const current = liveKeymapStyle();
-    STYLES.forEach((s, i) => listEl3.appendChild(rowEl2(s, i, s.value === current)));
+    const current2 = liveKeymapStyle();
+    STYLES.forEach((s, i) => listEl3.appendChild(rowEl2(s, i, s.value === current2)));
     active3 = -1;
     panelEl2.append(head, listEl3);
     document.body.appendChild(panelEl2);
@@ -9943,13 +10066,13 @@
   }
   function seedFromEditor() {
     const ed = global9.CurrentEditor;
-    const view = ed && typeof ed.getView === "function" ? ed.getView() : null;
-    if (!view) {
+    const view2 = ed && typeof ed.getView === "function" ? ed.getView() : null;
+    if (!view2) {
       setEditorState({ hasFile: false, line: NaN, col: NaN, selChars: 0, selLines: 0, goal: "" });
       return;
     }
-    const sel = view.state.selection.main;
-    const doc2 = view.state.doc;
+    const sel = view2.state.selection.main;
+    const doc2 = view2.state.doc;
     const head = doc2.lineAt(sel.head);
     const selChars = Math.abs(sel.to - sel.from);
     setEditorState({
@@ -10575,8 +10698,8 @@
       if (!cm || seen2[cm]) continue;
       seen2[cm] = true;
       (function(fn) {
-        entries.push({ key: cm, run: function(view) {
-          return !!fn(view);
+        entries.push({ key: cm, run: function(view2) {
+          return !!fn(view2);
         } });
       })(run3);
     }
@@ -11194,12 +11317,12 @@
     out = out.replace(
       /([^\s:"]+)\.bel:(\d+)\.(\d+)(?:-(\d+)\.(\d+))?:/g,
       (whole, _fname, sl, sc, el9, ec) => {
-        const start = mapLine(spans, +sl);
-        if (!start) return whole;
-        let token = `${start.name}:${start.line}.${sc}`;
+        const start2 = mapLine(spans, +sl);
+        if (!start2) return whole;
+        let token = `${start2.name}:${start2.line}.${sc}`;
         if (el9 != null) {
           const end = mapLine(spans, +el9);
-          if (!end || end.id !== start.id) return whole;
+          if (!end || end.id !== start2.id) return whole;
           token += `-${end.line}.${ec}`;
         }
         return `${token}:`;
@@ -11383,14 +11506,14 @@
   function peelGlobalFilePragmas(fileCode) {
     const text = String(fileCode != null ? fileCode : "");
     const lines = text.split("\n");
-    let start = -1;
-    if (lines[0] && GLOBAL_FILE_PRAGMA_LINE.test(lines[0])) start = 0;
-    else if (lines[0] && lines[0].trim() === "" && lines[1] && GLOBAL_FILE_PRAGMA_LINE.test(lines[1])) start = 1;
-    if (start < 0) {
+    let start2 = -1;
+    if (lines[0] && GLOBAL_FILE_PRAGMA_LINE.test(lines[0])) start2 = 0;
+    else if (lines[0] && lines[0].trim() === "" && lines[1] && GLOBAL_FILE_PRAGMA_LINE.test(lines[1])) start2 = 1;
+    if (start2 < 0) {
       return { hoisted: "", rest: text, hoistLineCount: 0 };
     }
     const hoisted = [];
-    let i = start;
+    let i = start2;
     while (i < lines.length && GLOBAL_FILE_PRAGMA_LINE.test(lines[i])) {
       hoisted.push(lines[i]);
       i += 1;
@@ -13037,7 +13160,7 @@
     tooltipRoot.classList.remove("is-visible", "is-measuring");
     tooltipRoot.classList.add("is-leaving");
     void inner.offsetHeight;
-    const finish = () => {
+    const finish2 = () => {
       if (finishGen !== tooltipLeaveGen) return;
       if (tooltipTransitionEndHandler && inner) {
         inner.removeEventListener("transitionend", tooltipTransitionEndHandler);
@@ -13051,11 +13174,11 @@
     };
     const onEnd = (e) => {
       if (e.target !== inner || e.propertyName !== "transform") return;
-      finish();
+      finish2();
     };
     tooltipTransitionEndHandler = onEnd;
     inner.addEventListener("transitionend", onEnd);
-    tooltipHideFallbackTimer = setTimeout(finish, fallbackMs);
+    tooltipHideFallbackTimer = setTimeout(finish2, fallbackMs);
   }
   function hideTooltipImmediate() {
     tooltipAnchor = null;
@@ -13126,15 +13249,15 @@
     document.querySelectorAll("[data-tooltip]").forEach(bindTooltipEl);
     window.addEventListener("pointerup", (e) => {
       if (!e.isPrimary || e.button !== 0) return;
-      const held = tooltipSuppressLeaveUntilPointerUp;
+      const held2 = tooltipSuppressLeaveUntilPointerUp;
       tooltipSuppressLeaveUntilPointerUp = null;
-      if (!held || tooltipAnchor !== held) return;
-      if (!held.isConnected) {
+      if (!held2 || tooltipAnchor !== held2) return;
+      if (!held2.isConnected) {
         hideTooltip();
         return;
       }
       const under = document.elementFromPoint(e.clientX, e.clientY);
-      const stillOver = under && (held === under || held.contains(under));
+      const stillOver = under && (held2 === under || held2.contains(under));
       if (!stillOver) hideTooltip();
     });
     window.addEventListener("pointercancel", (e) => {
@@ -13254,7 +13377,8 @@
   // js/ui/hint-seen.mjs
   var SEEN_SETTING = {
     library: "hintSeenLibrary",
-    "inspector-cursor": "hintSeenInspectorCursor"
+    "inspector-cursor": "hintSeenInspectorCursor",
+    "sign-in": "hintSeenSignIn"
   };
   function seenSetting(id) {
     return Object.prototype.hasOwnProperty.call(SEEN_SETTING, id) ? SEEN_SETTING[id] : null;
@@ -13290,6 +13414,8 @@
   var dismissing = false;
   var resizeBound = false;
   var actionFn = null;
+  var placeSide = "right";
+  var placeAlign = "end";
   function setting(row) {
     return typeof Settings !== "undefined" && Settings.get ? Settings.get(row) : void 0;
   }
@@ -13373,12 +13499,18 @@
     if (cardEl && !cardEl._belHintActionBound) {
       cardEl._belHintActionBound = true;
       cardEl.addEventListener("click", (e) => {
-        if (!actionFn) return;
         if (e.target && e.target.closest && e.target.closest(".hint-close")) return;
+        if (!actionFn) return;
         e.preventDefault();
-        const fn = actionFn;
-        dismiss();
-        fn();
+        e.stopPropagation();
+        runAction2();
+      });
+      cardEl.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        if (e.repeat || !actionFn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        runAction2();
       });
     }
     if (!resizeBound) {
@@ -13400,7 +13532,14 @@
     visible = false;
     dismissing = false;
     actionFn = null;
-    if (cardEl) cardEl.classList.remove("is-action");
+    rootEl.classList.remove("is-hold");
+    delete rootEl.dataset.side;
+    rootEl.style.removeProperty("--hint-arrow-x");
+    if (cardEl) {
+      cardEl.classList.remove("is-action");
+      cardEl.removeAttribute("role");
+      cardEl.removeAttribute("tabindex");
+    }
     releaseTooltip();
     anchorEl = null;
     activeId = null;
@@ -13432,6 +13571,24 @@
     }
     rootEl.style.width = best + "px";
   }
+  function headerDrop(anchor3) {
+    const header = anchor3.closest && anchor3.closest("header");
+    if (!header) return null;
+    const v = getComputedStyle(header).getPropertyValue("--header-menu-gap").trim();
+    const n = parseFloat(v);
+    let gap = GAP_PX;
+    if (Number.isFinite(n)) {
+      gap = /rem$/.test(v) ? n * parseFloat(getComputedStyle(document.documentElement).fontSize) : n;
+    }
+    return { bottom: header.getBoundingClientRect().bottom, gap };
+  }
+  function runAction2() {
+    if (!actionFn || dismissing) return;
+    const fn = actionFn;
+    actionFn = null;
+    dismiss();
+    fn();
+  }
   function place() {
     if (!rootEl || !cardEl || !anchorEl) return;
     rootEl.hidden = false;
@@ -13442,17 +13599,40 @@
     rootEl.style.pointerEvents = "none";
     fitWidth();
     const ar = anchorEl.getBoundingClientRect();
-    const hr = rootEl.getBoundingClientRect();
+    const width = rootEl.offsetWidth;
+    const height = rootEl.offsetHeight;
     const margin = 8;
-    let left = Math.round(ar.right + GAP_PX);
-    let top = Math.round(ar.top + ar.height / 2 - hr.height / 2);
-    const maxLeft = window.innerWidth - hr.width - margin;
-    const maxTop = window.innerHeight - hr.height - margin;
+    let left;
+    let top;
+    if (placeSide === "below") {
+      const drop = headerDrop(anchorEl);
+      const anchorBottom = drop ? drop.bottom : ar.bottom;
+      const gap = drop ? drop.gap : GAP_PX;
+      if (placeAlign === "start") left = Math.round(ar.left);
+      else if (placeAlign === "center") left = Math.round(ar.left + ar.width / 2 - width / 2);
+      else left = Math.round(ar.right - width);
+      top = Math.round(anchorBottom + gap);
+      rootEl.dataset.side = "below";
+      cardEl.style.removeProperty("--hint-arrow-y");
+    } else {
+      left = Math.round(ar.right + GAP_PX);
+      top = Math.round(ar.top + ar.height / 2 - height / 2);
+      rootEl.dataset.side = "right";
+      rootEl.style.removeProperty("--hint-arrow-x");
+    }
+    const maxLeft = window.innerWidth - width - margin;
+    const maxTop = window.innerHeight - height - margin;
+    if (left < margin) left = margin;
     if (left > maxLeft) left = Math.max(margin, maxLeft);
     if (top < margin) top = margin;
     if (top > maxTop) top = Math.max(margin, maxTop);
-    const arrowY = Math.max(12, Math.min(hr.height - 12, ar.top + ar.height / 2 - top));
-    cardEl.style.setProperty("--hint-arrow-y", arrowY + "px");
+    if (placeSide === "below") {
+      const arrowX = Math.max(12, Math.min(width - 12, ar.left + ar.width / 2 - left));
+      rootEl.style.setProperty("--hint-arrow-x", arrowX + "px");
+    } else {
+      const arrowY = Math.max(12, Math.min(height - 12, ar.top + ar.height / 2 - top));
+      cardEl.style.setProperty("--hint-arrow-y", arrowY + "px");
+    }
     rootEl.style.left = left + "px";
     rootEl.style.top = top + "px";
     rootEl.style.removeProperty("visibility");
@@ -13475,16 +13655,16 @@
     freezeProgressBar();
     rootEl.classList.remove("is-visible");
     rootEl.classList.add("is-leaving");
-    const finish = () => {
+    const finish2 = () => {
       rootEl.removeEventListener("transitionend", onEnd);
       finishHide();
     };
     const onEnd = (e) => {
       if (e.target !== rootEl) return;
-      finish();
+      finish2();
     };
     rootEl.addEventListener("transitionend", onEnd);
-    leaveTimer = setTimeout(finish, LEAVE_MS + 40);
+    leaveTimer = setTimeout(finish2, LEAVE_MS + 40);
   }
   function accountAnswered() {
     var P3 = global12.Persist;
@@ -13525,7 +13705,7 @@
     const once = o.once !== false;
     if (!anchor3 || !text) return false;
     if (once && id && wasDismissed(id)) return false;
-    if (once && id && seenSetting(id) && !o.waited && !accountAnswered()) {
+    if (once && id && seenSetting(id) && o.wait !== false && !o.waited && !accountAnswered()) {
       waitForAccount(o);
       return false;
     }
@@ -13536,12 +13716,22 @@
     }
     activeId = id;
     anchorEl = anchor3;
+    placeSide = o.side === "below" ? "below" : "right";
+    placeAlign = o.align === "start" || o.align === "center" ? o.align : "end";
     actionFn = typeof o.onClick === "function" ? o.onClick : null;
     if (cardEl) {
-      if (actionFn) cardEl.classList.add("is-action");
-      else cardEl.classList.remove("is-action");
+      if (actionFn) {
+        cardEl.classList.add("is-action");
+        cardEl.setAttribute("role", "button");
+        cardEl.tabIndex = 0;
+      } else {
+        cardEl.classList.remove("is-action");
+        cardEl.removeAttribute("role");
+        cardEl.removeAttribute("tabindex");
+      }
     }
     bodyEl.textContent = text;
+    rootEl.classList.toggle("is-hold", !!o.hold);
     rootEl.style.setProperty("--hint-duration", duration / 1e3 + "s");
     clearProgressBarFreeze();
     place();
@@ -13560,10 +13750,13 @@
         place();
       });
     }
-    autoTimer = setTimeout(() => {
-      autoTimer = null;
-      dismiss();
-    }, duration);
+    if (once && id) persistDismissed(id);
+    if (!o.hold) {
+      autoTimer = setTimeout(() => {
+        autoTimer = null;
+        dismiss();
+      }, duration);
+    }
     return true;
   }
   function onResize() {
@@ -13572,7 +13765,7 @@
   }
   if (typeof Settings !== "undefined" && typeof Settings.subscribe === "function") {
     Settings.subscribe(function(e) {
-      if (!visible || dismissing || !activeId) return;
+      if (!visible || dismissing || !activeId || !e || e.origin === "local") return;
       var row = seenSetting(activeId);
       if (row && e && Array.isArray(e.ids) && e.ids.indexOf(row) !== -1 && setting(row) === true) dismiss();
     });
@@ -13728,7 +13921,13 @@
       }
       return { anchorRef, align };
     }
-    function layoutMenuEl(menuEl, anchor3, side, align, isSubmenu) {
+    function dropGap(from2) {
+      const v = getComputedStyle(from2).getPropertyValue("--header-menu-gap").trim();
+      const n = parseFloat(v);
+      if (!Number.isFinite(n)) return 0;
+      return /rem$/.test(v) ? n * parseFloat(getComputedStyle(document.documentElement).fontSize) : n;
+    }
+    function layoutMenuEl(menuEl, anchor3, side, align, isSubmenu, dropFrom) {
       let ar;
       if (isSubmenu && anchor3 instanceof Element) {
         const placed = submenuPlacementAnchor(anchor3);
@@ -13736,6 +13935,10 @@
         align = placed.align;
       } else {
         ar = anchorRect(anchor3);
+      }
+      if (dropFrom && !isSubmenu) {
+        const bar = dropFrom.getBoundingClientRect();
+        ar = { left: ar.left, right: ar.right, top: ar.top, bottom: bar.bottom + dropGap(dropFrom) };
       }
       const alreadyVisible = menuEl.classList.contains("is-visible");
       if (!alreadyVisible) {
@@ -13772,7 +13975,7 @@
       void menuEl.offsetHeight;
       const prop = "transform";
       let finished = false;
-      const finish = () => {
+      const finish2 = () => {
         if (finished) return;
         finished = true;
         menuEl.removeEventListener("transitionend", onEnd);
@@ -13781,15 +13984,15 @@
       };
       const onEnd = (e) => {
         if (e.target !== menuEl || e.propertyName !== prop) return;
-        finish();
+        finish2();
       };
       menuEl.addEventListener("transitionend", onEnd);
-      setTimeout(finish, FRP.OVERLAY_TRANSITION_FALLBACK_MS);
+      setTimeout(finish2, FRP.OVERLAY_TRANSITION_FALLBACK_MS);
     }
     function relayoutAll() {
       for (let i = 0; i < openMenus.length; i++) {
-        const { el: el9, anchorRef, side, align, isSubmenu } = openMenus[i];
-        layoutMenuEl(el9, anchorRef, side, align, isSubmenu);
+        const { el: el9, anchorRef, side, align, isSubmenu, dropFrom } = openMenus[i];
+        layoutMenuEl(el9, anchorRef, side, align, isSubmenu, dropFrom);
       }
     }
     function rovingTabIndexForPanel(menuEl) {
@@ -14231,9 +14434,10 @@
           triggerEl: null,
           side,
           align,
-          isSubmenu: false
+          isSubmenu: false,
+          dropFrom: opts.dropFrom || null
         });
-        layoutMenuEl(menuEl, anchor3, side, align, false);
+        layoutMenuEl(menuEl, anchor3, side, align, false, opts.dropFrom || null);
         setActiveController(controller);
         rovingTabIndexForPanel(menuEl);
         focusMenuItem(menuEl, 0);
@@ -14277,6 +14481,23 @@
       targetEl.addEventListener("contextmenu", handler);
       return () => targetEl.removeEventListener("contextmenu", handler);
     }
+    function update2(anchor3, items3) {
+      if (!openMenus.length || !anchor3 || rootAnchorEl !== anchor3) return false;
+      const root2 = openMenus[0];
+      while (openMenus.length > 1) openMenus.pop().el.remove();
+      submenuSourceRow = null;
+      const fresh = buildMenu(items3, 0);
+      for (const c of root2.el.classList) if (c !== "menu" && c !== "menu--has-icons") fresh.classList.add(c);
+      fresh.style.left = root2.el.style.left;
+      fresh.style.top = root2.el.style.top;
+      const hadFocus = root2.el.contains(document.activeElement);
+      root2.el.replaceWith(fresh);
+      root2.el = fresh;
+      layoutMenuEl(fresh, root2.anchorRef, root2.side, root2.align, false, root2.dropFrom);
+      rovingTabIndexForPanel(fresh);
+      if (hadFocus) focusMenuItem(fresh, 0);
+      return true;
+    }
     function destroy() {
       allControllers.delete(controller);
       if (activeController === controller) setActiveController(null);
@@ -14288,6 +14509,7 @@
     controller.closeAll = closeAll3;
     controller.isOpen = isOpen6;
     controller.rootAnchor = rootAnchor;
+    controller.update = update2;
     controller.relayoutAll = relayoutAll;
     controller.forceCloseSync = forceCloseSync;
     controller.destroy = destroy;
@@ -14329,6 +14551,11 @@
     },
     openContext(opts) {
       if (defaultMenu) defaultMenu.openContext(opts);
+    },
+    /** The open menu anchored at `anchor`, rebuilt from `items` in place: false when it is not open. */
+    update(anchor3, items3) {
+      const ctrl = menuControllerForAnchor(anchor3 instanceof Element ? anchor3 : null);
+      return ctrl ? ctrl.update(anchor3, items3) : false;
     },
     bindContextMenu(targetEl, itemsOrFn, opts) {
       if (defaultMenu) return defaultMenu.bindContextMenu(targetEl, itemsOrFn, opts);
@@ -14376,6 +14603,11 @@
         anchor: btn,
         side: menuOpts.side,
         align: menuOpts.align,
+        // ⛔ A button in the top bar drops its menu from the bar's bottom edge, the
+        // same for every one of them (`--header-menu-gap`, css/tokens.css). The
+        // menu bar's own items (Project, Edit, Tools) open flush under themselves,
+        // as a menu bar's do (Dean tried both, 2026-10-06).
+        dropFrom: btn.closest(".header-menu") ? null : btn.closest("body > header") || null,
         items: items3,
         onClose: () => setOpen2(false)
       });
@@ -14695,17 +14927,17 @@
       run: () => {
         const ed = global14.CurrentEditor;
         if (!ed || typeof ed.getView !== "function") return;
-        const view = ed.getView();
-        if (!view) return;
-        const doc2 = view.state.doc;
+        const view2 = ed.getView();
+        if (!view2) return;
+        const doc2 = view2.state.doc;
         const line = Math.min(Math.max(1, parsed.line), doc2.lines);
         const lineObj = doc2.line(line);
         const col = Math.min(Math.max(1, parsed.col), lineObj.length + 1);
         const pos = Math.min(lineObj.from + col - 1, lineObj.to);
         if (typeof ed.jumpToRange === "function") ed.jumpToRange({ from: pos, to: pos });
         else {
-          view.dispatch({ selection: { anchor: pos, head: pos }, scrollIntoView: true });
-          view.focus();
+          view2.dispatch({ selection: { anchor: pos, head: pos }, scrollIntoView: true });
+          view2.focus();
         }
       }
     }];
@@ -15480,7 +15712,7 @@
     empty.hidden = true;
     wrap.appendChild(empty);
     const total = countRows(groups);
-    const paint3 = (query3) => {
+    const paint4 = (query3) => {
       list3.textContent = "";
       let shown = 0;
       const quiet = !query3.trim();
@@ -15499,8 +15731,8 @@
       empty.hidden = shown > 0;
       count.textContent = query3.trim() ? shown + " of " + total : "";
     };
-    paint3("");
-    input2.addEventListener("input", () => paint3(input2.value));
+    paint4("");
+    input2.addEventListener("input", () => paint4(input2.value));
     return wrap;
   }
   function styleGroups() {
@@ -15693,8 +15925,8 @@
       windowMs: SPEEDS[Settings.get("doubleTapSpeed")] || SPEEDS.normal
     };
   }
-  function shouldFire(state2) {
-    const s = state2 || {};
+  function shouldFire(state3) {
+    const s = state3 || {};
     if (!s.trigger || s.trigger === "off") return false;
     if (s.repeat) return false;
     if (s.otherKeySeen) return false;
@@ -15702,8 +15934,8 @@
     if (!(s.gap > 0)) return false;
     return s.gap <= s.windowMs;
   }
-  function blockReason(state2) {
-    const s = state2 || {};
+  function blockReason(state3) {
+    const s = state3 || {};
     if (s.composing) return "composing";
     if (s.recordingChord) return "chord-recorder";
     if (s.modalOpen) return "modal";
@@ -15724,12 +15956,12 @@
     });
   }
   function otherModifierHeld(e, flag) {
-    const held = [];
-    if (e.shiftKey) held.push("shiftKey");
-    if (e.ctrlKey) held.push("ctrlKey");
-    if (e.altKey) held.push("altKey");
-    if (e.metaKey) held.push("metaKey");
-    return held.some((f) => f !== flag);
+    const held2 = [];
+    if (e.shiftKey) held2.push("shiftKey");
+    if (e.ctrlKey) held2.push("ctrlKey");
+    if (e.altKey) held2.push("altKey");
+    if (e.metaKey) held2.push("metaKey");
+    return held2.some((f) => f !== flag);
   }
   function onKeyDown3(e) {
     const cfg = settings();
@@ -15840,9 +16072,9 @@
   }
   function axisMask(dir, startFades, endFades, size) {
     if (!startFades && !endFades) return null;
-    var start = startFades ? "transparent 0, #000 " + size + "px" : "#000 0";
+    var start2 = startFades ? "transparent 0, #000 " + size + "px" : "#000 0";
     var end = endFades ? "#000 calc(100% - " + size + "px), transparent 100%" : "#000 100%";
-    return "linear-gradient(" + dir + ", " + start + ", " + end + ")";
+    return "linear-gradient(" + dir + ", " + start2 + ", " + end + ")";
   }
   function applyMask(el9, sides, size) {
     var masks = [];
@@ -15948,7 +16180,7 @@
       inner.removeEventListener("transitionend", returnHandler);
       returnHandler = null;
     }
-    function start() {
+    function start2() {
       if (!prefersFineHover2()) return;
       active5 = true;
       cancelReturn();
@@ -15975,7 +16207,7 @@
       };
       inner.addEventListener("transitionend", returnHandler);
     }
-    triggerEl.addEventListener("mouseenter", start);
+    triggerEl.addEventListener("mouseenter", start2);
     triggerEl.addEventListener("mouseleave", stop2);
     if (typeof ResizeObserver !== "undefined") {
       var ro = new ResizeObserver(function() {
@@ -16031,9 +16263,9 @@
     input2.focus();
     const v = String(input2.value || "");
     if (input2.classList && input2.classList.contains("jar-palette-input")) {
-      const start = v.length && PALETTE_PREFIXES.includes(v[0]) ? 1 : 0;
+      const start2 = v.length && PALETTE_PREFIXES.includes(v[0]) ? 1 : 0;
       try {
-        input2.setSelectionRange(start, v.length);
+        input2.setSelectionRange(start2, v.length);
       } catch (_) {
       }
       return true;
@@ -16064,68 +16296,68 @@
   function closeDurationMs() {
     return parseMs(getComputedStyle(document.documentElement).getPropertyValue("--dialog-ms-out"), 132);
   }
-  function dialogInfo(dialogEl) {
-    return dialogs.get(dialogEl);
+  function dialogInfo(dialogEl2) {
+    return dialogs.get(dialogEl2);
   }
-  function registerDialog(dialogEl, removeOnClose) {
-    if (!dialogEl || dialogs.has(dialogEl)) return dialogEl || null;
+  function registerDialog(dialogEl2, removeOnClose) {
+    if (!dialogEl2 || dialogs.has(dialogEl2)) return dialogEl2 || null;
     const info = {
       removeOnClose: !!removeOnClose,
       isClosing: false,
       timer: null
     };
-    dialogEl.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0 || e.target !== dialogEl) return;
+    dialogEl2.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || e.target !== dialogEl2) return;
       function cleanup() {
         document.removeEventListener("pointerup", onPointerUp);
         document.removeEventListener("pointercancel", cleanup);
       }
       function onPointerUp(upE) {
-        if (upE.target === dialogEl) requestDialogClose(dialogEl);
+        if (upE.target === dialogEl2) requestDialogClose(dialogEl2);
         cleanup();
       }
       document.addEventListener("pointerup", onPointerUp);
       document.addEventListener("pointercancel", cleanup);
     });
-    dialogEl.addEventListener("cancel", (e) => {
+    dialogEl2.addEventListener("cancel", (e) => {
       e.preventDefault();
-      requestDialogClose(dialogEl);
+      requestDialogClose(dialogEl2);
     });
-    dialogEl.addEventListener("close", () => {
+    dialogEl2.addEventListener("close", () => {
       info.isClosing = false;
       if (info.timer) {
         clearTimeout(info.timer);
         info.timer = null;
       }
-      dialogEl.classList.remove("is-leaving");
+      dialogEl2.classList.remove("is-leaving");
       if (info.removeOnClose) {
-        dialogs.delete(dialogEl);
-        dialogEl.remove();
+        dialogs.delete(dialogEl2);
+        dialogEl2.remove();
       }
     });
-    dialogs.set(dialogEl, info);
-    return dialogEl;
+    dialogs.set(dialogEl2, info);
+    return dialogEl2;
   }
-  function openDialog(dialogEl) {
-    if (!dialogEl) return null;
-    registerDialog(dialogEl);
-    const info = dialogInfo(dialogEl);
-    if (!info) return dialogEl;
+  function openDialog(dialogEl2) {
+    if (!dialogEl2) return null;
+    registerDialog(dialogEl2);
+    const info = dialogInfo(dialogEl2);
+    if (!info) return dialogEl2;
     info.isClosing = false;
-    dialogEl.classList.remove("is-leaving");
+    dialogEl2.classList.remove("is-leaving");
     if (info.timer) {
       clearTimeout(info.timer);
       info.timer = null;
     }
-    if (!dialogEl.open) dialogEl.showModal();
-    return dialogEl;
+    if (!dialogEl2.open) dialogEl2.showModal();
+    return dialogEl2;
   }
-  function requestDialogClose(dialogEl) {
-    if (!dialogEl) return;
-    const info = dialogInfo(dialogEl);
-    if (!info || !dialogEl.open || info.isClosing) return;
+  function requestDialogClose(dialogEl2) {
+    if (!dialogEl2) return;
+    const info = dialogInfo(dialogEl2);
+    if (!info || !dialogEl2.open || info.isClosing) return;
     info.isClosing = true;
-    dialogEl.classList.add("is-leaving");
+    dialogEl2.classList.add("is-leaving");
     if (info.timer) {
       clearTimeout(info.timer);
       info.timer = null;
@@ -16133,7 +16365,7 @@
     const ms = closeDurationMs();
     info.timer = setTimeout(() => {
       info.timer = null;
-      if (dialogEl.open) dialogEl.close();
+      if (dialogEl2.open) dialogEl2.close();
     }, ms);
   }
   function applyDialogBodyContent(body, opts) {
@@ -16155,8 +16387,8 @@
     const closeButton = opts.closeButton !== false;
     const closeLabel = opts.closeLabel || "Close dialog";
     const removeOnClose = opts.removeOnClose !== false;
-    const dialogEl = document.createElement("dialog");
-    dialogEl.className = [DIALOG_ROOT_CLASS, className].filter(Boolean).join(" ");
+    const dialogEl2 = document.createElement("dialog");
+    dialogEl2.className = [DIALOG_ROOT_CLASS, className].filter(Boolean).join(" ");
     const card = document.createElement("div");
     card.className = ["jar-dialog__card", cardClass].filter(Boolean).join(" ");
     if (closeButton) {
@@ -16167,7 +16399,7 @@
       btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        requestDialogClose(dialogEl);
+        requestDialogClose(dialogEl2);
       });
       card.appendChild(btn);
     }
@@ -16179,7 +16411,7 @@
         titleEl.className = "jar-dialog__title";
         titleEl.id = "jar-dialog-title-" + Math.random().toString(36).slice(2);
         titleEl.textContent = title;
-        dialogEl.setAttribute("aria-labelledby", titleEl.id);
+        dialogEl2.setAttribute("aria-labelledby", titleEl.id);
       }
       if (headerExtra) {
         const header = document.createElement("div");
@@ -16191,16 +16423,16 @@
         card.appendChild(titleEl);
       }
     } else if (opts.ariaLabel) {
-      dialogEl.setAttribute("aria-label", opts.ariaLabel);
+      dialogEl2.setAttribute("aria-label", opts.ariaLabel);
     }
     const body = document.createElement("div");
     body.className = "jar-dialog__body";
     applyDialogBodyContent(body, opts);
     card.appendChild(body);
-    dialogEl.appendChild(card);
-    document.body.appendChild(dialogEl);
-    registerDialog(dialogEl, removeOnClose);
-    return dialogEl;
+    dialogEl2.appendChild(card);
+    document.body.appendChild(dialogEl2);
+    registerDialog(dialogEl2, removeOnClose);
+    return dialogEl2;
   }
   function closeAllDialogs() {
     document.querySelectorAll(`dialog.${DIALOG_ROOT_CLASS}[open]`).forEach((dlg) => {
@@ -16269,10 +16501,10 @@
     }
     return btn;
   }
-  function buildActions(buttons, layout) {
+  function buildActions(buttons2, layout) {
     const actions = el2("div", "jar-prompt-dialog__actions");
     if (layout === "row") actions.classList.add("is-row");
-    for (const b of buttons) {
+    for (const b of buttons2) {
       const btnOpts = {};
       if (b.monoSuffix != null) {
         btnOpts.monoSuffix = b.monoSuffix;
@@ -16282,71 +16514,71 @@
     }
     return actions;
   }
-  function buildRowActions(buttons) {
-    return buildActions(buttons, "row");
+  function buildRowActions(buttons2) {
+    return buildActions(buttons2, "row");
   }
-  function appendBody(shell, opts) {
+  function appendBody(shell2, opts) {
     if (opts.body instanceof Node) {
-      shell.appendChild(opts.body);
+      shell2.appendChild(opts.body);
       return;
     }
     if (opts.step) {
-      shell.appendChild(el2("p", "jar-prompt-dialog__step", opts.step));
+      shell2.appendChild(el2("p", "jar-prompt-dialog__step", opts.step));
     }
     if (opts.subject) {
       const subject = el2("p", "jar-prompt-dialog__subject");
       subject.appendChild(markMono(opts.subject));
-      shell.appendChild(subject);
+      shell2.appendChild(subject);
     }
     if (opts.message != null) {
       const intro = el2("p", "jar-prompt-dialog__message");
       if (opts.message instanceof Node) intro.appendChild(opts.message);
       else intro.textContent = String(opts.message);
-      shell.appendChild(intro);
+      shell2.appendChild(intro);
     }
     if (opts.note) {
-      shell.appendChild(el2("p", "jar-prompt-dialog__note", opts.note));
+      shell2.appendChild(el2("p", "jar-prompt-dialog__note", opts.note));
     }
   }
   function open5(opts) {
     opts = opts || {};
     return new Promise((resolve2) => {
       let settled = false;
-      const shell = el2("div", "jar-prompt-dialog");
-      appendBody(shell, opts);
-      const buttons = opts.buttons || [];
-      if (buttons.length) {
-        shell.appendChild(buildActions(buttons, opts.layout));
+      const shell2 = el2("div", "jar-prompt-dialog");
+      appendBody(shell2, opts);
+      const buttons2 = opts.buttons || [];
+      if (buttons2.length) {
+        shell2.appendChild(buildActions(buttons2, opts.layout));
       }
-      const dialogEl = createDialog({
+      const dialogEl2 = createDialog({
         ariaLabel: opts.ariaLabel || opts.title || "Prompt",
         title: opts.title,
-        content: shell,
+        content: shell2,
         className: opts.className || WRAP_CLASS,
         cardClass: opts.cardClass || CARD_CLASS,
         closeButton: opts.closeButton !== false,
         removeOnClose: true
       });
-      function finish(value) {
+      function finish2(value) {
         if (settled) return;
         settled = true;
         resolve2(value);
-        requestDialogClose(dialogEl);
+        requestDialogClose(dialogEl2);
       }
-      shell.addEventListener("click", (e) => {
+      shell2.addEventListener("click", (e) => {
         const btn = e.target.closest("[data-action]");
         if (!btn) return;
         e.preventDefault();
         e.stopPropagation();
-        finish(btn.dataset.action);
+        finish2(btn.dataset.action);
       });
-      dialogEl.addEventListener("close", () => {
-        if (!settled) finish(null);
+      dialogEl2.addEventListener("close", () => {
+        if (!settled) finish2(null);
       });
-      openDialog(dialogEl);
+      openDialog(dialogEl2);
       if (typeof opts.onOpen === "function") {
         requestAnimationFrame(() => {
-          opts.onOpen(dialogEl, shell);
+          opts.onOpen(dialogEl2, shell2);
         });
       }
     });
@@ -16410,11 +16642,11 @@
   function selectionForValue(value, selection) {
     const v = String(value || "");
     if (!selection) return { start: 0, end: v.length };
-    let start = selection.start != null ? selection.start : 0;
+    let start2 = selection.start != null ? selection.start : 0;
     let end = selection.end != null ? selection.end : v.length;
-    start = Math.max(0, Math.min(start, v.length));
-    end = Math.max(start, Math.min(end, v.length));
-    return { start, end };
+    start2 = Math.max(0, Math.min(start2, v.length));
+    end = Math.max(start2, Math.min(end, v.length));
+    return { start: start2, end };
   }
   function normalizeBelFileName(raw) {
     let name = String(raw || "").trim();
@@ -16458,18 +16690,18 @@
       const cancelBtn = actions.querySelector('[data-action="cancel"]');
       const confirmBtn = actions.querySelector('[data-action="confirm"]');
       wrap.appendChild(actions);
-      const dialogEl = createDialog({
+      const dialogEl2 = createDialog({
         ariaLabel: opts.ariaLabel || "Name",
         content: wrap,
         className: "jar-name-prompt-dialog",
         cardClass: CARD_CLASS2,
         removeOnClose: true
       });
-      function finish(value) {
+      function finish2(value) {
         if (settled) return;
         settled = true;
         resolve2(value);
-        requestDialogClose(dialogEl);
+        requestDialogClose(dialogEl2);
       }
       function showError(msg) {
         if (msg) {
@@ -16494,7 +16726,7 @@
           showError(err);
           return;
         }
-        finish(name);
+        finish2(name);
       }
       input2.addEventListener("input", () => {
         showError(validate(currentNormalized()));
@@ -16506,20 +16738,20 @@
         }
       });
       cancelBtn.addEventListener("click", () => {
-        finish(null);
+        finish2(null);
       });
       confirmBtn.addEventListener("click", () => {
         tryConfirm();
       });
       if (leadEl) {
-        const card = dialogEl.querySelector(".jar-dialog__card");
-        const body = dialogEl.querySelector(".jar-dialog__body");
+        const card = dialogEl2.querySelector(".jar-dialog__card");
+        const body = dialogEl2.querySelector(".jar-dialog__body");
         if (card && body) card.insertBefore(leadEl, body);
       }
-      dialogEl.addEventListener("close", () => {
-        if (!settled) finish(null);
+      dialogEl2.addEventListener("close", () => {
+        if (!settled) finish2(null);
       });
-      openDialog(dialogEl);
+      openDialog(dialogEl2);
       if (document.activeElement !== input2) input2.focus();
       input2.setSelectionRange(sel.start, sel.end);
       showError(validate(currentNormalized()));
@@ -16590,27 +16822,27 @@
       let index = 0;
       const resolutions = [];
       let settled = false;
-      const shell = el9("div", "jar-prompt-dialog");
-      const dialogEl = createDialog({
+      const shell2 = el9("div", "jar-prompt-dialog");
+      const dialogEl2 = createDialog({
         ariaLabel: "Name conflict",
-        content: shell,
+        content: shell2,
         className: WRAP_CLASS2,
         cardClass: CARD_CLASS2,
         removeOnClose: true
       });
-      function finish(value) {
+      function finish2(value) {
         if (settled) return;
         settled = true;
         resolve2(value);
-        requestDialogClose(dialogEl);
+        requestDialogClose(dialogEl2);
       }
       function renderStep() {
-        shell.replaceChildren();
+        shell2.replaceChildren();
         const conflict = conflicts[index];
-        shell.appendChild(buildConflictBody(conflict, conflicts.length, index));
-        shell.appendChild(buildActions2(conflict, conflicts.length));
+        shell2.appendChild(buildConflictBody(conflict, conflicts.length, index));
+        shell2.appendChild(buildActions2(conflict, conflicts.length));
       }
-      shell.addEventListener("click", (e) => {
+      shell2.addEventListener("click", (e) => {
         const btn = e.target.closest("[data-action]");
         if (!btn) return;
         e.preventDefault();
@@ -16618,7 +16850,7 @@
         const action = btn.dataset.action;
         const conflict = conflicts[index];
         if (action === "cancel") {
-          finish(null);
+          finish2(null);
           return;
         }
         if (action === "skip") {
@@ -16629,14 +16861,14 @@
           resolutions.push({ action: "rename", newPath: conflict.suggestedPath });
         }
         index += 1;
-        if (index >= conflicts.length) finish(resolutions);
+        if (index >= conflicts.length) finish2(resolutions);
         else renderStep();
       });
-      dialogEl.addEventListener("close", () => {
-        if (!settled) finish(null);
+      dialogEl2.addEventListener("close", () => {
+        if (!settled) finish2(null);
       });
       renderStep();
-      openDialog(dialogEl);
+      openDialog(dialogEl2);
     });
   }
   var ConflictDialog2 = {
@@ -19093,10 +19325,10 @@
     var line = src.slice(lineStart, lineEnd);
     var rel = idx - lineStart;
     var pad = 42;
-    var start = Math.max(0, rel - pad);
+    var start2 = Math.max(0, rel - pad);
     var end = Math.min(line.length, rel + q.length + pad);
-    var snippet = line.slice(start, end);
-    if (start > 0) snippet = "\u2026" + snippet;
+    var snippet = line.slice(start2, end);
+    if (start2 > 0) snippet = "\u2026" + snippet;
     if (end < line.length) snippet = snippet + "\u2026";
     return {
       snippet,
@@ -19137,7 +19369,7 @@
     var contentHits = [];
     var left = pending.length;
     return new Promise(function(resolve2) {
-      function finish() {
+      function finish2() {
         left -= 1;
         if (left > 0) return;
         var out = metaHits.concat(contentHits);
@@ -19159,8 +19391,8 @@
                 line: sn.line
               });
             }
-            finish();
-          }).catch(finish);
+            finish2();
+          }).catch(finish2);
         })(pending[j]);
       }
     });
@@ -19655,8 +19887,8 @@
         }
       }
     }
-    var shell = document.createElement("div");
-    shell.className = "library-preview";
+    var shell2 = document.createElement("div");
+    shell2.className = "library-preview";
     var headerMeta = document.createElement("div");
     headerMeta.className = "library-preview__header-meta";
     var headerLeft = document.createElement("div");
@@ -19725,8 +19957,8 @@
     codePane.appendChild(codeWrap);
     split.appendChild(treePane);
     split.appendChild(codePane);
-    shell.appendChild(headerMeta);
-    shell.appendChild(split);
+    shell2.appendChild(headerMeta);
+    shell2.appendChild(split);
     function setHeaderFile(name) {
       if (name) {
         fileEl.textContent = name;
@@ -20041,22 +20273,22 @@
       }
     }
     treePane.addEventListener("keydown", handleTreeKeydown);
-    var dialogEl = global30.Dialog.createDialog({
+    var dialogEl2 = global30.Dialog.createDialog({
       ariaLabel: "Library preview: " + scopeLabel,
-      content: shell,
+      content: shell2,
       className: "jar-library-preview-dialog",
       cardClass: "jar-dialog__card jar-dialog__card--library-preview",
       removeOnClose: true
     });
-    activeDialog = dialogEl;
-    dialogEl.addEventListener("close", function() {
-      if (activeDialog === dialogEl) activeDialog = null;
+    activeDialog = dialogEl2;
+    dialogEl2.addEventListener("close", function() {
+      if (activeDialog === dialogEl2) activeDialog = null;
       var libTree = document.querySelector(".library-tree");
       if (libTree && libTree.contains(document.activeElement)) {
         document.activeElement.blur();
       }
     });
-    global30.Dialog.openDialog(dialogEl);
+    global30.Dialog.openDialog(dialogEl2);
     ensureCfgTextsLoaded().then(function() {
       renderTree();
       if (selectedId && fileIndex[selectedId]) {
@@ -21279,7 +21511,7 @@
     el9.classList.remove("is-visible");
     el9.classList.add("is-leaving");
     let done = false;
-    const finish = () => {
+    const finish2 = () => {
       if (done) return;
       done = true;
       el9.removeEventListener("transitionend", onEnd);
@@ -21287,10 +21519,10 @@
     };
     const onEnd = (e) => {
       if (e.target !== el9) return;
-      finish();
+      finish2();
     };
     el9.addEventListener("transitionend", onEnd);
-    setTimeout(finish, LEAVE_MS2 + 40);
+    setTimeout(finish2, LEAVE_MS2 + 40);
   }
   function wireUntil(id, entry, untilFn) {
     const result = untilFn();
@@ -21850,54 +22082,54 @@
     });
     return btn;
   }
-  function buildFoot(view, toggleBtn) {
+  function buildFoot(view2, toggleBtn) {
     const foot = document.createElement("div");
     foot.className = "notif-item-foot";
     if (toggleBtn) foot.appendChild(toggleBtn);
-    if (view.target) {
+    if (view2.target) {
       const jump = document.createElement("button");
       jump.type = "button";
       jump.className = "notif-item-link";
-      jump.textContent = view.target.label;
-      jump.setAttribute("aria-label", "Open " + view.target.label);
+      jump.textContent = view2.target.label;
+      jump.setAttribute("aria-label", "Open " + view2.target.label);
       jump.addEventListener("click", (e) => {
         e.stopPropagation();
-        openTarget(view.id, view.target);
+        openTarget(view2.id, view2.target);
       });
       foot.appendChild(jump);
     }
-    if (view.teaching || view.remote) {
+    if (view2.teaching || view2.remote) {
       const tag = document.createElement("span");
       tag.className = "notif-item-tag";
-      tag.textContent = view.teaching ? "teaching" : "remote";
+      tag.textContent = view2.teaching ? "teaching" : "remote";
       foot.appendChild(tag);
     }
     const stamp = document.createElement("span");
     stamp.className = "notif-item-stamp";
-    stamp.textContent = view.stamp;
-    bindTooltip(stamp, view.stampFull);
+    stamp.textContent = view2.stamp;
+    bindTooltip(stamp, view2.stampFull);
     foot.appendChild(stamp);
     return foot;
   }
-  function buildItem(view) {
+  function buildItem(view2) {
     const li = document.createElement("li");
-    li.className = "notif-item " + kindClass2(view.kind);
-    if (view.unread) li.classList.add("is-unread");
-    li.dataset.notifId = view.id;
-    li.dataset.notifKind = view.kind;
+    li.className = "notif-item " + kindClass2(view2.kind);
+    if (view2.unread) li.classList.add("is-unread");
+    li.dataset.notifId = view2.id;
+    li.dataset.notifKind = view2.kind;
     const title = document.createElement("p");
     title.className = "notif-item-title";
     const kindWord = document.createElement("span");
     kindWord.className = "notif-item-kind";
-    kindWord.textContent = view.meta.label + ": ";
+    kindWord.textContent = view2.meta.label + ": ";
     title.appendChild(kindWord);
-    title.appendChild(document.createTextNode(view.title));
+    title.appendChild(document.createTextNode(view2.title));
     li.appendChild(title);
-    if (view.body) {
+    if (view2.body) {
       const body = document.createElement("p");
       body.className = "notif-item-body";
-      if (view.promotedDetail) body.classList.add("is-diagnostic");
-      for (const seg of view.bodySegments) {
+      if (view2.promotedDetail) body.classList.add("is-diagnostic");
+      for (const seg of view2.bodySegments) {
         if (!seg.code) {
           body.appendChild(document.createTextNode(seg.text));
           continue;
@@ -21911,18 +22143,18 @@
     }
     let toggleBtn = null;
     let pre = null;
-    if (view.detail) {
+    if (view2.detail) {
       diagSeq += 1;
       pre = document.createElement("pre");
       pre.className = "notif-item-diag";
       pre.id = "notif-diag-" + diagSeq;
-      pre.textContent = view.detail;
+      pre.textContent = view2.detail;
       pre.hidden = true;
       toggleBtn = buildDiagToggle(pre);
     }
-    li.appendChild(buildFoot(view, toggleBtn));
+    li.appendChild(buildFoot(view2, toggleBtn));
     if (pre) li.appendChild(pre);
-    if (view.unread) {
+    if (view2.unread) {
       const dot = document.createElement("span");
       dot.className = "notif-item-dot";
       dot.setAttribute("role", "img");
@@ -21936,7 +22168,7 @@
     dismissBtn.innerHTML = svgMarkup('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>');
     dismissBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      dismiss3(view.id);
+      dismiss3(view2.id);
     });
     li.appendChild(dismissBtn);
     return li;
@@ -21944,15 +22176,15 @@
   function renderList2() {
     if (!listEl4 || !emptyEl) return;
     const records2 = store2.list();
-    const view = panelView(records2, Date.now());
+    const view2 = panelView(records2, Date.now());
     listEl4.textContent = "";
-    for (const item of view.items) listEl4.appendChild(buildItem(item));
-    emptyEl.hidden = !view.empty;
-    listEl4.hidden = view.empty;
-    if (clearBtn) clearBtn.hidden = view.empty;
+    for (const item of view2.items) listEl4.appendChild(buildItem(item));
+    emptyEl.hidden = !view2.empty;
+    listEl4.hidden = view2.empty;
+    if (clearBtn) clearBtn.hidden = view2.empty;
     if (countEl2) {
-      countEl2.textContent = view.total ? String(view.total) : "";
-      countEl2.hidden = !view.total;
+      countEl2.textContent = view2.total ? String(view2.total) : "";
+      countEl2.hidden = !view2.total;
     }
     if (fade) fade.update();
     updateBellState();
@@ -22197,6 +22429,10 @@
     }
     track2(document.getElementById("btn-theme"), "click", toggleTheme);
     track2(document.getElementById("btn-settings"), "click", onSettings);
+    track2(document.getElementById("btn-go-home"), "click", () => {
+      if (global34.Commands && global34.Commands.run("app.home")) return;
+      if (global34.Account && global34.Account.goHome) global34.Account.goHome();
+    });
     nameHome();
   }
   function unmount() {
@@ -22574,6 +22810,85 @@
   };
   global35.BelJarReplStream = global35.ReplStream;
 
+  // js/editor-src/ide/coverage-card.mjs
+  function splitTopLevel(text, sep) {
+    const out = [];
+    let depth = 0;
+    let start2 = 0;
+    for (let i = 0; i < text.length; i += 1) {
+      const c = text[i];
+      if (c === "(" || c === "[" || c === "{") depth += 1;
+      else if (c === ")" || c === "]" || c === "}") depth = Math.max(0, depth - 1);
+      else if (depth === 0 && c === sep) {
+        out.push(text.slice(start2, i));
+        start2 = i + 1;
+      }
+    }
+    out.push(text.slice(start2));
+    return out.map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean);
+  }
+  function assumptionsOf(prefix) {
+    const out = [];
+    for (const clause of splitTopLevel(prefix, ";")) {
+      for (const bit of splitTopLevel(clause, ",")) out.push(bit);
+    }
+    return out;
+  }
+  function topLevelTurnstile(item) {
+    let depth = 0;
+    for (let i = 0; i < item.length - 1; i += 1) {
+      const c = item[i];
+      if (c === "(" || c === "[" || c === "{") depth += 1;
+      else if (c === ")" || c === "]" || c === "}") depth -= 1;
+      else if (depth === 0 && c === "|" && item[i + 1] === "-") return i;
+    }
+    return -1;
+  }
+  function coverageCases(text) {
+    const raw = String(text || "");
+    const at = raw.indexOf("NOT COVERED");
+    if (at < 0) return [];
+    const end = raw.indexOf("\n##", at);
+    const block = raw.slice(raw.indexOf("\n", at) + 1, end < 0 ? raw.length : end);
+    const out = [];
+    for (const item of block.split(/^\(\d+\)/m).map((s) => s.trim()).filter(Boolean)) {
+      const turn = topLevelTurnstile(item);
+      if (turn < 0) continue;
+      const prefix = item.slice(0, turn);
+      const pattern = item.slice(turn + 2).replace(/\s+/g, " ").trim();
+      out.push({ prefix, pattern, assumptions: assumptionsOf(prefix) });
+    }
+    return out;
+  }
+  function isCoverageText(text) {
+    return /COVERAGE FAILURE|CASE\(S\) NOT COVERED|Cases didn't cover|CASES DID NOT COVER/i.test(text);
+  }
+  function formatCoverageCard(message2) {
+    const text = String(message2 ?? "").trim();
+    if (!text) return null;
+    if (/^This case is not exhaustive\./.test(text)) return text;
+    if (!isCoverageText(text)) return null;
+    const cases = coverageCases(text);
+    if (!cases.length) {
+      const match = text.match(/Matching fails due to\s+([\s\S]+)/i);
+      if (match) {
+        const why = match[1].replace(/#/g, "").replace(/\s+/g, " ").trim().replace(/\.$/, "");
+        return why ? `This case is not exhaustive.
+
+Matching fails due to ${why}.` : "This case is not exhaustive.";
+      }
+      return "This case is not exhaustive.";
+    }
+    const blocks = cases.map((c) => {
+      const lines = [c.pattern || "(missing pattern)"];
+      for (const a of c.assumptions) lines.push(`  ${a}`);
+      return lines.join("\n");
+    });
+    return `This case is not exhaustive.
+
+${blocks.join("\n\n")}`;
+  }
+
   // js/repl/repl-output.mjs
   var global36 = globalThis;
   var output = document.getElementById("output");
@@ -22715,27 +23030,27 @@
     }
     output.scrollTop = output.scrollHeight;
   }
-  function appendRichTitle(shell, text) {
+  function appendRichTitle(shell2, text) {
     var t = document.createElement("div");
     t.className = "repl-rich-title";
     t.textContent = text;
-    shell.appendChild(t);
+    shell2.appendChild(t);
   }
   function appendRichShell(rawText, buildDom) {
     var block = createReplBlock();
-    var shell = document.createElement("div");
-    shell.className = "repl-rich";
-    buildDom(shell);
-    block.appendChild(shell);
+    var shell2 = document.createElement("div");
+    shell2.className = "repl-rich";
+    buildDom(shell2);
+    block.appendChild(shell2);
     streamAppend(block);
     scrollReplBottom();
   }
   function appendRichMsg(kind, displayText, rawPlain) {
-    appendRichShell(rawPlain != null ? rawPlain : displayText, function(shell) {
+    appendRichShell(rawPlain != null ? rawPlain : displayText, function(shell2) {
       var d = document.createElement("div");
       d.className = "repl-rich-msg repl-rich-msg--" + kind;
       d.textContent = displayText;
-      shell.appendChild(d);
+      shell2.appendChild(d);
     });
   }
   function belugaCommandErrorInfo(text) {
@@ -22751,7 +23066,7 @@
     return true;
   }
   function appendRichBelugaCommandError(rawText, detail2, labelOpt) {
-    appendRichShell(rawText, function(shell) {
+    appendRichShell(rawText, function(shell2) {
       var card = document.createElement("div");
       card.className = "repl-rich-error";
       var head = document.createElement("div");
@@ -22768,11 +23083,11 @@
       body.className = "repl-rich-error-detail";
       body.textContent = detail2;
       card.append(head, body);
-      shell.appendChild(card);
+      shell2.appendChild(card);
     });
   }
   function renderCoverageWarning(text) {
-    appendRichShell(text, function(shell) {
+    appendRichShell(text, function(shell2) {
       var head = document.createElement("div");
       head.className = "repl-rich-warning-head";
       var kind = document.createElement("span");
@@ -22783,36 +23098,22 @@
       sub.className = "repl-rich-warning-sub";
       sub.textContent = "Cases not covered";
       head.appendChild(sub);
-      shell.appendChild(head);
-      var lines = text.split("\n");
-      var bodyLines = [];
-      for (var k = 0; k < lines.length; k++) {
-        var ln = lines[k];
-        if (/^WARNING:\s*Cases didn't cover:?/i.test(ln.trim())) {
-          var rest = ln.replace(/^[^:]*:\s*[^:]*:?\s*/, "").trim();
-          if (/^CASE\(S\) NOT COVERED:?/i.test(rest)) continue;
-          if (rest) bodyLines.push(rest);
-        } else {
-          bodyLines.push(ln);
-        }
-      }
-      while (bodyLines.length && bodyLines[0].trim() === "") bodyLines.shift();
-      while (bodyLines.length && bodyLines[bodyLines.length - 1].trim() === "") bodyLines.pop();
+      shell2.appendChild(head);
       var pre = document.createElement("pre");
       pre.className = "repl-rich-pre repl-rich-pre--warning";
-      pre.textContent = bodyLines.join("\n");
-      shell.appendChild(pre);
+      pre.textContent = formatCoverageCard(text) || text;
+      shell2.appendChild(pre);
     });
   }
   function appendRichPre(raw, titleOpt) {
     var text = normBelugaRaw(raw);
     var body = stripBelugaTrailingSemicolons(text);
-    appendRichShell(text, function(shell) {
-      if (titleOpt) appendRichTitle(shell, titleOpt);
+    appendRichShell(text, function(shell2) {
+      if (titleOpt) appendRichTitle(shell2, titleOpt);
       var pre = document.createElement("pre");
       pre.className = "repl-rich-pre";
       pre.textContent = body;
-      shell.appendChild(pre);
+      shell2.appendChild(pre);
     });
   }
   function appendRichKvGrid(raw, titleText) {
@@ -22820,8 +23121,8 @@
     var lines = inner.split("\n").map(function(l) {
       return l.trim();
     }).filter(Boolean);
-    appendRichShell(raw, function(shell) {
-      appendRichTitle(shell, titleText);
+    appendRichShell(raw, function(shell2) {
+      appendRichTitle(shell2, titleText);
       var warnings = [];
       var kv = [];
       lines.forEach(function(line) {
@@ -22832,7 +23133,7 @@
         var d = document.createElement("div");
         d.className = "repl-rich-msg repl-rich-msg--warn";
         d.textContent = w;
-        shell.appendChild(d);
+        shell2.appendChild(d);
       });
       if (!kv.length) return;
       var grid = document.createElement("div");
@@ -22856,19 +23157,19 @@
         }
         grid.appendChild(row);
       });
-      shell.appendChild(grid);
+      shell2.appendChild(grid);
     });
   }
   function appendLoadFormatted(raw) {
     var text = normBelugaRaw(raw);
     var m = text.match(/The file\s+(.+?)\s+has been successfully loaded;/);
     if (m) {
-      appendRichShell(text, function(shell) {
-        appendRichTitle(shell, "Loaded");
+      appendRichShell(text, function(shell2) {
+        appendRichTitle(shell2, "Loaded");
         var d = document.createElement("div");
         d.className = "repl-rich-msg repl-rich-msg--success";
         d.textContent = 'Loaded "' + m[1] + '".';
-        shell.appendChild(d);
+        shell2.appendChild(d);
       });
     } else appendOutput(text);
   }
@@ -22876,7 +23177,7 @@
     var t = stripBelugaTrailingSemicolons(normBelugaRaw(raw));
     var n = t.match(/^(\d+)\s*$/);
     if (n) {
-      appendRichShell(raw, function(shell) {
+      appendRichShell(raw, function(shell2) {
         var count = Number(n[1]);
         var stat = document.createElement("div");
         stat.className = "repl-rich-countholes";
@@ -22887,30 +23188,30 @@
         countText.className = "repl-rich-countholes-text";
         countText.textContent = count === 1 ? "open hole" : "open holes";
         stat.append(badge, countText);
-        shell.appendChild(stat);
+        shell2.appendChild(stat);
       });
     } else appendOutput(raw);
   }
   function appendLookupholeFormatted(raw) {
     var t = stripBelugaTrailingSemicolons(normBelugaRaw(raw));
     if (!t) return appendRichMsg("muted", "(no result)", "");
-    appendRichShell(raw, function(shell) {
-      appendRichTitle(shell, "Hole id");
+    appendRichShell(raw, function(shell2) {
+      appendRichTitle(shell2, "Hole id");
       var c = document.createElement("code");
       c.className = "repl-rich-badge";
       c.textContent = t;
-      shell.appendChild(c);
+      shell2.appendChild(c);
     });
   }
   function appendChatterFormatted(raw) {
     var t = stripBelugaTrailingSemicolons(normBelugaRaw(raw));
     var on = /chatter is on/i.test(t);
     var off = /chatter is off/i.test(t);
-    appendRichShell(raw, function(shell) {
+    appendRichShell(raw, function(shell2) {
       var d = document.createElement("div");
       d.className = "repl-rich-msg repl-rich-msg--success" + (on ? " repl-rich-msg--accent" : "");
       d.textContent = on ? "Verbose chatter is on." : off ? "Verbose chatter is off." : t || "Ok.";
-      shell.appendChild(d);
+      shell2.appendChild(d);
     });
   }
   function collectEditorQuerySourceLines() {
@@ -23028,7 +23329,7 @@
     var queryLine = meta.queryLine || "";
     var queryError = meta.queryError || "";
     var sourceLine = meta.sourceLine || null;
-    appendRichShell("", function(shell) {
+    appendRichShell("", function(shell2) {
       var wrap = document.createElement("div");
       wrap.className = "repl-query-result";
       if (queryError) wrap.classList.add("repl-query-result--error");
@@ -23082,7 +23383,7 @@
         empty.textContent = queryLine ? "Search stopped without a result (no Done, no error reported)." : "No solutions found.";
         wrap.appendChild(empty);
       }
-      shell.appendChild(wrap);
+      shell2.appendChild(wrap);
     });
   }
   function appendQueryFormatted(raw) {
@@ -23342,8 +23643,8 @@
     var block = createReplBlock();
     block.setAttribute("data-repl-run-pending", "");
     block.classList.add("repl-block--run-enter");
-    var shell = document.createElement("div");
-    shell.className = "repl-rich";
+    var shell2 = document.createElement("div");
+    shell2.className = "repl-rich";
     var pre = document.createElement("pre");
     pre.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-pending";
     pre.setAttribute("aria-busy", "true");
@@ -23358,8 +23659,8 @@
       skel.appendChild(line);
     });
     pre.appendChild(skel);
-    shell.appendChild(pre);
-    block.appendChild(shell);
+    shell2.appendChild(pre);
+    block.appendChild(shell2);
     streamAppend(block);
     pendingRunBlock = block;
     pendingRunStartedAt = performance.now();
@@ -23418,8 +23719,8 @@
     pendingRunStartedAt = 0;
     if (!block) return Promise.resolve();
     if (!block.isConnected) return Promise.resolve();
-    var reduce = prefersReducedMotion2();
-    if (reduce) {
+    var reduce2 = prefersReducedMotion2();
+    if (reduce2) {
       block.remove();
       return Promise.resolve();
     }
@@ -23427,21 +23728,21 @@
     block.classList.add("repl-block--run-dismiss");
     return new Promise(function(resolve2) {
       var settled = false;
-      function finish() {
+      function finish2() {
         if (settled) return;
         settled = true;
         if (block.isConnected) block.remove();
         resolve2();
       }
-      block.addEventListener("transitionend", finish, { once: true });
-      setTimeout(finish, 220);
+      block.addEventListener("transitionend", finish2, { once: true });
+      setTimeout(finish2, 220);
     });
   }
   async function morphPendingPre(pre, kind, text) {
     if (!pre) return;
-    var reduce = prefersReducedMotion2();
+    var reduce2 = prefersReducedMotion2();
     pre.classList.add("repl-rich-pre--run-resolving");
-    if (!reduce) await waitMs(120);
+    if (!reduce2) await waitMs(120);
     pre.classList.remove(
       "repl-rich-pre--run-pending",
       "repl-rich-pre--run-resolving",
@@ -23455,34 +23756,34 @@
     var body = document.createElement("span");
     body.className = "repl-run-body";
     body.textContent = text;
-    if (!reduce) body.classList.add("repl-run-body--enter");
+    if (!reduce2) body.classList.add("repl-run-body--enter");
     pre.appendChild(body);
-    if (!reduce) {
+    if (!reduce2) {
       await nextFrame();
       body.classList.add("repl-run-body--shown");
     }
   }
   async function morphPendingStacked(block, statusText, holesText) {
-    var shell = block.querySelector(".repl-rich");
+    var shell2 = block.querySelector(".repl-rich");
     var pre = block.querySelector(".repl-rich-pre--run-pending");
-    if (!shell || !pre) return;
-    shell.classList.add("repl-rich--stacked");
+    if (!shell2 || !pre) return;
+    shell2.classList.add("repl-rich--stacked");
     if (statusText) {
       await morphPendingPre(pre, "success", statusText);
     } else {
       await morphPendingPre(pre, "holes", holesText);
       return;
     }
-    var reduce = prefersReducedMotion2();
+    var reduce2 = prefersReducedMotion2();
     var hp = document.createElement("pre");
     hp.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes";
-    if (!reduce) hp.classList.add("repl-rich-pre--run-stack-enter");
+    if (!reduce2) hp.classList.add("repl-rich-pre--run-stack-enter");
     var body = document.createElement("span");
     body.className = "repl-run-body";
     body.textContent = holesText;
     hp.appendChild(body);
-    shell.appendChild(hp);
-    if (reduce) {
+    shell2.appendChild(hp);
+    if (reduce2) {
       hp.classList.add("repl-rich-pre--run-stack-shown");
     } else {
       await nextFrame();
@@ -23499,24 +23800,24 @@
       return;
     }
     if (seg.type === "type-recon-holes") {
-      appendRichShell((seg.statusText + "\n" + seg.holesText).trim(), function(shell) {
-        shell.classList.add("repl-rich--stacked");
+      appendRichShell((seg.statusText + "\n" + seg.holesText).trim(), function(shell2) {
+        shell2.classList.add("repl-rich--stacked");
         if (seg.statusText) {
           var sp = document.createElement("pre");
           sp.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-success";
           sp.textContent = seg.statusText;
-          shell.appendChild(sp);
+          shell2.appendChild(sp);
         }
         var hp = document.createElement("pre");
         hp.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes";
         hp.textContent = seg.holesText;
-        shell.appendChild(hp);
+        shell2.appendChild(hp);
       });
       return;
     }
-    var text = seg.text;
+    var text = formatCoverageCard(seg.text) || seg.text;
     if (!text || !String(text).trim()) return;
-    appendRichShell(text, function(shell) {
+    appendRichShell(text, function(shell2) {
       var pre = document.createElement("pre");
       pre.className = "repl-rich-pre repl-rich-pre--run";
       var kind = classifyRunOtherKind(text);
@@ -23524,7 +23825,7 @@
       else if (kind === "holes") pre.classList.add("repl-rich-pre--run-holes");
       else pre.classList.add("repl-rich-pre--run-error");
       pre.textContent = text;
-      shell.appendChild(pre);
+      shell2.appendChild(pre);
     });
   }
   function appendRunOutput(raw) {
@@ -23562,7 +23863,7 @@
         await morphPendingStacked(pending, seg0.statusText, seg0.holesText);
       } else {
         var pre = pending.querySelector(".repl-rich-pre--run-pending");
-        await morphPendingPre(pre, classifyRunOtherKind(seg0.text), seg0.text);
+        await morphPendingPre(pre, classifyRunOtherKind(seg0.text), formatCoverageCard(seg0.text) || seg0.text);
       }
       scrollReplBottom();
       for (var j = 1; j < segs.length; j++) appendRunSegment(segs[j]);
@@ -23640,32 +23941,44 @@
     var elfCount = Number(info.elfCount) || 0;
     var cfgCount = Number(info.cfgCount) || 0;
     var defaultCfgPath = info.defaultCfgPath ? String(info.defaultCfgPath) : "";
-    appendRichShell("", function(shell) {
-      appendRichTitle(shell, "Project");
+    appendRichShell("", function(shell2) {
+      appendRichTitle(shell2, "Project");
       var grid = document.createElement("div");
       grid.className = "repl-rich-kv-grid";
       appendRichKvRow(grid, "Folder", name);
       var files2 = projectFilesSummary(belCount, elfCount, cfgCount);
       if (files2) appendRichKvRow(grid, "Files", files2);
       if (defaultCfgPath) appendRichKvRow(grid, "Flow", defaultCfgPath.split("/").pop());
-      shell.appendChild(grid);
+      shell2.appendChild(grid);
       var note = document.createElement("div");
       note.className = "repl-rich-kv-row repl-rich-kv-row--full repl-rich-v";
       note.textContent = "Run and lint prepend earlier files from the matching .cfg in each folder.";
-      shell.appendChild(note);
+      shell2.appendChild(note);
     });
   }
   function appendProjectEmpty() {
-    appendRichShell("", function(shell) {
-      appendRichTitle(shell, "Project");
+    appendRichShell("", function(shell2) {
+      appendRichTitle(shell2, "Project");
       var msg = document.createElement("div");
       msg.className = "repl-rich-msg repl-rich-msg--warn";
       msg.textContent = "No .bel files in that folder.";
-      shell.appendChild(msg);
+      shell2.appendChild(msg);
     });
   }
   function insertWelcomeBanner() {
-    if (typeof Persist !== "undefined" && !Settings.get("replWelcome")) return;
+    var banner = welcomeBanner();
+    if (banner) streamAppend(banner);
+  }
+  function refreshBanners(root2) {
+    var old = (root2 || output).querySelectorAll(".repl-banner");
+    for (var i = 0; i < old.length; i++) {
+      var banner = welcomeBanner();
+      if (banner) old[i].replaceWith(banner);
+      else old[i].remove();
+    }
+  }
+  function welcomeBanner() {
+    if (typeof Persist !== "undefined" && !Settings.get("replWelcome")) return null;
     var wrap = document.createElement("div");
     wrap.className = "repl-banner";
     var lead = document.createElement("div");
@@ -23677,7 +23990,7 @@
     lead.appendChild(kHelp);
     lead.appendChild(document.createTextNode(" to see commands."));
     wrap.appendChild(lead);
-    streamAppend(wrap);
+    return wrap;
   }
   function clearOutput() {
     pendingRunBlock = null;
@@ -23697,13 +24010,13 @@
   }
   function appendBuildFallbackNotice() {
     var block = createReplBlock();
-    var shell = document.createElement("div");
-    shell.className = "repl-rich";
+    var shell2 = document.createElement("div");
+    shell2.className = "repl-rich";
     var pre = document.createElement("pre");
     pre.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes";
     pre.textContent = "Fast build hit the stack limit. Retrying with Stable.\nTip: switch to Stable in Settings to avoid this for large files.";
-    shell.appendChild(pre);
-    block.appendChild(shell);
+    shell2.appendChild(pre);
+    block.appendChild(shell2);
     streamAppend(block);
     scrollReplBottom();
   }
@@ -23721,6 +24034,7 @@
     appendProjectOpened,
     appendProjectEmpty,
     insertWelcomeBanner,
+    refreshBanners,
     clearOutput,
     scrollReplBottom,
     parseQuerySolutions,
@@ -24779,6 +25093,7 @@
     }
   }
   function persistHistory() {
+    if (typeof ReplPersist !== "undefined" && ReplPersist.isHeld && ReplPersist.isHeld()) return;
     if (typeof Persist === "undefined" || !Persist.writeReplCommands) return;
     Persist.writeReplCommands(replHistory);
   }
@@ -24976,6 +25291,7 @@
   var HTML_CAP = 400 * 1024;
   var saveTimer2 = null;
   var restoring = false;
+  var held = false;
   function getOutput2() {
     return document.getElementById("output");
   }
@@ -25021,7 +25337,7 @@
     if (cmds) p.writeReplCommands(cmds);
   }
   function writeSnapshot() {
-    if (restoring) return;
+    if (restoring || held) return;
     var p = getPersist();
     if (!p || typeof p.writeReplTranscript !== "function") return;
     if (Settings.get("replHistoryPersist") === "none") {
@@ -25059,6 +25375,13 @@
     }
     writeSnapshot();
   }
+  function hold() {
+    held = true;
+    if (saveTimer2) {
+      clearTimeout(saveTimer2);
+      saveTimer2 = null;
+    }
+  }
   function saveIfPending() {
     if (!saveTimer2) return;
     saveNow();
@@ -25093,6 +25416,7 @@
       if (typeof ReplOutput !== "undefined" && ReplOutput.settleInterruptedPendingRuns) {
         ReplOutput.settleInterruptedPendingRuns(output2);
       }
+      if (typeof ReplOutput !== "undefined" && ReplOutput.refreshBanners) ReplOutput.refreshBanners(output2);
       if (typeof snap.scrollTop === "number") {
         output2.scrollTop = snap.scrollTop;
       }
@@ -25117,6 +25441,10 @@
     scheduleSave: scheduleSave2,
     saveNow,
     saveIfPending,
+    hold,
+    isHeld: function() {
+      return held;
+    },
     restore
   };
   global40.BelJarReplPersist = global40.ReplPersist;
@@ -26368,8 +26696,8 @@
       controls[id] = { type: "dropdown", setValue: dd.setValue, read: readFn };
       return dd;
     }
-    var shell = document.createElement("div");
-    shell.className = "jar-settings";
+    var shell2 = document.createElement("div");
+    shell2.className = "jar-settings";
     var nav = document.createElement("nav");
     nav.className = "jar-settings__nav";
     nav.setAttribute("aria-label", "Settings");
@@ -27927,8 +28255,8 @@
     global43.addEventListener("beljar:account", refreshAccountTab);
     selectCategoryRef = selectCategory;
     selectCategory(activeCategory);
-    shell.appendChild(nav);
-    shell.appendChild(main);
+    shell2.appendChild(nav);
+    shell2.appendChild(main);
     var search = makeSearchField({
       slotClass: "jar-settings__search-slot",
       wrapClass: "jar-settings__search",
@@ -27984,8 +28312,8 @@
     }
     closeSettingsSearch = closeSettingsSearchPanel;
     function openSearchResults() {
-      var mount3 = settingsDialogEl || document.body;
-      if (searchResults.parentElement !== mount3) mount3.appendChild(searchResults);
+      var mount4 = settingsDialogEl || document.body;
+      if (searchResults.parentElement !== mount4) mount4.appendChild(searchResults);
       searchResults.hidden = false;
       searchResults.classList.add("is-open");
       search.input.setAttribute("aria-expanded", "true");
@@ -28226,7 +28554,7 @@
     settingsDialogEl = Dialog.createDialog({
       title: "Settings",
       headerExtra: search.slot,
-      content: shell,
+      content: shell2,
       cardClass: "jar-dialog__card--settings",
       removeOnClose: false
     });
@@ -29032,15 +29360,15 @@
     function fullDeclSignature(session, sourceType) {
       var name = session && session.prep && session.prep.name;
       var cached = session && name && session._fullDeclSig && session._fullDeclSig.name === name ? session._fullDeclSig.type : null;
-      var view = session && session.view;
+      var view2 = session && session.view;
       var from2 = session ? session.declFrom : null;
-      if (!view || !name || from2 == null) return cached || sourceType;
+      if (!view2 || !name || from2 == null) return cached || sourceType;
       if (session.fileId && liveEditorFileId2() !== session.fileId) return cached || sourceType;
       var api3 = global47.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
       if (!eng || typeof eng.intelSyncAt !== "function") return cached || sourceType;
-      var to = session.declTo != null ? session.declTo : Math.min(from2 + 400, view.state.doc.length);
-      var idx = view.state.doc.sliceString(from2, to).indexOf(name);
+      var to = session.declTo != null ? session.declTo : Math.min(from2 + 400, view2.state.doc.length);
+      var idx = view2.state.doc.sliceString(from2, to).indexOf(name);
       if (idx < 0) return cached || sourceType;
       try {
         var intel = eng.intelSyncAt(from2 + idx);
@@ -29522,10 +29850,10 @@
       var self = this;
       var fileId = this.fileId || this.anchor && this.anchor.fileId;
       this.clearPendingCommitNav();
-      var view = this.resolveView();
+      var view2 = this.resolveView();
       var api3 = global48.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
-      var hit = this.findLiveHit(view, eng) || this.compromise && this.compromise.liveHit;
+      var hit = this.findLiveHit(view2, eng) || this.compromise && this.compromise.liveHit;
       if (!fileId || !hit) {
         toast4("Open the file to place the proof.", "error");
         this.resetCommitForRetry();
@@ -29581,19 +29909,19 @@
       if (fileId && liveId && liveId !== fileId) {
         return this.pendingCommitAfterNav(source);
       }
-      var view = this.resolveView();
-      if (!view) {
+      var view2 = this.resolveView();
+      if (!view2) {
         this.finishCommitFailure("Open the file to place the proof.", false);
         return Promise.resolve(false);
       }
       var api3 = global48.CurrentEditor;
       var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
-      var hit = this.findLiveHit(view, eng);
+      var hit = this.findLiveHit(view2, eng);
       if (!hit) {
         this.finishCommitFailure("The proof hole is no longer there.", false);
         return Promise.resolve(false);
       }
-      var prep = prepareForHole2(view, hit);
+      var prep = prepareForHole2(view2, hit);
       if (!prep) {
         this.resetCommitForRetry();
         return Promise.resolve(false);
@@ -29601,11 +29929,11 @@
       this.prep = prep;
       this.declFrom = prep.span.from;
       this.declTo = prep.span.to;
-      var range = ed.declRangeWithSemicolon ? ed.declRangeWithSemicolon(view.state.doc, prep.span.from, prep.span.to) : { from: prep.span.from, to: prep.span.to };
+      var range = ed.declRangeWithSemicolon ? ed.declRangeWithSemicolon(view2.state.doc, prep.span.from, prep.span.to) : { from: prep.span.from, to: prep.span.to };
       var declFrom = range.from;
       var declTo = range.to;
-      var docText = view.state.doc.toString();
-      var declSlice = view.state.doc.sliceString(declFrom, declTo);
+      var docText = view2.state.doc.toString();
+      var declSlice = view2.state.doc.sliceString(declFrom, declTo);
       var decl = ed.parseDecl(declSlice);
       if (!decl) {
         this.finishCommitFailure("Lost the declaration to commit into.", false);
@@ -29625,7 +29953,7 @@
         if (client && client.endProverSession) client.endProverSession();
       }
       function commitNow() {
-        ed.commitProof(view, declFrom, declTo, source);
+        ed.commitProof(view2, declFrom, declTo, source);
         self.finishCommitSuccess();
         return true;
       }
@@ -30138,7 +30466,7 @@
       this._workingRow = null;
       this._workingStrip = null;
       this._workingChips = [];
-      function finish() {
+      function finish2() {
         self._settleTimer = null;
         self._settleFlush = null;
         if (!row.isConnected) return;
@@ -30150,14 +30478,14 @@
         }
         self.refreshTreeExplorer();
       }
-      this._settleFlush = finish;
+      this._settleFlush = finish2;
       if (motionOk) {
         var spine = row.querySelector(".harpoon-lab-auto-node");
         if (spine) spine.classList.remove("is-live");
         row.classList.add("is-committing");
-        this._settleTimer = setTimeout(finish, REEL_OUT_MS);
+        this._settleTimer = setTimeout(finish2, REEL_OUT_MS);
       } else {
-        finish();
+        finish2();
       }
     }
     ;
@@ -30584,13 +30912,13 @@
       header.appendChild(el9("span", "harpoon-lab-section-label is-steps", "Derivation"));
       var toggle6 = el9("div", "harpoon-deriv-toggle");
       var views = [["list", "List"], ["tree", "Tree"]];
-      var view = "list";
+      var view2 = "list";
       var listHost = el9("ol", "harpoon-lab-auto-trail is-instant");
       appendAutoTree(listHost, na.steps || []);
       var treeHost = el9("div", "harpoon-deriv-treehost");
       var treeDrawn = false;
       function showView(v) {
-        view = v;
+        view2 = v;
         listHost.hidden = v !== "list";
         treeHost.hidden = v !== "tree";
         toggle6.querySelectorAll(".harpoon-deriv-tab").forEach(function(t) {
@@ -30603,11 +30931,11 @@
         }
       }
       views.forEach(function(vv) {
-        var t = el9("button", "harpoon-deriv-tab" + (vv[0] === view ? " is-active" : ""), vv[1]);
+        var t = el9("button", "harpoon-deriv-tab" + (vv[0] === view2 ? " is-active" : ""), vv[1]);
         t.type = "button";
         t.dataset.view = vv[0];
         t.addEventListener("click", function() {
-          if (view !== vv[0]) showView(vv[0]);
+          if (view2 !== vv[0]) showView(vv[0]);
         });
         toggle6.appendChild(t);
       });
@@ -30910,17 +31238,17 @@
       if (lead) banner.appendChild(el9("p", "hpt-detail-lead", lead));
       return banner;
     }
-    function renderTreeRailOverview(mount3, ctx) {
+    function renderTreeRailOverview(mount4, ctx) {
       var na = ctx.na || {};
       var name = ctx.declName || "theorem";
-      mount3.appendChild(el9("span", "harpoon-lab-section-label is-steps", "Overview"));
+      mount4.appendChild(el9("span", "harpoon-lab-section-label is-steps", "Overview"));
       var banner = el9("div", "hpt-detail-banner is-overview");
       banner.appendChild(el9("div", "hpt-detail-name", name));
-      mount3.appendChild(banner);
+      mount4.appendChild(banner);
       if (na.goalType) {
         var g23 = el9("div", "hpt-detail-goal");
         renderType4(g23, na.goalType);
-        mount3.appendChild(detailSection("Theorem", g23));
+        mount4.appendChild(detailSection("Theorem", g23));
       }
       var snap = na.theoremSnapshot;
       if (snap && (snap.premiseCount || snap.totality)) {
@@ -30931,33 +31259,33 @@
         if (snap.totality && snap.totality.kind) {
           meta.appendChild(el9("span", "hpt-detail-meta-item", "total " + snap.totality.kind + (snap.totality.name ? " " + snap.totality.name : "")));
         }
-        mount3.appendChild(detailSection("Structure", meta));
+        mount4.appendChild(detailSection("Structure", meta));
       }
-      var status = el9("div", "hpt-detail-status");
+      var status2 = el9("div", "hpt-detail-status");
       if (na.phase === "searching") {
-        status.appendChild(el9("div", "hpt-detail-status-main", nativeAutoSearchLabel(na)));
-        status.appendChild(el9("div", "hpt-detail-status-sub", reelStatText(na)));
+        status2.appendChild(el9("div", "hpt-detail-status-main", nativeAutoSearchLabel(na)));
+        status2.appendChild(el9("div", "hpt-detail-status-sub", reelStatText(na)));
       } else if (na.complete) {
-        status.appendChild(el9("div", "hpt-detail-status-main", autoVerdictTitle(na)));
+        status2.appendChild(el9("div", "hpt-detail-status-main", autoVerdictTitle(na)));
         var sc = (na.steps || []).length;
         var line = sc ? sc + (sc === 1 ? " step" : " steps") : "";
         if (na.checks) line += (line ? " \xB7 " : "") + na.checks + (na.checks === 1 ? " check" : " checks");
-        if (line) status.appendChild(el9("div", "hpt-detail-status-sub", line));
+        if (line) status2.appendChild(el9("div", "hpt-detail-status-sub", line));
       } else {
-        status.appendChild(el9("div", "hpt-detail-status-main", autoVerdictTitle(na)));
+        status2.appendChild(el9("div", "hpt-detail-status-main", autoVerdictTitle(na)));
         var sub = autoSubtext(na);
-        if (sub) status.appendChild(el9("div", "hpt-detail-status-sub", sub));
+        if (sub) status2.appendChild(el9("div", "hpt-detail-status-sub", sub));
         var sc2 = (na.steps || []).length;
         if (sc2) {
-          status.appendChild(el9(
+          status2.appendChild(el9(
             "div",
             "hpt-detail-status-sub",
             sc2 + (sc2 === 1 ? " step" : " steps") + " recorded"
           ));
         }
       }
-      mount3.appendChild(detailSection("Status", status));
-      mount3.appendChild(el9("p", "hpt-detail-hint", "Click a node in the tree to inspect a move."));
+      mount4.appendChild(detailSection("Status", status2));
+      mount4.appendChild(el9("p", "hpt-detail-hint", "Click a node in the tree to inspect a move."));
     }
     function renderTreeBreadcrumb(n) {
       if (!n || !global50.HarpoonTree || typeof global50.HarpoonTree.breadcrumb !== "function") return null;
@@ -31083,31 +31411,31 @@
       }
       return where.childNodes.length ? where : null;
     }
-    function renderStateContext(self, mount3, state2, goalState) {
-      if (!state2) return;
+    function renderStateContext(self, mount4, state3, goalState) {
+      if (!state3) return;
       var ed = E3();
-      if (state2.goal) {
+      if (state3.goal) {
         var goalHost = el9("div", "hpt-detail-goal");
         if (ed && typeof ed.mountHoleGoalTier === "function") {
           ed.mountHoleGoalTier(goalHost, {
             surface: "lab",
             goalState: goalState || "live",
-            goal: state2.goal
+            goal: state3.goal
           });
         } else {
-          renderType4(goalHost, state2.goal);
+          renderType4(goalHost, state3.goal);
         }
-        mount3.appendChild(detailSection("Goal", goalHost));
+        mount4.appendChild(detailSection("Goal", goalHost));
       }
-      if (state2.meta && state2.meta.length) {
+      if (state3.meta && state3.meta.length) {
         var metaWrap = el9("div", "hpt-detail-ctx");
-        self.renderCtx(metaWrap, "meta", state2.meta);
-        mount3.appendChild(detailSection("Meta context", metaWrap));
+        self.renderCtx(metaWrap, "meta", state3.meta);
+        mount4.appendChild(detailSection("Meta context", metaWrap));
       }
-      if (state2.ctx && state2.ctx.length) {
+      if (state3.ctx && state3.ctx.length) {
         var ctxWrap = el9("div", "hpt-detail-ctx");
-        self.renderCtx(ctxWrap, "ctx", state2.ctx);
-        mount3.appendChild(detailSection("Context", ctxWrap));
+        self.renderCtx(ctxWrap, "ctx", state3.ctx);
+        mount4.appendChild(detailSection("Context", ctxWrap));
       }
     }
     function renderTreeDetail(card, n, ctx) {
@@ -31124,8 +31452,8 @@
         }
         return;
       }
-      var mount3 = rail ? el9("div", "hpt-detail") : card;
-      if (rail) card.appendChild(mount3);
+      var mount4 = rail ? el9("div", "hpt-detail") : card;
+      if (rail) card.appendChild(mount4);
       var self = this;
       var treeMode = ctx && ctx.treeMode || "path";
       var goalState = ctx && ctx.na && ctx.na.goalState || "live";
@@ -31133,12 +31461,12 @@
       if (n.type === "ghost") {
         var gh = n.ghost;
         var gBanner = renderDetailBanner(gh.kind, gh.head || gh.kind, "candidate not taken");
-        if (rail) mount3.appendChild(gBanner);
+        if (rail) mount4.appendChild(gBanner);
         else card.appendChild(gBanner);
         if (gh.text && gh.text !== gh.head) {
           var gcode = rail ? el9("div", "hpt-detail-code") : el9("div", "hpt-card-code");
           renderSource2(gcode, gh.text);
-          if (rail) mount3.appendChild(detailSection("Fragment", gcode));
+          if (rail) mount4.appendChild(detailSection("Fragment", gcode));
           else card.appendChild(gcode);
         }
         var gverdict = el9(
@@ -31147,19 +31475,19 @@
           (gh.verdict === "guard" ? "skipped \u2014 " : "rejected \u2014 ") + (gh.reason || "did not certify")
         );
         if (gh.rationale) gverdict.textContent += "\n" + gh.rationale;
-        if (rail) mount3.appendChild(gverdict);
+        if (rail) mount4.appendChild(gverdict);
         else card.appendChild(gverdict);
         return;
       }
       if (n.type === "stuck") {
-        mount3.appendChild(renderDetailBanner("stuck", "stuck", "no certified move closes this goal"));
+        mount4.appendChild(renderDetailBanner("stuck", "stuck", "no certified move closes this goal"));
         var whereStuck = renderWhereSection(self, n, null);
-        if (whereStuck) mount3.appendChild(detailSection("Where", whereStuck));
+        if (whereStuck) mount4.appendChild(detailSection("Where", whereStuck));
         var focusStuck = renderFocusLine(n.focus);
-        if (focusStuck) mount3.appendChild(detailSection("Focus", focusStuck));
-        renderStateContext(self, mount3, n.state || { goal: n.goal }, goalState);
+        if (focusStuck) mount4.appendChild(detailSection("Focus", focusStuck));
+        renderStateContext(self, mount4, n.state || { goal: n.goal }, goalState);
         var altStuck = renderAlternativesTray(n.tried || n.frontier || [], { rail });
-        if (altStuck) mount3.appendChild(detailSection("Alternatives", altStuck));
+        if (altStuck) mount4.appendChild(detailSection("Alternatives", altStuck));
         if (!rail) {
         }
         return;
@@ -31168,12 +31496,12 @@
       if (!st) {
         var idleKind = n.type === "theorem" ? null : n.kind || n.type;
         var idleLead = n.sub || (n.type === "arm" ? "case branch" : "");
-        mount3.appendChild(renderDetailBanner(idleKind, n.label || "", idleLead));
+        mount4.appendChild(renderDetailBanner(idleKind, n.label || "", idleLead));
         if (n.type === "theorem" && ctx && ctx.na) {
-          renderStateContext(self, mount3, { goal: ctx.na.goalType }, ctx.na.goalState);
+          renderStateContext(self, mount4, { goal: ctx.na.goalType }, ctx.na.goalState);
           var snap = ctx.na.theoremSnapshot;
           if (snap && snap.premiseCount) {
-            mount3.appendChild(detailSection(
+            mount4.appendChild(detailSection(
               "Structure",
               el9("div", "hpt-detail-theorem-meta", snap.premiseCount + " premise(s)")
             ));
@@ -31181,34 +31509,34 @@
         } else if (n.type === "arm" && n.pattern) {
           var pg = el9("div", "hpt-detail-goal");
           renderType4(pg, n.pattern);
-          mount3.appendChild(detailSection("Branch pattern", pg));
+          mount4.appendChild(detailSection("Branch pattern", pg));
         }
         return;
       }
       var meta = st.meta || {};
       var lead = st.lead || deriveMoveLead(st) || st.rationale || n.sub || "";
-      mount3.appendChild(renderDetailBanner(st.move, n.label || st.move || "move", lead));
+      mount4.appendChild(renderDetailBanner(st.move, n.label || st.move || "move", lead));
       var where = renderWhereSection(self, n, st);
-      if (where) mount3.appendChild(detailSection("Where", where));
+      if (where) mount4.appendChild(detailSection("Where", where));
       var focus = renderFocusLine(st.focus || n.focus);
-      if (focus) mount3.appendChild(detailSection("Focus", focus));
-      renderStateContext(self, mount3, n.state || {
+      if (focus) mount4.appendChild(detailSection("Focus", focus));
+      renderStateContext(self, mount4, n.state || {
         goal: st.goal,
         ctx: st.holeCtx,
         meta: st.holeMeta
       }, goalState);
       var codeEl = el9("div", rail ? "hpt-detail-code" : "hpt-card-code");
       renderSource2(codeEl, st.text || "");
-      mount3.appendChild(detailSection("Fragment", codeEl));
+      mount4.appendChild(detailSection("Fragment", codeEl));
       if (st.move === "synth") {
         var chainEl = renderSynthChain2(meta, rail ? "rail" : "full");
-        if (chainEl) mount3.appendChild(detailSection("Chain", chainEl));
+        if (chainEl) mount4.appendChild(detailSection("Chain", chainEl));
       }
       if (st.move === "split" && meta.armPatterns && meta.armPatterns.length) {
         if (meta.scrutinee) {
           var scrut = el9("div", "hpt-detail-goal");
           renderType4(scrut, meta.scrutinee);
-          mount3.appendChild(detailSection("Scrutinee", scrut));
+          mount4.appendChild(detailSection("Scrutinee", scrut));
         }
         var armCount = meta.armPatterns.length;
         var arms = el9("ul", "hpt-detail-arms");
@@ -31226,13 +31554,13 @@
           );
           armsSection.querySelector(".hpt-detail-section-body").appendChild(note);
         }
-        mount3.appendChild(armsSection);
+        mount4.appendChild(armsSection);
       }
       var foot = renderDetailMeta(meta, st.checks);
-      if (foot) mount3.appendChild(foot);
+      if (foot) mount4.appendChild(foot);
       if (showAlts) {
         var alts = renderAlternativesTray(n.frontier || n.traceEntry && n.traceEntry.tried || [], { rail });
-        if (alts) mount3.appendChild(detailSection("Alternatives", alts));
+        if (alts) mount4.appendChild(detailSection("Alternatives", alts));
       }
     }
     ;
@@ -31381,20 +31709,20 @@
       verified: "Beluga accepts this move",
       rejected: "Beluga rejects this move"
     };
-    function markPip(row, state2, detail2) {
+    function markPip(row, state3, detail2) {
       if (!row || !row._pip) return;
       row.classList.remove("is-checking", "is-verified", "is-rejected");
-      if (state2) row.classList.add("is-" + state2);
-      if (state2 === "verified") row._pip.innerHTML = ICON_CHECK2;
-      else if (state2 === "rejected") row._pip.innerHTML = ICON_DECLINE2;
+      if (state3) row.classList.add("is-" + state3);
+      if (state3 === "verified") row._pip.innerHTML = ICON_CHECK2;
+      else if (state3 === "rejected") row._pip.innerHTML = ICON_DECLINE2;
       else row._pip.innerHTML = "";
       var main = row.querySelector(".harpoon-lab-move-main");
       if (main) {
-        main.disabled = state2 === "rejected";
-        main.setAttribute("aria-disabled", state2 === "rejected" ? "true" : "false");
+        main.disabled = state3 === "rejected";
+        main.setAttribute("aria-disabled", state3 === "rejected" ? "true" : "false");
       }
-      var tip = PIP_TIP[state2] || "";
-      if (state2 === "rejected" && detail2) tip += ": " + String(detail2).slice(0, 180);
+      var tip = PIP_TIP[state3] || "";
+      if (state3 === "rejected" && detail2) tip += ": " + String(detail2).slice(0, 180);
       setTip2(row._pip, tip);
       row._pip.setAttribute("aria-hidden", tip ? "false" : "true");
       if (tip) row._pip.setAttribute("aria-label", tip);
@@ -31427,10 +31755,10 @@
     }
     function skelBar() {
       var bar = el9("div", "harpoon-lab-bar");
-      var status = el9("div", "harpoon-lab-status");
-      status.appendChild(el9("span", "harpoon-lab-status-dot"));
-      status.appendChild(skel("harpoon-skel--text", "3.6rem"));
-      bar.appendChild(status);
+      var status2 = el9("div", "harpoon-lab-status");
+      status2.appendChild(el9("span", "harpoon-lab-status-dot"));
+      status2.appendChild(skel("harpoon-skel--text", "3.6rem"));
+      bar.appendChild(status2);
       return bar;
     }
     function skelMoveRow(i) {
@@ -31449,8 +31777,8 @@
     var GLOW_CLAMP_X = 0.3;
     var GLOW_CLAMP_Y = 0.35;
     function bindOrcaGlow(btn) {
-      var reduce = globalThis.matchMedia && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (reduce) return;
+      var reduce2 = globalThis.matchMedia && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduce2) return;
       var rect = null;
       var raf = 0;
       var pending = null;
@@ -31493,10 +31821,10 @@
     }
     function buildOrcaRunning(session, na) {
       var band = el9("div", "harpoon-lab-orca-band is-running" + (na.paused ? " is-paused" : ""));
-      var shell = el9("div", "harpoon-lab-orca harpoon-lab-orca--live");
+      var shell2 = el9("div", "harpoon-lab-orca harpoon-lab-orca--live");
       var badge = el9("span", "harpoon-lab-orca-badge" + (na.paused ? "" : " is-working"));
       badge.innerHTML = ICON_ORCA2;
-      shell.appendChild(badge);
+      shell2.appendChild(badge);
       session._autoSearchSpinner = badge;
       session._statTipEl = badge;
       var copy = el9("span", "harpoon-lab-orca-copy");
@@ -31505,7 +31833,7 @@
       sub.textContent = na.paused ? "Take a step by hand, or resume" : nativeAutoSearchLabel(na);
       if (!na.paused) sub.style.setProperty("--shimmer-accent", "var(--repl-holes-accent)");
       copy.appendChild(sub);
-      shell.appendChild(copy);
+      shell2.appendChild(copy);
       session._autoSearchText = sub;
       var actions = el9("div", "harpoon-lab-orca-actions");
       var pauseBtn = iconBtn2(
@@ -31529,12 +31857,12 @@
           session.openTreeExplorer();
         }
       ));
-      shell.appendChild(actions);
-      band.appendChild(shell);
+      shell2.appendChild(actions);
+      band.appendChild(shell2);
       session._autoSearchBox = band;
       return band;
     }
-    function buildOrca(session, state2, disabled) {
+    function buildOrca(session, state3, disabled) {
       var band = el9("div", "harpoon-lab-orca-band");
       var btn = el9("button", "harpoon-lab-orca");
       btn.type = "button";
@@ -31547,7 +31875,7 @@
       copy.appendChild(el9(
         "span",
         "harpoon-lab-orca-sub",
-        state2 && state2.steps.length ? "Search for the rest of the proof" : "Search for the whole proof"
+        state3 && state3.steps.length ? "Search for the rest of the proof" : "Search for the whole proof"
       ));
       btn.appendChild(copy);
       if (!disabled) {
@@ -31942,10 +32270,10 @@
         globalThis.requestAnimationFrame(function() {
           var target = self._derivEl;
           if (!target || !target.scrollIntoView) return;
-          var reduce = globalThis.matchMedia && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          var reduce2 = globalThis.matchMedia && globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
           try {
             target.scrollIntoView({
-              behavior: reduce ? "auto" : "smooth",
+              behavior: reduce2 ? "auto" : "smooth",
               block: "start",
               inline: "nearest"
             });
@@ -32173,17 +32501,17 @@
         }
         var open11 = st ? st.holes.length : 0;
         var bar = el9("div", "harpoon-lab-bar");
-        var status = el9("div", "harpoon-lab-status");
+        var status2 = el9("div", "harpoon-lab-status");
         var dot = el9("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
         setTip2(dot, complete2 ? "Proven" : "Unproven");
         dot.setAttribute("aria-label", complete2 ? "Proven" : "Unproven");
-        status.appendChild(dot);
-        status.appendChild(el9(
+        status2.appendChild(dot);
+        status2.appendChild(el9(
           "span",
           "harpoon-lab-status-text",
           complete2 ? "Proven" : open11 === 1 ? "1 goal" : open11 + " goals"
         ));
-        bar.appendChild(status);
+        bar.appendChild(status2);
         var actions = el9("div", "harpoon-lab-bar-actions");
         var undoBtn = iconBtn2(
           "icon-btn",
@@ -32249,17 +32577,17 @@
       } else {
         var open11 = st ? st.holes.length : 0;
         var bar = el9("div", "harpoon-lab-bar");
-        var status = el9("div", "harpoon-lab-status");
+        var status2 = el9("div", "harpoon-lab-status");
         var dot = el9("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
         setTip2(dot, complete2 ? "Proven" : "Unproven");
         dot.setAttribute("aria-label", complete2 ? "Proven" : "Unproven");
-        status.appendChild(dot);
-        status.appendChild(el9(
+        status2.appendChild(dot);
+        status2.appendChild(el9(
           "span",
           "harpoon-lab-status-text",
           complete2 ? "Proven" : open11 === 1 ? "1 goal" : open11 + " goals"
         ));
-        bar.appendChild(status);
+        bar.appendChild(status2);
         var actions = el9("div", "harpoon-lab-bar-actions");
         var undoBtn = iconBtn2(
           "icon-btn",
@@ -32790,8 +33118,8 @@
     var at = liveSessions.indexOf(session);
     if (at !== -1) liveSessions.splice(at, 1);
   }
-  function Session(view, declFrom, declTo, host2) {
-    this.view = view;
+  function Session(view2, declFrom, declTo, host2) {
+    this.view = view2;
     this.declFrom = declFrom;
     this.declTo = declTo;
     this.host = host2 || { kind: "float" };
@@ -32962,14 +33290,14 @@
     }
     return this.view;
   };
-  Session.prototype.captureAnchor = function(view, prep) {
+  Session.prototype.captureAnchor = function(view2, prep) {
     var ed = E();
     if (!ed || typeof ed.captureHarpoonAnchor !== "function" || !prep) return;
     var api3 = global51.CurrentEditor;
     var P3 = global51.Persist;
     var fileId = this.fileId || (P3 && P3.getActiveFileId ? P3.getActiveFileId() : null);
-    var fileText = view ? view.state.doc.toString() : prep.fileText != null ? prep.fileText : liveFileText(fileId);
-    var declSlice = prep.span ? view ? view.state.doc.sliceString(prep.span.from, prep.span.to) : fileText.slice(prep.span.from, prep.span.to) : "";
+    var fileText = view2 ? view2.state.doc.toString() : prep.fileText != null ? prep.fileText : liveFileText(fileId);
+    var declSlice = prep.span ? view2 ? view2.state.doc.sliceString(prep.span.from, prep.span.to) : fileText.slice(prep.span.from, prep.span.to) : "";
     this.anchor = ed.captureHarpoonAnchor(prep, {
       fileId,
       fileText,
@@ -32977,16 +33305,16 @@
       memberFingerprints: api3 && api3.harpoonSuiteFingerprints ? api3.harpoonSuiteFingerprints(fileId) : {}
     });
   };
-  Session.prototype.findLiveHit = function(view, engine) {
+  Session.prototype.findLiveHit = function(view2, engine) {
     if (!this.anchor) return null;
     var anchor3 = { declKey: this.anchor.declKey, holeKey: this.anchor.holeKey };
-    if (view && engine) {
-      var hit = findHoleHit(view, engine, anchor3);
+    if (view2 && engine) {
+      var hit = findHoleHit(view2, engine, anchor3);
       if (hit) return hit;
     }
     var ed = E();
     var fileId = this.fileId || this.anchor.fileId;
-    var text = view && this.resolveView() === view ? view.state.doc.toString() : liveFileText(fileId);
+    var text = view2 && this.resolveView() === view2 ? view2.state.doc.toString() : liveFileText(fileId);
     return findHoleHitInText(text, this.anchor, ed);
   };
   Session.prototype.probeAnchor = function() {
@@ -32998,10 +33326,10 @@
     var api3 = global51.CurrentEditor;
     var active5 = liveEditorFileId() === fileId;
     this.resolveView();
-    var view = active5 ? this.view : null;
+    var view2 = active5 ? this.view : null;
     var fileText = liveFileText(fileId);
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
-    var liveHit = this.findLiveHit(view, eng);
+    var liveHit = this.findLiveHit(view2, eng);
     var memberFp = api3 && typeof api3.harpoonSuiteFingerprints === "function" ? api3.harpoonSuiteFingerprints(fileId) : {};
     var next = ed.assessHarpoonAnchor(this.anchor, {
       fileAvailable: fileText != null,
@@ -33082,20 +33410,20 @@
       return;
     }
     this.userCancelled = false;
-    var view = this.resolveView();
+    var view2 = this.resolveView();
     var api3 = global51.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
-    var hit = this.findLiveHit(view, eng);
+    var hit = this.findLiveHit(view2, eng);
     if (!hit) {
       toast2("The proof hole is no longer there.", "error");
       return;
     }
-    var prep = view ? prepareForHole(view, hit) : prepareForHoleInFile(this.fileId || this.anchor && this.anchor.fileId, hit);
+    var prep = view2 ? prepareForHole(view2, hit) : prepareForHoleInFile(this.fileId || this.anchor && this.anchor.fileId, hit);
     if (!prep) return;
     this.prep = prep;
     this.declFrom = prep.span.from;
     this.declTo = prep.span.to;
-    this.captureAnchor(view, prep);
+    this.captureAnchor(view2, prep);
     this.compromise = { level: "none", reason: "", detail: "" };
     this.nativeAuto = null;
     this.clearNativeAutoShell();
@@ -33611,12 +33939,12 @@
     if (!body) return;
     var open11 = m.subgoals && m.subgoals.length || 0;
     var bar = el4("div", "harpoon-lab-bar");
-    var status = el4("div", "harpoon-lab-status");
+    var status2 = el4("div", "harpoon-lab-status");
     var dot = el4("span", "harpoon-lab-status-dot" + (m.complete ? " is-done" : ""));
     dot.setAttribute("data-tooltip", m.complete ? "Proven" : "Unproven");
     dot.setAttribute("aria-label", m.complete ? "Proven" : "Unproven");
     if (global51.Tooltips && global51.Tooltips.bind) global51.Tooltips.bind(dot);
-    status.appendChild(dot);
+    status2.appendChild(dot);
     var label = el4("span", "harpoon-lab-status-text");
     if (m.complete) {
       label.textContent = "Proven";
@@ -33625,8 +33953,8 @@
     } else {
       label.textContent = open11 + " goals";
     }
-    status.appendChild(label);
-    bar.appendChild(status);
+    status2.appendChild(label);
+    bar.appendChild(status2);
     var actions = el4("div", "harpoon-lab-bar-actions");
     actions.appendChild(iconBtn("icon-btn", ICON_UNDO, "Undo", "Undo", function() {
       self.undo();
@@ -34125,7 +34453,7 @@
       fileStart: ctx.fileStart != null ? ctx.fileStart : 0
     };
   }
-  function prepareForHole(view, hit) {
+  function prepareForHole(view2, hit) {
     var ed = E();
     var api3 = global51.CurrentEditor;
     var ctx = api3 && typeof api3.getHoleActionContext === "function" ? api3.getHoleActionContext() : null;
@@ -34138,7 +34466,7 @@
       toast2("Harpoon: couldn\u2019t find the enclosing declaration.", "error");
       return null;
     }
-    var decl = ed.parseDecl(view.state.doc.sliceString(span.from, span.to));
+    var decl = ed.parseDecl(view2.state.doc.sliceString(span.from, span.to));
     if (!decl) {
       toast2("Harpoon: only rec/proof declarations are supported.", "error");
       return null;
@@ -34179,9 +34507,9 @@
       global51.WorkspaceState.scheduleSave();
     }
   }
-  function listHoleHits(view, engine) {
-    if (!view || !engine || typeof engine.getHoles !== "function") return [];
-    var doc2 = view.state.doc;
+  function listHoleHits(view2, engine) {
+    if (!view2 || !engine || typeof engine.getHoles !== "function") return [];
+    var doc2 = view2.state.doc;
     var out = [];
     var holes = engine.getHoles() || [];
     for (var i = 0; i < holes.length; i++) {
@@ -34193,9 +34521,9 @@
     }
     return out;
   }
-  function findHoleHit(view, engine, anchor3) {
+  function findHoleHit(view2, engine, anchor3) {
     if (!anchor3) return null;
-    var hits = listHoleHits(view, engine);
+    var hits = listHoleHits(view2, engine);
     if (anchor3.holeKey) {
       for (var i = 0; i < hits.length; i++) {
         if (holeKeyFromHit(hits[i]) === anchor3.holeKey) return hits[i];
@@ -34212,7 +34540,7 @@
       else if (ed && ed.getMemberSpan) span = ed.getMemberSpan(hit.from);
       else if (ed && ed.getDeclSpan) span = ed.getDeclSpan(hit.from);
       if (!span) continue;
-      var decl = ed.parseDecl(view.state.doc.sliceString(span.from, span.to));
+      var decl = ed.parseDecl(view2.state.doc.sliceString(span.from, span.to));
       if (decl && decl.kw + ":" + decl.name === anchor3.declKey) return hit;
     }
     return null;
@@ -34220,12 +34548,12 @@
   function openingMode() {
     return Settings.get("harpoonMode");
   }
-  function runSession(view, prep, host2) {
-    var session = new Session(view, prep.span.from, prep.span.to, host2);
+  function runSession(view2, prep, host2) {
+    var session = new Session(view2, prep.span.from, prep.span.to, host2);
     session.prep = prep;
     var persist2 = global51.Persist;
     session.fileId = host2.fileId || (persist2 && persist2.getActiveFileId ? persist2.getActiveFileId() : null);
-    session.captureAnchor(view, prep);
+    session.captureAnchor(view2, prep);
     session.bindProbe();
     var content = el4("div", "harpoon-lab" + (host2.kind === "panel" ? " harpoon-lab--panel" : ""));
     session.bodyEl = content;
@@ -34237,7 +34565,7 @@
     });
     return session;
   }
-  function openFromHole(view, engine, hit, opts) {
+  function openFromHole(view2, engine, hit, opts) {
     opts = opts || {};
     var ed = E();
     var fw = FW();
@@ -34245,11 +34573,11 @@
       toast2("Harpoon unavailable.", "error");
       return;
     }
-    var prep = prepareForHole(view, hit);
+    var prep = prepareForHole(view2, hit);
     if (!prep) return;
     var persist2 = global51.Persist;
     var fileId = persist2 && persist2.getActiveFileId ? persist2.getActiveFileId() : null;
-    var session = runSession(view, prep, {
+    var session = runSession(view2, prep, {
       kind: "float",
       mount: function(content, s) {
         var geom = opts.geom || {};
@@ -34288,19 +34616,19 @@
     wrap.appendChild(el4("span", "harpoon-lab-title-text", name ? "Harpoon \xB7 " + name : "Harpoon"));
     return wrap;
   }
-  function proveInPanel(view, engine, hit, container, opts) {
+  function proveInPanel(view2, engine, hit, container, opts) {
     var ed = E();
     if (!ed) {
       toast2("Harpoon unavailable.", "error");
       return;
     }
     opts = opts || {};
-    var prep = prepareForHole(view, hit);
+    var prep = prepareForHole(view2, hit);
     if (!prep) {
       if (opts.onSessionEnd) opts.onSessionEnd();
       return;
     }
-    return runSession(view, prep, {
+    return runSession(view2, prep, {
       kind: "panel",
       onSessionStart: opts.onSessionStart,
       onSessionEnd: opts.onSessionEnd,
@@ -34353,11 +34681,11 @@
       });
     }
   }
-  function restoreFloatingHarpoonWindow(entry, view, engine) {
-    if (!entry || entry.kind !== "harpoon" || !view || !engine) return false;
-    var hit = findHoleHit(view, engine, entry.anchor);
+  function restoreFloatingHarpoonWindow(entry, view2, engine) {
+    if (!entry || entry.kind !== "harpoon" || !view2 || !engine) return false;
+    var hit = findHoleHit(view2, engine, entry.anchor);
     if (!hit) return false;
-    openFromHole(view, engine, hit, { geom: entry.geom });
+    openFromHole(view2, engine, hit, { geom: entry.geom });
     return true;
   }
   global51.Harpoon = {
@@ -34570,10 +34898,10 @@
     var api3 = global53.CurrentEditor;
     return api3 && typeof api3.getView === "function" ? api3.getView() : null;
   }
-  function activeSyntacticHits(view) {
+  function activeSyntacticHits(view2) {
     var ed = E2();
-    if (!view || !ed || typeof ed.scanFileHoles !== "function") return [];
-    return ed.scanFileHoles(view.state.doc.toString()).map(function(h) {
+    if (!view2 || !ed || typeof ed.scanFileHoles !== "function") return [];
+    return ed.scanFileHoles(view2.state.doc.toString()).map(function(h) {
       return { hole: h, from: h.from, to: h.to };
     });
   }
@@ -34680,7 +35008,7 @@
     backHandler = null;
     if (backBtn) backBtn.hidden = true;
   }
-  function declKeyForHit(view, hit) {
+  function declKeyForHit(view2, hit) {
     var ed = E2();
     var api3 = global53.CurrentEditor;
     if (!hit) return null;
@@ -34690,7 +35018,7 @@
     else if (ed && ed.getMemberSpan) span = ed.getMemberSpan(hit.from);
     else if (ed && ed.getDeclSpan) span = ed.getDeclSpan(hit.from);
     if (!span) return null;
-    var decl = ed && ed.parseDecl ? ed.parseDecl(view.state.doc.sliceString(span.from, span.to)) : null;
+    var decl = ed && ed.parseDecl ? ed.parseDecl(view2.state.doc.sliceString(span.from, span.to)) : null;
     if (!decl) return null;
     return decl.kw + ":" + decl.name;
   }
@@ -34732,12 +35060,12 @@
     }
     goalEl.appendChild(el5("span", "harpoon-hole-recalc beljar-tip-shimmer", "Recalculating\u2026"));
   }
-  function applyGoalStateToModel(model, view) {
+  function applyGoalStateToModel(model, view2) {
     var ed = E2();
     var api3 = global53.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
     var P3 = typeof global53.Persist !== "undefined" ? global53.Persist : null;
-    if (!ed || typeof ed.enrichHoleHitsWithGoalState !== "function" || !view) return model;
+    if (!ed || typeof ed.enrichHoleHitsWithGoalState !== "function" || !view2) return model;
     var activeId2 = activeFileId();
     var getText = P3 && typeof P3.getFileText === "function" ? function(id) {
       return P3.getFileText(id);
@@ -34748,7 +35076,7 @@
       var sec = model.sections[si];
       for (var ei = 0; ei < sec.entries.length; ei++) {
         var entry = sec.entries[ei];
-        var enriched = ed.enrichHoleHitsWithGoalState(view, [entry.hit], entry.filePath, eng, {
+        var enriched = ed.enrichHoleHitsWithGoalState(view2, [entry.hit], entry.filePath, eng, {
           fileId: entry.fileId,
           isActiveFile: entry.fileId === activeId2,
           inDevelopment: entry.inDevelopment !== false,
@@ -34759,9 +35087,9 @@
     }
     return model;
   }
-  function maybeCertifyVisibleGoals(model, view) {
+  function maybeCertifyVisibleGoals(model, view2) {
     var ed = E2();
-    if (!ed || typeof ed.scheduleCertifyHoleGoalsScoped !== "function" || !view) return;
+    if (!ed || typeof ed.scheduleCertifyHoleGoalsScoped !== "function" || !view2) return;
     var activeId2 = activeFileId();
     var hits = [];
     for (var si = 0; si < model.sections.length; si++) {
@@ -34772,7 +35100,7 @@
         hits.push(entry.hit);
       }
     }
-    if (hits.length) ed.scheduleCertifyHoleGoalsScoped(view, hits);
+    if (hits.length) ed.scheduleCertifyHoleGoalsScoped(view2, hits);
   }
   function mergeHitGoal(hit, richHoles) {
     if (!richHoles || !richHoles.length || !hit) return hit;
@@ -34794,17 +35122,17 @@
   }
   function collectInScopeHoleGoals() {
     var ed = E2();
-    var view = curView();
-    if (ed && typeof ed.freshHoleGoalsForDevelopment === "function" && view) {
-      return ed.freshHoleGoalsForDevelopment(view) || {};
+    var view2 = curView();
+    if (ed && typeof ed.freshHoleGoalsForDevelopment === "function" && view2) {
+      return ed.freshHoleGoalsForDevelopment(view2) || {};
     }
     return {};
   }
-  function enrichOutOfScopeEntry(entry, view) {
+  function enrichOutOfScopeEntry(entry, view2) {
     if (entry.inDevelopment !== false || entry.hit.hole.goal) return entry;
     var ed = E2();
-    if (!ed || typeof ed.freshHoleGoalsForFile !== "function" || !view) return entry;
-    var extra = ed.freshHoleGoalsForFile(view, entry.fileId) || {};
+    if (!ed || typeof ed.freshHoleGoalsForFile !== "function" || !view2) return entry;
+    var extra = ed.freshHoleGoalsForFile(view2, entry.fileId) || {};
     var rich = extra[entry.filePath];
     if (!rich) return entry;
     return Object.assign({}, entry, { hit: mergeHitGoal(entry.hit, rich) });
@@ -34813,12 +35141,12 @@
     var P3 = typeof global53.Persist !== "undefined" ? global53.Persist : null;
     var PG = typeof global53.HarpoonGoalSections !== "undefined" ? global53.HarpoonGoalSections : null;
     var holeGoals = collectInScopeHoleGoals();
-    var view = curView();
+    var view2 = curView();
     var ed = E2();
-    var devPaths = ed && typeof ed.developmentMemberPaths === "function" && view ? ed.developmentMemberPaths(view) : null;
+    var devPaths = ed && typeof ed.developmentMemberPaths === "function" && view2 ? ed.developmentMemberPaths(view2) : null;
     if (!P3 || !PG || typeof PG.buildSections !== "function") {
       var fp = activeFilePath();
-      var hits = activeSyntacticHits(view);
+      var hits = activeSyntacticHits(view2);
       if (holeGoals[fp]) {
         hits = hits.map(function(hit) {
           return mergeHitGoal(hit, holeGoals[fp]);
@@ -34852,7 +35180,7 @@
       files: files2,
       getText,
       activeFileId: activeFileId(),
-      activeHits: activeSyntacticHits(view),
+      activeHits: activeSyntacticHits(view2),
       memberHoles: holeGoals,
       developmentPaths: devPaths,
       getActiveCfgsForDir: typeof P3.getActiveCfgsForDir === "function" ? function(dir) {
@@ -34864,7 +35192,7 @@
     for (var si = 0; si < model.sections.length; si++) {
       var sec = model.sections[si];
       for (var ei = 0; ei < sec.entries.length; ei++) {
-        sec.entries[ei] = enrichOutOfScopeEntry(sec.entries[ei], view);
+        sec.entries[ei] = enrichOutOfScopeEntry(sec.entries[ei], view2);
       }
     }
     return model;
@@ -35044,11 +35372,11 @@
   function renderList3(opts) {
     if (!bodyEl2) return;
     exitProofMode();
-    var view = curView();
+    var view2 = curView();
     declTextCache = /* @__PURE__ */ Object.create(null);
     var model = collectProjectSections();
-    applyGoalStateToModel(model, view);
-    if (opts && opts.certify) maybeCertifyVisibleGoals(model, view);
+    applyGoalStateToModel(model, view2);
+    if (opts && opts.certify) maybeCertifyVisibleGoals(model, view2);
     var renderKey = modelRenderKey(model);
     if (model.totalCount && renderKey === lastListRenderKey && bodyEl2.querySelector(".harpoon-panel-list")) return;
     lastListRenderKey = renderKey;
@@ -35088,7 +35416,7 @@
     bodyEl2.appendChild(root2);
     scheduleMarkClipped(root2);
   }
-  function beginPanelSession(fileId, declKey, start) {
+  function beginPanelSession(fileId, declKey, start2) {
     enterProofMode();
     if (declKey && fileId) provingDecl = { fileId, declKey };
     if (global53.WorkspaceState && global53.WorkspaceState.scheduleSave) {
@@ -35108,7 +35436,7 @@
       provingDecl = null;
       renderList3();
     };
-    panelSession = start(host2, {
+    panelSession = start2(host2, {
       onSessionStart: function() {
         enterProofMode();
       },
@@ -35125,12 +35453,12 @@
       }
     });
   }
-  function proveHit(view, eng, hit, fileId) {
+  function proveHit(view2, eng, hit, fileId) {
     var lab = global53.Harpoon;
     if (!lab || typeof lab.proveInPanel !== "function") return;
     var fid = fileId || activeFileId();
-    beginPanelSession(fid, declKeyForHit(view, hit), function(host2, opts) {
-      return lab.proveInPanel(view, eng, hit, host2, opts);
+    beginPanelSession(fid, declKeyForHit(view2, hit), function(host2, opts) {
+      return lab.proveInPanel(view2, eng, hit, host2, opts);
     });
   }
   function declKeyInFileText(fileId, from2) {
@@ -35152,10 +35480,10 @@
       });
       return;
     }
-    var view = curView();
+    var view2 = curView();
     var api3 = global53.CurrentEditor;
     var eng = api3 && typeof api3.getSemanticEngine === "function" ? api3.getSemanticEngine() : null;
-    if (view && eng) proveHit(view, eng, entry.hit, fid);
+    if (view2 && eng) proveHit(view2, eng, entry.hit, fid);
   }
   function init13(container, opts) {
     bodyEl2 = container;
@@ -35182,15 +35510,15 @@
   function restoreWorkspaceHarpoon(sidebar, deps) {
     if (!sidebar || !sidebar.harpoon || !sidebar.harpoon.provingDecl) return;
     var decl = sidebar.harpoon.provingDecl;
-    var view = deps && deps.view;
+    var view2 = deps && deps.view;
     var eng = deps && deps.engine;
-    if (!view || !eng) return;
+    if (!view2 || !eng) return;
     if (decl.fileId && decl.fileId !== activeFileId()) return;
     var lab = global53.Harpoon;
     if (!lab) return;
     var hit = null;
     if (typeof lab.restoreFloatingHarpoonWindow === "function") {
-      var doc2 = view.state.doc;
+      var doc2 = view2.state.doc;
       var holes = eng.getHoles ? eng.getHoles() : [];
       for (var i = 0; i < holes.length; i++) {
         var h = holes[i];
@@ -35198,13 +35526,13 @@
         var off = doc2.line(h.line).from + Math.max(0, (h.col || 1) - 1);
         if (off >= doc2.length || doc2.sliceString(off, off + 1) !== "?") continue;
         var candidate = { hole: h, from: off, to: off + 1 };
-        if (declKeyForHit(view, candidate) === decl.declKey) {
+        if (declKeyForHit(view2, candidate) === decl.declKey) {
           hit = candidate;
           break;
         }
       }
     }
-    if (hit) proveHit(view, eng, hit, decl.fileId);
+    if (hit) proveHit(view2, eng, hit, decl.fileId);
   }
   global53.HarpoonPanel = {
     init: init13,
@@ -35342,8 +35670,8 @@
     }
     return { kind: error ? "error" : holes ? "holes" : "ok", holes, first };
   }
-  function leftDuringRun(start, end) {
-    return !!end.hidden || start.fileId != null && end.fileId !== start.fileId;
+  function leftDuringRun(start2, end) {
+    return !!end.hidden || start2.fileId != null && end.fileId !== start2.fileId;
   }
   function runNotice(verdict, label, fileOf) {
     if (verdict.kind === "ok") {
@@ -35632,9 +35960,9 @@
       hidden: typeof document !== "undefined" && document.visibilityState === "hidden"
     };
   }
-  function noteIfLeft(start, raw, label) {
+  function noteIfLeft(start2, raw, label) {
     var N = typeof Notifications !== "undefined" ? Notifications : null;
-    if (!N || typeof N.emit !== "function" || !leftDuringRun(start, whereNow())) return;
+    if (!N || typeof N.emit !== "function" || !leftDuringRun(start2, whereNow())) return;
     var files2 = typeof Persist !== "undefined" && Persist.listFiles && Persist.listFiles() || [];
     function fileOf(path) {
       for (var i = 0; i < files2.length; i++) if (files2[i].name === path) return files2[i].id;
@@ -35953,7 +36281,10 @@
 
   // js/account/avatar.mjs
   var seen = /* @__PURE__ */ new Map();
-  function identiconBackground(data, size) {
+  function rgb(c) {
+    return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+  }
+  function identiconColours(data, size) {
     if (!data || !size || data.length < size * size * 4) return null;
     const px = (x, y) => (y * size + x) * 4;
     const b = px(0, 0);
@@ -35961,7 +36292,11 @@
     if (data[b + 3] < 250 || bg[0] + bg[1] + bg[2] < 600) return null;
     const near = (i, c) => Math.abs(data[i] - c[0]) + Math.abs(data[i + 1] - c[1]) + Math.abs(data[i + 2] - c[2]) <= 12;
     const band = Math.max(1, Math.round(size / 12) - 1);
+    const counts = /* @__PURE__ */ new Map();
     let ink = null;
+    let bestKey = 0;
+    let bestN = 0;
+    let bestFar = -1;
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
         const i = px(x, y);
@@ -35969,9 +36304,23 @@
         if (x < band || y < band || x >= size - band || y >= size - band) return null;
         if (!ink) ink = [data[i], data[i + 1], data[i + 2]];
         else if (!near(i, ink)) return null;
+        const key = data[i] << 16 | data[i + 1] << 8 | data[i + 2];
+        const n = (counts.get(key) || 0) + 1;
+        counts.set(key, n);
+        if (n < bestN) continue;
+        const far = Math.abs(data[i] - bg[0]) + Math.abs(data[i + 1] - bg[1]) + Math.abs(data[i + 2] - bg[2]);
+        if (n > bestN || far > bestFar) {
+          bestN = n;
+          bestFar = far;
+          bestKey = key;
+        }
       }
     }
-    return ink ? `rgb(${bg[0]}, ${bg[1]}, ${bg[2]})` : null;
+    if (!ink) return null;
+    return {
+      background: rgb(bg),
+      ink: rgb([bestKey >> 16 & 255, bestKey >> 8 & 255, bestKey & 255])
+    };
   }
   function read(img) {
     const size = img.naturalWidth;
@@ -35981,12 +36330,13 @@
     c.height = size;
     const cx = c.getContext("2d", { willReadFrequently: true });
     cx.drawImage(img, 0, 0);
-    return identiconBackground(cx.getImageData(0, 0, size, size).data, size);
+    return identiconColours(cx.getImageData(0, 0, size, size).data, size);
   }
-  function apply2(img, bg) {
-    if (!bg) return;
+  function apply2(img, colours) {
+    if (!colours) return;
     img.classList.add("is-identicon");
-    img.style.setProperty("--avatar-bg", bg);
+    img.style.setProperty("--avatar-bg", colours.background);
+    img.style.setProperty("--avatar-ink", colours.ink);
   }
   function decorateAvatar(img) {
     const src = img.currentSrc || img.src;
@@ -35994,13 +36344,80 @@
       apply2(img, seen.get(src));
       return;
     }
-    let bg = null;
+    let colours = null;
     try {
-      bg = read(img);
+      colours = read(img);
     } catch (_) {
     }
-    seen.set(src, bg);
-    apply2(img, bg);
+    seen.set(src, colours);
+    apply2(img, colours);
+  }
+  function motionHeld() {
+    const root2 = typeof document !== "undefined" ? document.documentElement : null;
+    if (!root2) return false;
+    if (root2.classList.contains("jar-motion-full")) return false;
+    if (root2.classList.contains("jar-motion-reduce")) return true;
+    try {
+      return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (_) {
+      return false;
+    }
+  }
+  function whenPaintable(face) {
+    if (!face || face.tagName !== "IMG") return Promise.resolve(true);
+    if (typeof face.decode === "function") return face.decode().then(() => true, () => false);
+    if (face.complete) return Promise.resolve(face.naturalWidth > 0);
+    return new Promise((resolve2) => {
+      face.addEventListener("load", () => resolve2(true), { once: true });
+      face.addEventListener("error", () => resolve2(false), { once: true });
+    });
+  }
+  function revealAvatar(btn, face, onFail) {
+    const prior = btn && btn.querySelector(":scope > .account-avatar--placeholder");
+    if (btn && btn._avatarReveal) return true;
+    if (!prior || motionHeld()) return false;
+    const token = {};
+    btn._avatarReveal = token;
+    face.classList.add("is-arriving");
+    let settled = false;
+    const alive = () => btn._avatarReveal === token;
+    const finish2 = () => {
+      if (settled || !alive()) return;
+      settled = true;
+      btn._avatarReveal = null;
+      face.classList.remove("is-arriving", "is-shown");
+      if (prior.isConnected) prior.remove();
+    };
+    const fail = () => {
+      if (settled || !alive()) return;
+      settled = true;
+      btn._avatarReveal = null;
+      if (onFail) onFail();
+    };
+    const start2 = () => {
+      if (!alive()) return;
+      if (!prior.isConnected) {
+        btn._avatarReveal = null;
+        return;
+      }
+      if (face.tagName === "IMG" && face.complete && face.naturalWidth) decorateAvatar(face);
+      btn.appendChild(face);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!alive() || !face.isConnected) {
+          if (alive()) btn._avatarReveal = null;
+          return;
+        }
+        face.classList.add("is-shown");
+        face.addEventListener("transitionend", (ev) => {
+          if (ev.target === face && ev.propertyName === "opacity") finish2();
+        });
+        window.setTimeout(finish2, 800);
+      }));
+    };
+    whenPaintable(face).then((ok) => {
+      (ok ? start2 : fail)();
+    });
+    return true;
   }
   function avatarImage(src, cls) {
     const img = document.createElement("img");
@@ -36071,7 +36488,43 @@
   var user = null;
   var available = false;
   var unreachable2 = null;
+  var asked = false;
   var adopting = false;
+  var placeholder = null;
+  function accountState(o) {
+    if (!o.asked) return "checking";
+    if (!o.available) return "none";
+    if (o.unreachable) return "unreachable";
+    return o.user ? "signed-in" : "signed-out";
+  }
+  function accountMenu(state3, o = {}) {
+    if (state3 === "checking") return [{ type: "status", title: "Checking your account\u2026" }];
+    if (state3 === "none") {
+      return [{ type: "status", title: "No accounts here", detail: "This copy of BelJar has no server, so your projects stay in this browser." }];
+    }
+    if (state3 === "unreachable") {
+      return [
+        { type: "status", title: "Can\u2019t reach BelJar\u2019s server", detail: o.reasonWords || null, tone: "warning" },
+        { type: "separator" },
+        { label: "Try again", act: "try-again" }
+      ];
+    }
+    if (state3 === "signed-out") {
+      return [
+        { type: "status", title: "Not signed in", detail: "Sign in to keep your projects on every device." },
+        { type: "separator" },
+        { label: "Sign in with GitHub", act: "sign-in" }
+      ];
+    }
+    const u = o.user || {};
+    return [
+      { type: "status", title: u.name || "@" + u.handle, detail: u.name ? "@" + u.handle : null, media: "avatar" },
+      { type: "separator" },
+      // Only where there is a Settings dialog to open (home has none).
+      ...o.settings ? [{ label: "Account settings", act: "settings" }] : [],
+      { label: "Sign out", act: "sign-out" }
+    ];
+  }
   function accountStep(me, local) {
     if (!me) return local ? "ended" : "signed-out";
     if (local === me.id) return "same";
@@ -36187,6 +36640,7 @@
     if (!(user && user.avatar)) return initialNode(cls);
     const img = avatarImage(user.avatar, cls);
     img.addEventListener("error", () => {
+      if (img.classList.contains("is-arriving")) return;
       if (img.parentNode) img.replaceWith(initialNode(cls));
     }, { once: true });
     return img;
@@ -36194,51 +36648,56 @@
   function onEditor() {
     return Routes.pageOf(g15.location) === "edit";
   }
+  var state2 = () => accountState({ asked, available, unreachable: unreachable2, user });
+  var BUTTON_WORDS = {
+    checking: "Account",
+    none: "Account",
+    unreachable: "Can\u2019t reach BelJar\u2019s server",
+    "signed-out": "Sign in"
+  };
   function render5() {
     const btn = document.getElementById("btn-account");
     if (!btn) return;
-    const shown = available && (!!user || !!unreachable2 || !onEditor());
-    btn.hidden = !shown;
-    if (!shown) return;
-    btn.replaceChildren();
-    btn.classList.toggle("is-signed-in", !!user);
-    btn.classList.toggle("is-unreachable", !!unreachable2);
-    if (user) {
+    if (!placeholder) {
+      const shipped = btn.querySelector(".account-avatar--placeholder");
+      if (shipped) placeholder = shipped.cloneNode(true);
+    }
+    const s = state2();
+    btn.hidden = false;
+    btn.dataset.state = s;
+    btn.classList.toggle("is-signed-in", s === "signed-in");
+    btn.classList.toggle("is-unreachable", s === "unreachable");
+    if (s === "signed-in") {
       btn.setAttribute("aria-label", "Account: @" + user.handle);
       btn.setAttribute("data-tooltip", "@" + user.handle);
-      btn.appendChild(avatarNode("account-avatar"));
+      const face = avatarNode("account-avatar");
+      if (!revealAvatar(btn, face, () => {
+        btn.replaceChildren(initialNode("account-avatar"));
+      })) btn.replaceChildren(face);
     } else {
-      const label = unreachable2 ? "Can\u2019t reach BelJar\u2019s server" : "Sign in";
-      btn.setAttribute("aria-label", label);
-      btn.setAttribute("data-tooltip", label);
-      btn.insertAdjacentHTML(
-        "beforeend",
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>'
-      );
+      btn.setAttribute("aria-label", BUTTON_WORDS[s]);
+      btn.setAttribute("data-tooltip", BUTTON_WORDS[s]);
+      btn._avatarReveal = null;
+      btn.replaceChildren(...placeholder ? [placeholder.cloneNode(true)] : []);
     }
+    if (g15.Menu && g15.Menu.update && g15.Menu.rootAnchor && g15.Menu.rootAnchor() === btn) g15.Menu.update(btn, menuItems());
   }
   function menuItems() {
-    if (unreachable2) {
-      return [
-        { type: "status", title: "Can\u2019t reach BelJar\u2019s server", detail: unreachableWords(unreachable2), tone: "warning" },
-        { type: "separator" },
-        { label: "Try again", onSelect: () => connect() }
-      ];
-    }
-    if (!user) return [{ label: "Sign in with GitHub", onSelect: signIn }];
-    return [
-      {
-        type: "status",
-        title: user.name || "@" + user.handle,
-        detail: user.name ? "@" + user.handle : null,
-        media: avatarNode("account-avatar account-avatar--menu")
-      },
-      { type: "separator" },
-      ...onEditor() ? [{ label: "Home", onSelect: () => goHome() }] : [],
-      // Only where there is a Settings dialog to open (home has none yet).
-      ...g15.SettingsUI ? [{ label: "Settings", onSelect: () => g15.SettingsUI.open("account") }] : [],
-      { label: "Sign out", onSelect: signOut }
-    ];
+    const acts = {
+      "try-again": () => connect(),
+      "sign-in": signIn,
+      settings: () => g15.SettingsUI.open("account"),
+      "sign-out": signOut
+    };
+    return accountMenu(state2(), {
+      user,
+      reasonWords: unreachable2 ? unreachableWords(unreachable2) : null,
+      settings: !!g15.SettingsUI
+    }).map((item) => {
+      if (item.media === "avatar") return Object.assign({}, item, { media: avatarNode("account-avatar account-avatar--menu") });
+      if (item.act) return { label: item.label, onSelect: acts[item.act] };
+      return item;
+    });
   }
   function goHome() {
     saveNow2();
@@ -36541,10 +37000,16 @@
     g15.dispatchEvent(new CustomEvent("beljar:account", { detail: { user: user ? Object.assign({}, user) : null } }));
   }
   async function connect() {
+    if (asked) {
+      asked = false;
+      render5();
+    }
     const answer = await askServer();
     const where = reach(answer, !!g15.BELJAR_DEPLOYED);
+    asked = true;
     if (where === "none") {
       noteNoServer();
+      render5();
       announce2();
       return;
     }
@@ -36975,10 +37440,10 @@
     syncing: '<path class="sync-cloud__mark sync-cloud__arrow" d="M12 15.75v-4m-1.75 1.75L12 11.75l1.75 1.75"/>',
     alert: '<path class="sync-cloud__mark" d="M12 11.5v2.75"/><path class="sync-cloud__mark" d="M12 16.5h.01"/>'
   };
-  function cloudLook(state2) {
-    if (state2 === "pending" || state2 === "syncing") return "syncing";
-    if (state2 === "differs" || state2 === "error" || state2 === "held") return "alert";
-    return state2 === "offline" ? "offline" : "synced";
+  function cloudLook(state3) {
+    if (state3 === "pending" || state3 === "syncing") return "syncing";
+    if (state3 === "differs" || state3 === "error" || state3 === "held") return "alert";
+    return state3 === "offline" ? "offline" : "synced";
   }
   function cloudSvg(look) {
     const open11 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
@@ -36997,8 +37462,8 @@
     let told = false;
     return {
       observe(s) {
-        const state2 = s && s.state;
-        if (state2 === "error") {
+        const state3 = s && s.state;
+        if (state3 === "error") {
           if (since === null) since = now();
           if (!told && now() - since >= after) {
             told = true;
@@ -37006,7 +37471,7 @@
           }
           return null;
         }
-        if (state2 === "synced") {
+        if (state3 === "synced") {
           since = null;
           if (told) {
             told = false;
@@ -37093,6 +37558,7 @@
     btn.setAttribute("aria-label", tip);
     if (g18.Tooltips && typeof g18.Tooltips.set === "function") g18.Tooltips.set(btn, tip);
     else btn.setAttribute("data-tooltip", tip);
+    if (g18.Menu && g18.Menu.update && g18.Menu.rootAnchor && g18.Menu.rootAnchor() === btn) g18.Menu.update(btn, menuItems2());
   }
   function menuItems2() {
     const s = summary || g18.Persist.syncSummary();
@@ -37242,8 +37708,8 @@
     parts.push(v.files === 1 ? "1 file" : v.files + " files");
     return parts.join(", ");
   }
-  function versionChanges(version2, current) {
-    const now = new Map(current.map((f) => [f.id, f]));
+  function versionChanges(version2, current2) {
+    const now = new Map(current2.map((f) => [f.id, f]));
     const out = [];
     for (const f of version2.files) {
       const c = now.get(f.id);
@@ -37307,13 +37773,13 @@
     const list3 = el8("div", "history__list");
     list3.setAttribute("role", "listbox");
     list3.setAttribute("aria-label", "Versions");
-    const view = el8("div", "history__view");
-    body.append(list3, view);
+    const view2 = el8("div", "history__view");
+    body.append(list3, view2);
     let versions = [];
     let more = false;
     let chosen2 = null;
     let busy2 = false;
-    const state2 = { pid, load, close: () => handle.close() };
+    const state3 = { pid, load, close: () => handle.close() };
     function rowNode2(v, i) {
       const row = el8("button", "history__row");
       row.type = "button";
@@ -37335,11 +37801,11 @@
       }
     }
     function say3(text, retry) {
-      view.replaceChildren(el8("p", "history__note", text));
+      view2.replaceChildren(el8("p", "history__note", text));
       if (retry) {
         const again = actionButton("Try again", "retry", "secondary");
         again.addEventListener("click", () => load(true));
-        view.appendChild(again);
+        view2.appendChild(again);
       }
     }
     async function load(fresh) {
@@ -37384,7 +37850,7 @@
     async function choose2(n) {
       chosen2 = n;
       for (const r of list3.querySelectorAll(".history__row")) r.setAttribute("aria-selected", r.dataset.version === String(n) ? "true" : "false");
-      view.replaceChildren(el8("p", "history__note", "Opening\u2026"));
+      view2.replaceChildren(el8("p", "history__note", "Opening\u2026"));
       let v = null;
       try {
         v = await P3.readVersion(pid, n);
@@ -37397,7 +37863,7 @@
       drawVersion(v);
     }
     function drawVersion(v, problem2) {
-      view.replaceChildren();
+      view2.replaceChildren();
       const head = el8("div", "history__head");
       const title = el8("div", "history__title");
       title.appendChild(el8("span", "history__stamp", versionTime(v.createdAt)));
@@ -37409,24 +37875,24 @@
         restore2.addEventListener("click", () => doRestore(v, restore2));
         head.appendChild(restore2);
       }
-      view.appendChild(head);
-      if (problem2) view.appendChild(el8("p", "review__problem", problem2));
+      view2.appendChild(head);
+      if (problem2) view2.appendChild(el8("p", "review__problem", problem2));
       if (v.deleted) return;
       const changes = versionChanges(v, currentFiles());
       if (!changes.length) {
-        view.appendChild(el8("p", "history__note", "The same as the project is now."));
+        view2.appendChild(el8("p", "history__note", "The same as the project is now."));
         return;
       }
       const legend = el8("p", "review__legend");
       legend.appendChild(el8("span", "review__key is-theirs", "\u2212 now"));
       legend.appendChild(el8("span", "review__key is-mine", "+ this version"));
-      view.appendChild(legend);
+      view2.appendChild(legend);
       for (const c of changes) {
         const line = el8("div", "review__change");
         line.appendChild(el8("span", "review__path", c.path));
         line.appendChild(el8("span", "review__kind", CHANGE_WORDS2[c.change]));
-        view.appendChild(line);
-        if (c.change === "edited") view.appendChild(diffNode3(c.before, c.after));
+        view2.appendChild(line);
+        if (c.change === "edited") view2.appendChild(diffNode3(c.before, c.after));
       }
     }
     async function doRestore(v, btn) {
@@ -37458,10 +37924,10 @@
       minWidth: 480,
       minHeight: 260,
       onClose: () => {
-        if (win3 === state2) win3 = null;
+        if (win3 === state3) win3 = null;
       }
     });
-    win3 = state2;
+    win3 = state3;
     await load(true);
     return true;
   }
@@ -37504,8 +37970,8 @@
     function updateEditorEmptyState() {
       var idle = editorCanvasIdle();
       setEmptyOverlayVisible(getEditorEmptyEl && getEditorEmptyEl(), idle);
-      var mount3 = getEditorMount && getEditorMount();
-      if (mount3) mount3.classList.toggle("is-inactive", idle);
+      var mount4 = getEditorMount && getEditorMount();
+      if (mount4) mount4.classList.toggle("is-inactive", idle);
       var runBtn = document.getElementById("btn-load");
       if (runBtn) runBtn.disabled = idle;
     }
@@ -38472,9 +38938,9 @@
       return { ok: true, zipName: stem + ".zip", entries: pack };
     }
     function downloadSuite(cfgFileId) {
-      const state2 = suiteDownloadState(cfgFileId);
-      if (!state2.ok) return;
-      DownloadZip.downloadZip(state2.entries, state2.zipName);
+      const state3 = suiteDownloadState(cfgFileId);
+      if (!state3.ok) return;
+      DownloadZip.downloadZip(state3.entries, state3.zipName);
     }
     return {
       fileInputEl,
@@ -38532,8 +38998,8 @@
     var refPeekRestore = null;
     function resolveLineOffset(line) {
       var ed = getEditor();
-      var view = ed && typeof ed.getView === "function" ? ed.getView() : null;
-      var doc2 = view && view.state ? view.state.doc : null;
+      var view2 = ed && typeof ed.getView === "function" ? ed.getView() : null;
+      var doc2 = view2 && view2.state ? view2.state.doc : null;
       if (!doc2 || !doc2.lines || !Number.isFinite(line)) return null;
       var n = Math.min(Math.max(1, Math.floor(line)), doc2.lines);
       return doc2.line(n).from;
@@ -39294,9 +39760,9 @@
     }
     function notifyActiveEditorView() {
       if (!getEditor() || typeof getEditor().getView !== "function") return;
-      const view = getEditor().getView();
-      if (!view?.dom?.isConnected) return;
-      window.dispatchEvent(new CustomEvent("beljar:active-editor-view", { detail: { view } }));
+      const view2 = getEditor().getView();
+      if (!view2?.dom?.isConnected) return;
+      window.dispatchEvent(new CustomEvent("beljar:active-editor-view", { detail: { view: view2 } }));
       const fileId = getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId();
       if (!getWorkspaceBootPending()) {
         requestAnimationFrame(() => restoreWorkspaceForFile(fileId));
@@ -39731,8 +40197,8 @@
       const liveId = ed && typeof ed.getCurrentFileId === "function" ? ed.getCurrentFileId() : null;
       const applyFormatted = (id, next) => {
         if (ed && id === liveId) {
-          const view = typeof ed.getView === "function" ? ed.getView() : null;
-          const sel = view && view.state ? view.state.selection.main : null;
+          const view2 = typeof ed.getView === "function" ? ed.getView() : null;
+          const sel = view2 && view2.state ? view2.state.selection.main : null;
           const head = sel ? Math.min(sel.head, next.length) : next.length;
           if (typeof ed.replaceDocumentNonUndoable === "function") {
             ed.replaceDocumentNonUndoable(next, {
@@ -40235,8 +40701,8 @@ ${doc2.documentElement.outerHTML}`;
       });
       const holeAtCaret = (e) => typeof e.holeAtCursor === "function" ? e.holeAtCursor() : null;
       const caretHead = (e) => {
-        const view = typeof e.getView === "function" ? e.getView() : null;
-        return view ? view.state.selection.main.head : null;
+        const view2 = typeof e.getView === "function" ? e.getView() : null;
+        return view2 ? view2.state.selection.main.head : null;
       };
       const openTabIds = () => {
         if (typeof Persist.getOpenFileIds !== "function") return [];
@@ -40245,10 +40711,10 @@ ${doc2.documentElement.outerHTML}`;
       const stepTab = (delta) => {
         const ids = openTabIds();
         if (ids.length < 2) return false;
-        const current = getPersist2() ? getPersist2().getCurrentFileId() : null;
-        const at = ids.indexOf(current);
+        const current2 = getPersist2() ? getPersist2().getCurrentFileId() : null;
+        const at = ids.indexOf(current2);
         const next = ids[((at < 0 ? 0 : at + delta) % ids.length + ids.length) % ids.length];
-        if (!next || next === current) return false;
+        if (!next || next === current2) return false;
         switchToFile(next);
         return true;
       };
@@ -40278,8 +40744,8 @@ ${doc2.documentElement.outerHTML}`;
         return at < 0 ? [] : ids.slice(at + 1);
       };
       const otherTabs = () => {
-        const current = getPersist2() ? getPersist2().getCurrentFileId() : null;
-        return openTabIds().filter((id) => id !== current);
+        const current2 = getPersist2() ? getPersist2().getCurrentFileId() : null;
+        return openTabIds().filter((id) => id !== current2);
       };
       on(
         "tab.close-others",
@@ -40726,19 +41192,19 @@ ${doc2.documentElement.outerHTML}`;
       }
     }
     function restoreWorkspaceFloating(floats, deps) {
-      const view = deps && deps.view;
+      const view2 = deps && deps.view;
       const engine = deps && deps.engine;
-      if (!view || !Array.isArray(floats)) return;
+      if (!view2 || !Array.isArray(floats)) return;
       const sorted = floats.slice().sort((a, b) => (a.zOrder || 0) - (b.zOrder || 0));
       let skipped = 0;
       for (const entry of sorted) {
         let ok = false;
         if (entry.kind === "inspector" && typeof BelEditor !== "undefined" && BelEditor.restoreFloatingInspectorWindow) {
-          ok = BelEditor.restoreFloatingInspectorWindow(entry, view);
+          ok = BelEditor.restoreFloatingInspectorWindow(entry, view2);
         } else if (entry.kind === "graph" && typeof BelEditor !== "undefined" && BelEditor.restoreFloatingGraphWindow) {
-          ok = BelEditor.restoreFloatingGraphWindow(entry, view);
+          ok = BelEditor.restoreFloatingGraphWindow(entry, view2);
         } else if (entry.kind === "harpoon" && typeof Harpoon !== "undefined" && Harpoon.restoreFloatingHarpoonWindow) {
-          ok = Harpoon.restoreFloatingHarpoonWindow(entry, view, engine);
+          ok = Harpoon.restoreFloatingHarpoonWindow(entry, view2, engine);
         }
         if (!ok) skipped += 1;
       }
@@ -40850,8 +41316,8 @@ ${doc2.documentElement.outerHTML}`;
     }
     function editorViewIsCfg(ed) {
       if (!ed || typeof ed.getView !== "function") return false;
-      const view = ed.getView();
-      return !!(view && view.dom && view.dom.classList.contains("jar-editor--cfg"));
+      const view2 = ed.getView();
+      return !!(view2 && view2.dom && view2.dom.classList.contains("jar-editor--cfg"));
     }
     function remountActiveEditor(openOpts) {
       if (!persist2 || !editor) return;
@@ -41633,6 +42099,8 @@ ${doc2.documentElement.outerHTML}`;
     function switchProjectAndReload(mutate, opts) {
       if (persist2) persist2.flushCheckpoint();
       WorkspaceState.flushWorkspace();
+      if (typeof ReplPersist !== "undefined" && ReplPersist.saveNow) ReplPersist.saveNow();
+      if (typeof ReplPersist !== "undefined" && ReplPersist.hold) ReplPersist.hold();
       suppressUnloadFlush = true;
       try {
         mutate();
@@ -42159,6 +42627,451 @@ ${doc2.documentElement.outerHTML}`;
   };
   window.BelJarApp = window.App;
   mount2();
+
+  // js/ui/clipboard-read.mjs
+  var WATCHED_SETTINGS = ["keymapStyle", "emacsYankSource", "keybindings", "clipboardReadDismissed"];
+  var COPY = {
+    emacsOffer: {
+      message: "C-y pastes from the system clipboard, and Chrome will not allow that until this site may read it.",
+      note: "Allow opens Chrome's prompt. Ignore leaves C-y as it is."
+    },
+    rebindOffer: {
+      message: "That is not Chrome's paste key, so Chrome will not allow it until this site may read it.",
+      note: "Allow opens Chrome's prompt. Ignore leaves the key as it is."
+    },
+    asking: {
+      message: "Chrome is asking, at the top of the window.",
+      note: "Allow reads the clipboard. Block refuses it. Closing the prompt changes nothing."
+    },
+    emacsGranted: {
+      message: "Allowed. C-y can paste from the clipboard."
+    },
+    rebindGranted: {
+      message: "Allowed. This key can paste from the clipboard."
+    },
+    denied: {
+      message: "Blocked. Chrome will not ask again.",
+      note: "To allow it later, choose the lock icon in the address bar and turn clipboard on."
+    },
+    closed: {
+      note: "The prompt was closed. Nothing changed."
+    }
+  };
+  var ALLOW = { action: "allow", label: "Allow", variant: "primary" };
+  var IGNORE = { action: "ignore", label: "Ignore", variant: "ghost" };
+  var CLOSE = { action: "ignore", label: "Close", variant: "ghost" };
+  function isNativePasteSpec(spec) {
+    return spec === "Mod+V" || spec === "Shift+Insert";
+  }
+  function pasteReadsClipboard(spec) {
+    return !!spec && !isNativePasteSpec(spec);
+  }
+  function styleOf(v) {
+    const s = String(v == null ? "" : v).toLowerCase();
+    return s === "vim" || s === "emacs" ? s : "default";
+  }
+  function situation(o) {
+    o = o || {};
+    const style = styleOf(o.style);
+    const yank = o.yankSource === "kill-ring" ? "kill-ring" : "system";
+    const spec = o.pasteSpec || "";
+    if (style === "emacs" && yank === "system") {
+      return { id: "emacs-system", chord: "C-y", kind: "emacs" };
+    }
+    if (style !== "emacs" && pasteReadsClipboard(spec)) {
+      return { id: "paste:" + spec, chord: spec, kind: "rebind" };
+    }
+    return null;
+  }
+  function isDismissed(list3, id) {
+    return !!id && Array.isArray(list3) && list3.includes(id);
+  }
+  function rememberDismissal(list3, id) {
+    const cur = [];
+    if (Array.isArray(list3)) {
+      for (const item of list3) {
+        if (typeof item === "string" && item && !cur.includes(item)) cur.push(item);
+      }
+    }
+    if (!id || cur.includes(id)) return cur;
+    return cur.concat(id);
+  }
+  function shouldOpen(permission, sit, dismissed) {
+    if (!sit) return false;
+    if (permission !== "prompt" && permission !== "denied") return false;
+    return !isDismissed(dismissed, sit.id);
+  }
+  function initialView(permission) {
+    if (permission === "denied") return { phase: "denied", noted: false };
+    if (permission === "granted") return { phase: "granted", noted: false };
+    return { phase: "offer", noted: false };
+  }
+  function same(state3) {
+    return { phase: state3.phase, noted: state3.noted };
+  }
+  function reduce(state3, event) {
+    if (!state3 || !event) return state3;
+    if (event.type === "allow") {
+      if (state3.phase !== "offer") return same(state3);
+      return { phase: "asking", noted: false };
+    }
+    if (event.type === "permission") {
+      if (event.state === "granted") return { phase: "granted", noted: false };
+      if (event.state === "denied") return { phase: "denied", noted: false };
+      if (event.state === "prompt") {
+        if (state3.phase === "asking") return { phase: "offer", noted: true };
+        if (state3.phase === "denied" || state3.phase === "granted") return { phase: "offer", noted: false };
+      }
+      return same(state3);
+    }
+    if (event.type === "read") {
+      if (event.ok || event.permission === "granted") return { phase: "granted", noted: false };
+      if (event.permission === "denied") return { phase: "denied", noted: false };
+      if (state3.phase === "asking" || state3.phase === "offer") return { phase: "offer", noted: true };
+      return same(state3);
+    }
+    if (event.type === "ignore") {
+      if (state3.phase === "closed") return same(state3);
+      return { phase: "closed", noted: false, remember: state3.phase !== "granted" };
+    }
+    return same(state3);
+  }
+  function buttons(allow, ignore) {
+    const out = [];
+    if (ignore) out.push({ action: ignore.action, label: ignore.label, variant: ignore.variant, disabled: false });
+    if (allow) out.push({ action: ALLOW.action, label: ALLOW.label, variant: ALLOW.variant, disabled: !!allow.disabled });
+    return out;
+  }
+  function copyFor(state3, sit) {
+    const kind = sit && sit.kind === "rebind" ? "rebind" : "emacs";
+    const chord = sit && sit.chord ? sit.chord : "C-y";
+    const lead = kind === "rebind" ? chord : "";
+    const phase = state3 && state3.phase;
+    if (phase === "asking") {
+      return {
+        lead,
+        message: COPY.asking.message,
+        note: COPY.asking.note,
+        buttons: buttons({ disabled: true }, IGNORE)
+      };
+    }
+    if (phase === "granted") {
+      return {
+        lead,
+        message: kind === "emacs" ? COPY.emacsGranted.message : COPY.rebindGranted.message,
+        note: "",
+        buttons: []
+      };
+    }
+    if (phase === "denied") {
+      return {
+        lead,
+        message: COPY.denied.message,
+        note: COPY.denied.note,
+        buttons: buttons(null, CLOSE)
+      };
+    }
+    const offer = kind === "emacs" ? COPY.emacsOffer : COPY.rebindOffer;
+    return {
+      lead,
+      message: offer.message,
+      note: state3 && state3.noted ? COPY.closed.note : offer.note,
+      buttons: buttons(ALLOW, IGNORE)
+    };
+  }
+
+  // js/ui/clipboard-read-dialog.mjs
+  var GRANTED_HOLD_MS = 700;
+  var ticket = 0;
+  var readGen = 0;
+  var dialogEl = null;
+  var shell = null;
+  var subjectEl = null;
+  var messageEl2 = null;
+  var noteEl = null;
+  var actionsEl = null;
+  var view = null;
+  var current = null;
+  var status = null;
+  var leaving2 = false;
+  var rememberOnClose = true;
+  var holdTimer = null;
+  function settings2() {
+    return globalThis.Settings || null;
+  }
+  function readDismissed() {
+    const v = readSetting("clipboardReadDismissed");
+    return Array.isArray(v) ? v : [];
+  }
+  function storeDismissal(id) {
+    if (!id) return;
+    writeSetting("clipboardReadDismissed", rememberDismissal(readDismissed(), id));
+  }
+  function present() {
+    const S = settings2();
+    if (!S) return null;
+    const KB = globalThis.Keybindings;
+    const spec = KB && typeof KB.resolve === "function" ? KB.resolve("edit.paste") : "";
+    const sit = situation({
+      style: S.get("keymapStyle"),
+      yankSource: S.get("emacsYankSource"),
+      pasteSpec: spec
+    });
+    if (!sit || sit.kind !== "rebind") return sit;
+    const label = KB && typeof KB.formatShortcut === "function" ? KB.formatShortcut(sit.chord) : "";
+    return { id: sit.id, kind: sit.kind, chord: label || sit.chord };
+  }
+  function queryPermission() {
+    const permissions = globalThis.navigator && globalThis.navigator.permissions;
+    if (!permissions || typeof permissions.query !== "function") return Promise.resolve(null);
+    try {
+      return Promise.resolve(permissions.query({ name: "clipboard-read" })).then(
+        (result) => result && typeof result.state === "string" ? result : null,
+        () => null
+      );
+    } catch (_) {
+      return Promise.resolve(null);
+    }
+  }
+  function watch(perm) {
+    if (status === perm) return;
+    if (status) status.onchange = null;
+    status = perm;
+    status.onchange = () => {
+      if (!dialogEl || !status) return;
+      apply3({ type: "permission", state: status.state });
+    };
+  }
+  function detachStatus() {
+    if (status) status.onchange = null;
+    status = null;
+  }
+  function clearHold() {
+    if (holdTimer) {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+    }
+  }
+  function grantedHoldMs() {
+    const pref = settings2() && settings2().get("motionPref");
+    if (pref === "reduce") return 0;
+    if (pref === "full") return GRANTED_HOLD_MS;
+    try {
+      if (globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches) return 0;
+    } catch (_) {
+    }
+    return GRANTED_HOLD_MS;
+  }
+  function scheduleHold() {
+    clearHold();
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      finish(false);
+    }, grantedHoldMs());
+  }
+  function finish(remember2) {
+    if (!dialogEl || leaving2) return;
+    leaving2 = true;
+    rememberOnClose = !!remember2;
+    readGen += 1;
+    requestDialogClose(dialogEl);
+  }
+  function onDialogClose() {
+    clearHold();
+    detachStatus();
+    const grantedClose = !rememberOnClose && view && view.phase === "granted";
+    const id = rememberOnClose && current ? current.id : null;
+    dialogEl = null;
+    shell = null;
+    subjectEl = null;
+    messageEl2 = null;
+    noteEl = null;
+    actionsEl = null;
+    view = null;
+    current = null;
+    leaving2 = false;
+    rememberOnClose = true;
+    if (id) storeDismissal(id);
+    else if (!grantedClose) void consider();
+  }
+  function focusPrimary() {
+    if (!actionsEl || !dialogEl) return;
+    const allow = actionsEl.querySelector('[data-action="allow"]:not(:disabled)');
+    const leave = actionsEl.querySelector('[data-action="ignore"]');
+    const btn = allow || leave;
+    if (btn && typeof btn.focus === "function") btn.focus();
+  }
+  function paint3(opts) {
+    if (!shell || !view || !current) return;
+    const card = copyFor(view, current);
+    shell.dataset.phase = view.phase;
+    if (card.lead) {
+      subjectEl.hidden = false;
+      subjectEl.replaceChildren(markMono(card.lead));
+    } else {
+      subjectEl.hidden = true;
+      subjectEl.replaceChildren();
+    }
+    messageEl2.textContent = card.message;
+    noteEl.hidden = !card.note;
+    noteEl.textContent = card.note || "";
+    actionsEl.hidden = card.buttons.length === 0;
+    actionsEl.replaceChildren();
+    for (const b of card.buttons) {
+      const btn = actionButton(b.label, b.action, b.variant);
+      if (b.disabled) btn.disabled = true;
+      actionsEl.appendChild(btn);
+    }
+    if (opts && opts.focus) focusPrimary();
+  }
+  function apply3(event) {
+    if (!dialogEl || !view || leaving2) return;
+    const prev = view.phase;
+    view = reduce(view, event);
+    if (view.phase === "closed") {
+      finish(!!view.remember);
+      return;
+    }
+    if (prev === "granted" && view.phase !== "granted") clearHold();
+    if (view.phase === "granted" && prev !== "granted") rememberOnClose = false;
+    paint3({ focus: view.phase !== prev && view.phase !== "granted" });
+    if (view.phase === "granted" && prev !== "granted") scheduleHold();
+  }
+  function permissionNow() {
+    return status && status.state || "prompt";
+  }
+  function beginRead() {
+    if (!view || view.phase !== "offer") return;
+    const clip = globalThis.navigator && globalThis.navigator.clipboard;
+    const gen = ++readGen;
+    let pending;
+    try {
+      pending = clip && typeof clip.readText === "function" ? clip.readText() : Promise.reject(new Error("no clipboard"));
+    } catch (err) {
+      pending = Promise.reject(err);
+    }
+    apply3({ type: "allow" });
+    Promise.resolve(pending).then(
+      () => {
+        if (gen !== readGen) return;
+        apply3({ type: "read", ok: true, permission: permissionNow() });
+      },
+      () => {
+        if (gen !== readGen) return;
+        apply3({ type: "read", ok: false, permission: permissionNow() });
+      }
+    );
+  }
+  function onAction(e) {
+    const btn = e.target && e.target.closest ? e.target.closest("[data-action]") : null;
+    if (!btn || btn.disabled) return;
+    e.preventDefault();
+    if (btn.dataset.action === "allow") beginRead();
+    else if (btn.dataset.action === "ignore") apply3({ type: "ignore" });
+  }
+  function mount3(permission) {
+    if (typeof document === "undefined" || !document.body) return;
+    view = initialView(permission);
+    rememberOnClose = true;
+    leaving2 = false;
+    shell = el2("div", "jar-prompt-dialog");
+    const live2 = el2("div");
+    live2.setAttribute("aria-live", "polite");
+    live2.setAttribute("aria-atomic", "true");
+    subjectEl = el2("p", "jar-prompt-dialog__subject");
+    messageEl2 = el2("p", "jar-prompt-dialog__message");
+    noteEl = el2("p", "jar-prompt-dialog__note");
+    live2.append(subjectEl, messageEl2, noteEl);
+    actionsEl = el2("div", "jar-prompt-dialog__actions is-row");
+    shell.append(live2, actionsEl);
+    shell.addEventListener("click", onAction);
+    dialogEl = createDialog({
+      title: "Clipboard",
+      content: shell,
+      className: WRAP_CLASS,
+      cardClass: CARD_CLASS,
+      closeButton: true,
+      removeOnClose: true
+    });
+    dialogEl.addEventListener("close", onDialogClose);
+    paint3();
+    openDialog(dialogEl);
+    focusPrimary();
+    requestAnimationFrame(() => focusPrimary());
+  }
+  function adopt2(next) {
+    readGen += 1;
+    const state3 = status ? status.state : "prompt";
+    if (!shouldOpen(state3, next, readDismissed())) {
+      finish(false);
+      return;
+    }
+    current = next;
+    const prev = view ? view.phase : "";
+    view = initialView(state3);
+    if (prev === "granted" && view.phase !== "granted") clearHold();
+    if (view.phase === "granted") rememberOnClose = false;
+    paint3({ focus: true });
+    if (view.phase === "granted") scheduleHold();
+  }
+  async function consider() {
+    const mine = ++ticket;
+    try {
+      if (leaving2) return;
+      const next = present();
+      if (!next) {
+        if (dialogEl) finish(false);
+        return;
+      }
+      if (dialogEl && current && current.id === next.id) {
+        if (current.chord !== next.chord) {
+          current = next;
+          paint3();
+        }
+        return;
+      }
+      if (dialogEl && current && current.id !== next.id) {
+        adopt2(next);
+        return;
+      }
+      if (isDismissed(readDismissed(), next.id)) return;
+      const perm = await queryPermission();
+      if (mine !== ticket || leaving2) return;
+      if (!perm) return;
+      const again = present();
+      if (!again || again.id !== next.id || isDismissed(readDismissed(), again.id)) return;
+      if (!shouldOpen(perm.state, again, readDismissed())) return;
+      if (dialogEl) {
+        watch(perm);
+        adopt2(again);
+        return;
+      }
+      watch(perm);
+      current = again;
+      mount3(perm.state);
+      if (!dialogEl) current = null;
+    } catch (_) {
+    }
+  }
+  function relevant(ids) {
+    if (!ids) return true;
+    for (let i = 0; i < ids.length; i++) {
+      if (WATCHED_SETTINGS.indexOf(ids[i]) !== -1) return true;
+    }
+    return false;
+  }
+  function start() {
+    if (typeof globalThis.location === "undefined") return;
+    if (pageOf(globalThis.location) !== "edit") return;
+    const S = settings2();
+    if (!S || typeof S.subscribe !== "function") return;
+    S.subscribe((e) => {
+      if (!relevant(e && e.ids)) return;
+      void consider();
+    });
+    void consider();
+  }
+  start();
 
   // js/compat/beljar-window-aliases.mjs
   var g22 = globalThis;

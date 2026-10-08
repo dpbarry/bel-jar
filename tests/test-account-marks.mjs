@@ -4,7 +4,7 @@
 // held by scratch/shot-header.mjs in both themes; what reaches the page, by
 // probe-account.
 import { cloudLook, cloudSvg } from '../js/account/cloud-glyphs.mjs';
-import { identiconBackground } from '../js/account/avatar.mjs';
+import { identiconBackground, identiconColours } from '../js/account/avatar.mjs';
 
 let n = 0;
 function expect(cond, msg) {
@@ -57,7 +57,22 @@ function identicon(size, ink = [204, 84, 150], bg = [240, 240, 240]) {
 }
 {
   expect(identiconBackground(identicon(420), 420) === 'rgb(240, 240, 240)', 'GitHub’s identicon: inset on its own background');
+  expect(identiconColours(identicon(420), 420).ink === 'rgb(204, 84, 150)', 'the ring takes the pattern, not the grey field');
   expect(identiconBackground(identicon(120, [80, 140, 90]), 120) === 'rgb(240, 240, 240)', 'at any size, in any ink');
+  expect(identiconColours(identicon(120, [80, 140, 90], [250, 248, 246]), 120).ink === 'rgb(80, 140, 90)', 'whatever colour the blocks are');
+  // The first subject pixel pulled toward the ground, as a resampled edge is.
+  // It must not become the ring: the blocks' interiors are the colour.
+  const fringed = identicon(120);
+  for (let i = 0; i < fringed.length; i += 4) {
+    if (fringed[i] !== 204) continue;
+    fringed[i] = 207;
+    fringed[i + 1] = 88;
+    fringed[i + 2] = 153;
+    break;
+  }
+  const fringe = identiconColours(fringed, 120);
+  expect(fringe.background === 'rgb(240, 240, 240)' && fringe.ink === 'rgb(204, 84, 150)',
+    'a blended edge pixel is not the subject');
   expect(identiconBackground(image(64, () => [240, 240, 240]), 64) === null, 'a blank light square is no identicon: nothing to show whole');
   expect(identiconBackground(image(16, () => [214, 92, 150]), 16) === null, 'a dark picture is a photo');
   expect(identiconBackground(identicon(120, [240, 240, 240], [30, 30, 40]), 120) === null,

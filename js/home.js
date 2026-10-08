@@ -66,6 +66,8 @@
     return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
   }
   var ISSUES_URL = "https://github.com/dpbarry/bel-jar/issues";
+  var CONTACT_EMAIL = "dean.barry@mail.mcgill.ca";
+  var CONTACT_URL = "mailto:" + CONTACT_EMAIL;
   function reportIssue() {
     if (typeof g.open === "function") g.open(ISSUES_URL, "_blank", "noopener");
   }
@@ -89,6 +91,7 @@
   var Routes = {
     PROJECT_ID,
     ISSUES_URL,
+    CONTACT_URL,
     homeUrl,
     editUrl,
     privacyUrl,
@@ -104,7 +107,7 @@
   g.Routes = Routes;
 
   // js/persist/store.mjs
-  var SCHEMA = 4;
+  var SCHEMA = 5;
   var SCHEMA_KEY = "beljar/schema";
   function migrateStorage(storage, schema, migrations) {
     const raw = storage.getItem(SCHEMA_KEY);
@@ -131,6 +134,7 @@
     { pattern: /^beljar\/device$/, cls: "device" },
     { pattern: /^beljar\/notifications$/, cls: "device" },
     { pattern: /^beljar\/repl\/(transcript|commands)$/, cls: "device" },
+    { pattern: /^beljar\/p\/[^/]+\/repl$/, cls: "device" },
     // the tab guard's handshake, and sync telling the other tabs how it is (sync/sync-status.mjs)
     { pattern: /^beljar\/tabs\/(ping|pong|bye|sync-status|sync-ask)$/, cls: "device" },
     { pattern: /^beljar\/tombstones$/, cls: "device" },
@@ -419,7 +423,48 @@
   }
 
   // js/persist/migrations.mjs
-  var MIGRATIONS = {};
+  var MIGRATIONS = {
+    // The REPL was one transcript for the whole browser. It belongs to the
+    // project that was open; every other project starts with none.
+    4: function moveReplOntoItsProject(storage) {
+      const transcriptRaw = storage.getItem("beljar/repl/transcript");
+      const commandsRaw = storage.getItem("beljar/repl/commands");
+      if (transcriptRaw == null && commandsRaw == null) return;
+      let transcript = null;
+      let commands = null;
+      let device = null;
+      try {
+        transcript = JSON.parse(transcriptRaw || "null");
+        commands = JSON.parse(commandsRaw || "null");
+        device = JSON.parse(storage.getItem("beljar/device") || "null");
+      } catch (_) {
+        return;
+      }
+      const values = device && device.data && device.data.values;
+      const pid = values && typeof values.activeProject === "string" ? values.activeProject : "";
+      if (!pid) return;
+      const html = transcript && transcript.data && typeof transcript.data.html === "string" ? transcript.data.html : "";
+      const list3 = commands && Array.isArray(commands.data) ? commands.data.filter((x) => typeof x === "string") : [];
+      const dest = "beljar/p/" + pid + "/repl";
+      if ((html || list3.length) && storage.getItem(dest) == null) {
+        const at = Math.max(
+          transcript && typeof transcript.at === "number" ? transcript.at : 0,
+          commands && typeof commands.at === "number" ? commands.at : 0
+        ) || Date.now();
+        storage.setItem(dest, JSON.stringify({
+          at,
+          data: {
+            html,
+            scrollTop: transcript && transcript.data && typeof transcript.data.scrollTop === "number" ? transcript.data.scrollTop : 0,
+            savedAt: transcript && transcript.data && typeof transcript.data.savedAt === "number" ? transcript.data.savedAt : at,
+            commands: list3
+          }
+        }));
+      }
+      storage.removeItem("beljar/repl/transcript");
+      storage.removeItem("beljar/repl/commands");
+    }
+  };
 
   // js/persist/table.mjs
   function typeOf(row) {
@@ -604,6 +649,14 @@
     if (v === null) return null;
     return Array.isArray(v) ? v : void 0;
   }
+  function cleanDismissed(raw) {
+    if (!Array.isArray(raw)) return void 0;
+    const out = [];
+    for (const id of raw) {
+      if (typeof id === "string" && id && !out.includes(id)) out.push(id);
+    }
+    return out;
+  }
   var ON = true;
   var OFF = false;
   var SETTINGS = [
@@ -662,6 +715,9 @@
     { id: "vimLeader", section: "keybindings", default: "\\", values: ["\\", ",", " "] },
     { id: "vimInsertEscape", section: "keybindings", default: "", values: ["", "jk", "jj", "kj"] },
     { id: "emacsYankSource", section: "keybindings", default: "system", values: ["system", "kill-ring"] },
+    // Clipboard dialogs this browser has closed. The grant is per browser, so it
+    // does not follow the account, and Reset does not ask again.
+    { id: "clipboardReadDismissed", section: "keybindings", default: [], type: "json", normalize: cleanDismissed, sync: false, reset: false },
     { id: "doubleTapTrigger", section: "keybindings", default: "off", values: ["off", "shift", "control", "alt"] },
     { id: "doubleTapCommand", section: "keybindings", default: "tools.palette", type: "string" },
     { id: "doubleTapSpeed", section: "keybindings", default: "normal", values: ["normal", "fast", "relaxed"] },
@@ -702,6 +758,7 @@
     // one row per tip, so two computers that each saw a different one never disagree.
     { id: "hintSeenLibrary", section: "workspace", default: OFF, reset: false },
     { id: "hintSeenInspectorCursor", section: "workspace", default: OFF, reset: false },
+    { id: "hintSeenSignIn", section: "workspace", default: OFF, reset: false },
     // ── Account: how sync behaves (docs/PERSIST.md §5.7) ─────────────────────
     // Signed in, settings follow you between devices; off here, this device keeps its own.
     { id: "syncSettings", section: "account", default: ON, sync: false },
@@ -920,6 +977,9 @@
   function foldsKey(pid) {
     return projectPrefix(pid) + "folds";
   }
+  function replKey(pid) {
+    return projectPrefix(pid) + "repl";
+  }
   function syncKey(pid) {
     return projectPrefix(pid) + "sync";
   }
@@ -929,7 +989,7 @@
   function conflictKey(pid, fid) {
     return projectPrefix(pid) + "conflict/" + fid;
   }
-  var PROJECT_KEY = /^beljar\/p\/([^/]+)\/(meta|tree|session|folds|undo|sync|f|cache|conflict)(?:\/([^/]+))?$/;
+  var PROJECT_KEY = /^beljar\/p\/([^/]+)\/(meta|tree|session|folds|undo|sync|repl|f|cache|conflict)(?:\/([^/]+))?$/;
   function parseKey(key) {
     var m = typeof key === "string" ? PROJECT_KEY.exec(key) : null;
     if (!m) return null;
@@ -2116,14 +2176,14 @@
         folders: [],
         suites: normalizeActiveCfgByDir(options.activeCfgByDir)
       });
-      var activeId = files2.length ? files2[0].id : null;
+      var activeId2 = files2.length ? files2[0].id : null;
       work2.updateSession(function(s) {
-        s.active = activeId;
-        s.open = activeId ? [activeId] : [];
+        s.active = activeId2;
+        s.open = activeId2 ? [activeId2] : [];
         s.views = {};
       });
       if (options.projectName) setProjectName(options.projectName);
-      return { files: listFiles(), activeId };
+      return { files: listFiles(), activeId: activeId2 };
     }
     function restoreDeletedFile(id, name, text) {
       if (getFileById(id)) return false;
@@ -2666,20 +2726,20 @@
       var documentId = opts.documentId;
       if (!documentId) throw new Error("createPersist needs a documentId");
       var loaded = load(documentId);
-      var state = loaded.state;
+      var state2 = loaded.state;
       var base = loaded.base;
       var conflicted = loaded.conflicted;
       var saveTimer = null;
       var providers2 = null;
       var reconciling = false;
       var reconcileQueued = false;
-      var savedView = JSON.stringify(state.editor.local);
-      var savedSemantic = JSON.stringify(state.semantic);
+      var savedView = JSON.stringify(state2.editor.local);
+      var savedSemantic = JSON.stringify(state2.semantic);
       function collectSemantic() {
-        if (!providers2 || typeof providers2.getSemantic !== "function") return state.semantic;
+        if (!providers2 || typeof providers2.getSemantic !== "function") return state2.semantic;
         var exported = providers2.getSemantic();
-        if (!exported) return state.semantic;
-        var text = state.editor.text;
+        if (!exported) return state2.semantic;
+        var text = state2.editor.text;
         var docFp = typeof providers2.getDocFp === "function" ? providers2.getDocFp(text) : documentFingerprint(text);
         var belugaBuild = typeof providers2.getBelugaBuild === "function" ? providers2.getBelugaBuild() : settings2.get("belugaMode");
         var scopeKey = typeof exported.scopeKey === "string" ? exported.scopeKey : typeof providers2.getScopeKey === "function" ? providers2.getScopeKey() : "";
@@ -2697,7 +2757,7 @@
         if (providers2 && typeof providers2.getViewport === "function") {
           return normalizeView(providers2.getViewport());
         }
-        return state.editor.local || {};
+        return state2.editor.local || {};
       }
       function collectText() {
         if (providers2 && typeof providers2.getText === "function") {
@@ -2707,7 +2767,7 @@
           } catch (_) {
           }
         }
-        return state.editor.text;
+        return state2.editor.text;
       }
       function peekText() {
         var read2 = providers2 && (typeof providers2.peekText === "function" ? providers2.peekText : typeof providers2.getText === "function" ? providers2.getText : null);
@@ -2718,13 +2778,13 @@
           } catch (_) {
           }
         }
-        return state.editor.text;
+        return state2.editor.text;
       }
       function canShow() {
         return !providers2 || typeof providers2.applyExternalText === "function";
       }
-      function show2(text) {
-        state.editor.text = text;
+      function show3(text) {
+        state2.editor.text = text;
         if (providers2 && typeof providers2.applyExternalText === "function") providers2.applyExternalText(text);
       }
       function announceConflict(source) {
@@ -2767,12 +2827,12 @@
             base = stored;
           } else if (mine === base && canShow()) {
             base = stored;
-            show2(stored);
+            show3(stored);
           } else {
             var m = merge3(base, mine, stored);
             if (m.ok && canShow()) {
               base = stored;
-              show2(m.text);
+              show3(m.text);
               scheduleSave();
             } else {
               var source = work2.textOrigin(documentId) === "sync" ? "device" : "tab";
@@ -2800,29 +2860,29 @@
         }
         var exists = work2.hasFile(documentId);
         if (exists && !conflicted && work2.getText(documentId) !== base) reconcile();
-        state.editor.text = collectText();
-        state.editor.local = collectView();
-        state.semantic = collectSemantic();
+        state2.editor.text = collectText();
+        state2.editor.local = collectView();
+        state2.semantic = collectSemantic();
         if (!exists) return;
         if (conflicted) {
           var rec = work2.readConflict(documentId);
-          if (rec && rec.mine !== state.editor.text) {
-            rec.mine = state.editor.text;
+          if (rec && rec.mine !== state2.editor.text) {
+            rec.mine = state2.editor.text;
             work2.writeConflict(documentId, rec);
           }
-        } else if (state.editor.text !== base) {
-          if (work2.setText(documentId, state.editor.text).ok) base = state.editor.text;
+        } else if (state2.editor.text !== base) {
+          if (work2.setText(documentId, state2.editor.text).ok) base = state2.editor.text;
         }
-        var view = JSON.stringify(state.editor.local);
+        var view = JSON.stringify(state2.editor.local);
         if (view !== savedView) {
-          var local = state.editor.local;
+          var local = state2.editor.local;
           if (work2.updateSession(function(s) {
             s.views[documentId] = local;
           }).ok) savedView = view;
         }
-        var semantic = JSON.stringify(state.semantic);
+        var semantic = JSON.stringify(state2.semantic);
         if (semantic !== savedSemantic) {
-          if (work2.writeCache(documentId, state.semantic).ok) savedSemantic = semantic;
+          if (work2.writeCache(documentId, state2.semantic).ok) savedSemantic = semantic;
         }
       }
       function scheduleSave() {
@@ -2831,7 +2891,7 @@
         saveTimer = globalThis.setTimeout(persistNow, delay);
       }
       function scheduleEditorPersist(text) {
-        if (text != null) state.editor.text = String(text);
+        if (text != null) state2.editor.text = String(text);
         scheduleSave();
       }
       function markEditorDirty() {
@@ -2843,8 +2903,8 @@
       }
       function replaceEditorText(text) {
         cancelPendingSave();
-        state.editor.text = String(text != null ? text : "");
-        if (!conflicted && work2.getText(documentId) === state.editor.text) base = state.editor.text;
+        state2.editor.text = String(text != null ? text : "");
+        if (!conflicted && work2.getText(documentId) === state2.editor.text) base = state2.editor.text;
       }
       function hasPendingSave() {
         return saveTimer != null;
@@ -2853,7 +2913,7 @@
         if (saveTimer != null) persistNow();
       }
       function getInitialCheckpoint() {
-        return JSON.parse(JSON.stringify(state));
+        return JSON.parse(JSON.stringify(state2));
       }
       function setCheckpointProviders(next) {
         providers2 = next || null;
@@ -2864,11 +2924,11 @@
         providers2 = null;
         documentId = newId3;
         var next = load(documentId);
-        state = next.state;
+        state2 = next.state;
         base = next.base;
         conflicted = next.conflicted;
-        savedView = JSON.stringify(state.editor.local);
-        savedSemantic = JSON.stringify(state.semantic);
+        savedView = JSON.stringify(state2.editor.local);
+        savedSemantic = JSON.stringify(state2.semantic);
         return getInitialCheckpoint();
       }
       function getConflict() {
@@ -2890,7 +2950,7 @@
         var mine = peekText();
         if (choice === "theirs") {
           base = theirs;
-          show2(theirs);
+          show3(theirs);
           conflicted = false;
           work2.removeConflict(documentId);
           return { ok: true, copyId: null };
@@ -2906,7 +2966,7 @@
         }
         if (!work2.setText(documentId, mine).ok) return { ok: false, reason: "write-failed", copyId };
         base = mine;
-        state.editor.text = mine;
+        state2.editor.text = mine;
         conflicted = false;
         work2.removeConflict(documentId);
         return { ok: true, copyId };
@@ -2915,13 +2975,13 @@
       open6.add(handle);
       return {
         getEditorText: function() {
-          return state.editor.text;
+          return state2.editor.text;
         },
         getEditorLocal: function() {
-          return normalizeView(state.editor.local);
+          return normalizeView(state2.editor.local);
         },
         getSemanticCheckpoint: function() {
-          return state.semantic ? JSON.parse(JSON.stringify(state.semantic)) : null;
+          return state2.semantic ? JSON.parse(JSON.stringify(state2.semantic)) : null;
         },
         getInitialCheckpoint,
         getCurrentFileId: function() {
@@ -2989,45 +3049,104 @@
       });
     }
     const replStore = () => storeFor(settings2.get("replHistoryPersist"));
-    followSetting("replHistoryPersist", () => [REPL_TRANSCRIPT_KEY, REPL_COMMANDS_KEY]);
-    function readReplTranscript() {
-      const s = replStore();
-      const d = s && s.get(REPL_TRANSCRIPT_KEY);
-      if (!d || typeof d !== "object" || typeof d.html !== "string") return null;
+    followSetting("replHistoryPersist", (s) => {
+      const keys = s.keys("beljar/p/").filter((k) => k.endsWith("/repl"));
+      if (s.get(REPL_TRANSCRIPT_KEY) !== void 0) keys.push(REPL_TRANSCRIPT_KEY);
+      if (s.get(REPL_COMMANDS_KEY) !== void 0) keys.push(REPL_COMMANDS_KEY);
+      return keys;
+    });
+    function asRepl(d) {
+      if (!d || typeof d !== "object") return null;
+      const commands = Array.isArray(d.commands) ? d.commands.filter((x) => typeof x === "string") : [];
+      const html = typeof d.html === "string" ? d.html : "";
+      if (!html && !commands.length) return null;
       return {
-        html: d.html,
+        html,
         scrollTop: typeof d.scrollTop === "number" ? d.scrollTop : 0,
-        savedAt: typeof d.savedAt === "number" ? d.savedAt : 0
+        savedAt: typeof d.savedAt === "number" ? d.savedAt : 0,
+        commands
       };
     }
-    function writeReplTranscript(snap) {
-      const s = replStore();
-      if (!s) return;
-      if (!snap || typeof snap.html !== "string" || !snap.html) {
+    function adoptShared(s, key) {
+      const transcript = s.get(REPL_TRANSCRIPT_KEY);
+      const commands = s.get(REPL_COMMANDS_KEY);
+      const html = transcript && typeof transcript === "object" && typeof transcript.html === "string" ? transcript.html : "";
+      const list3 = Array.isArray(commands) ? commands.filter((x) => typeof x === "string") : [];
+      if (!html && !list3.length) {
         s.remove(REPL_TRANSCRIPT_KEY);
-        return;
+        s.remove(REPL_COMMANDS_KEY);
+        return null;
       }
-      s.set(REPL_TRANSCRIPT_KEY, {
-        html: snap.html,
-        scrollTop: typeof snap.scrollTop === "number" ? snap.scrollTop : 0,
-        savedAt: typeof snap.savedAt === "number" ? snap.savedAt : Date.now()
-      });
+      const rec = {
+        html,
+        scrollTop: transcript && typeof transcript.scrollTop === "number" ? transcript.scrollTop : 0,
+        savedAt: transcript && typeof transcript.savedAt === "number" ? transcript.savedAt : Date.now(),
+        commands: list3
+      };
+      if (!s.set(key, rec).ok) return rec;
+      s.remove(REPL_TRANSCRIPT_KEY);
+      s.remove(REPL_COMMANDS_KEY);
+      return rec;
     }
     function clampCommands(list3) {
       const arr = Array.isArray(list3) ? list3.filter((x) => typeof x === "string") : [];
       const cap = settings2.get("replHistoryCap");
       return arr.length > cap ? arr.slice(arr.length - cap) : arr;
     }
-    function readReplCommands() {
+    function readRepl() {
       const s = replStore();
-      return s ? clampCommands(s.get(REPL_COMMANDS_KEY)) : [];
+      if (!s) return null;
+      const key = replKey(work2.projectId());
+      const own = asRepl(s.get(key));
+      if (own) return own;
+      if (s.get(REPL_TRANSCRIPT_KEY) === void 0 && s.get(REPL_COMMANDS_KEY) === void 0) return null;
+      return adoptShared(s, key);
     }
-    function writeReplCommands(list3) {
+    function writeRepl(rec) {
       const s = replStore();
       if (!s) return;
-      const arr = clampCommands(list3);
-      if (arr.length) s.set(REPL_COMMANDS_KEY, arr);
-      else s.remove(REPL_COMMANDS_KEY);
+      const key = replKey(work2.projectId());
+      const html = rec && typeof rec.html === "string" ? rec.html : "";
+      const commands = clampCommands(rec && rec.commands);
+      if (!html && !commands.length) {
+        s.remove(key);
+        return;
+      }
+      s.set(key, {
+        html,
+        scrollTop: rec && typeof rec.scrollTop === "number" ? rec.scrollTop : 0,
+        savedAt: rec && typeof rec.savedAt === "number" ? rec.savedAt : Date.now(),
+        commands
+      });
+    }
+    function readReplTranscript() {
+      const rec = readRepl();
+      if (!rec || !rec.html) return null;
+      return { html: rec.html, scrollTop: rec.scrollTop, savedAt: rec.savedAt };
+    }
+    function writeReplTranscript(snap) {
+      if (!replStore()) return;
+      const cur = readRepl() || { html: "", scrollTop: 0, savedAt: 0, commands: [] };
+      if (!snap || typeof snap.html !== "string" || !snap.html) {
+        cur.html = "";
+        cur.scrollTop = 0;
+        cur.savedAt = 0;
+      } else {
+        cur.html = snap.html;
+        cur.scrollTop = typeof snap.scrollTop === "number" ? snap.scrollTop : 0;
+        cur.savedAt = typeof snap.savedAt === "number" ? snap.savedAt : Date.now();
+      }
+      writeRepl(cur);
+    }
+    function readReplCommands() {
+      const rec = readRepl();
+      return rec ? clampCommands(rec.commands) : [];
+    }
+    function writeReplCommands(list3) {
+      if (!replStore()) return;
+      const cur = readRepl() || { html: "", scrollTop: 0, savedAt: 0, commands: [] };
+      cur.commands = clampCommands(list3);
+      writeRepl(cur);
     }
     const foldStore = () => storeFor(settings2.get("editorFoldPersist"));
     followSetting("editorFoldPersist", (s) => s.keys("beljar/p/").filter((k) => k.endsWith("/folds")));
@@ -4119,7 +4238,7 @@
     const maxWaitMs = o.maxWaitMs != null ? o.maxWaitMs : 3e4;
     const pollMs = o.pollMs != null ? o.pollMs : 6e4;
     const backoff = o.backoff || [5e3, 15e3, 6e4, 3e5];
-    const visible = typeof o.visible === "function" ? o.visible : () => true;
+    const visible2 = typeof o.visible === "function" ? o.visible : () => true;
     const listeners = /* @__PURE__ */ new Set();
     let status = { state: "waiting", leader: false, lastSync: 0, error: null, reason: null, pending: false, safe: false, held: false };
     let leader = false;
@@ -4132,7 +4251,7 @@
     let dirty = false;
     let heard = false;
     let held = false;
-    let release = null;
+    let release2 = null;
     let abort = null;
     let unsubscribe = null;
     function update2(patch) {
@@ -4148,7 +4267,7 @@
       if (timer != null) timers.clear(timer);
       timer = timers.set(() => {
         timer = null;
-        if (!dirty && !failures && !visible()) return;
+        if (!dirty && !failures && !visible2()) return;
         round();
       }, Math.max(0, ms));
     }
@@ -4243,7 +4362,7 @@
           update2({ state: "idle", leader: true });
           round();
           return new Promise((resolve2) => {
-            release = resolve2;
+            release2 = resolve2;
           });
         })).catch(() => {
         });
@@ -4327,9 +4446,9 @@
         }
         if (!(opts && opts.hold)) {
           if (abort) abort.abort();
-          if (release) {
-            release();
-            release = null;
+          if (release2) {
+            release2();
+            release2 = null;
           }
         }
         leader = false;
@@ -4346,18 +4465,18 @@
     const files2 = differs || [];
     if (!account) return { signedIn: false, state: files2.length ? "differs" : "off", lastSync: 0, error: null, reason: null, differs: files2 };
     const st = runner || {};
-    let state;
-    if (files2.length) state = "differs";
-    else if (online === false) state = "offline";
-    else if (st.held) state = "held";
-    else if (st.state === "offline") state = "offline";
-    else if (st.state === "error") state = "error";
-    else if (st.state === "syncing") state = "syncing";
-    else if (st.pending) state = "pending";
-    else if (st.lastSync) state = "synced";
-    else state = "syncing";
-    const failing2 = state === "error";
-    return { signedIn: true, state, lastSync: st.lastSync || 0, error: failing2 ? st.error || null : null, reason: failing2 ? st.reason || null : null, differs: files2 };
+    let state2;
+    if (files2.length) state2 = "differs";
+    else if (online === false) state2 = "offline";
+    else if (st.held) state2 = "held";
+    else if (st.state === "offline") state2 = "offline";
+    else if (st.state === "error") state2 = "error";
+    else if (st.state === "syncing") state2 = "syncing";
+    else if (st.pending) state2 = "pending";
+    else if (st.lastSync) state2 = "synced";
+    else state2 = "syncing";
+    const failing2 = state2 === "error";
+    return { signedIn: true, state: state2, lastSync: st.lastSync || 0, error: failing2 ? st.error || null : null, reason: failing2 ? st.reason || null : null, differs: files2 };
   }
   function createSyncStatus(o) {
     const now = o.now || (() => Date.now());
@@ -4366,7 +4485,7 @@
     let seq2 = 0;
     const newId3 = o.newId || (() => now().toString(36) + "-" + ++seq2 + "-" + Math.random().toString(36).slice(2, 8));
     const listeners = /* @__PURE__ */ new Set();
-    const asked = /* @__PURE__ */ new Map();
+    const asked2 = /* @__PURE__ */ new Map();
     let runner = null;
     let unsubscribeRunner = null;
     let local = null;
@@ -4406,9 +4525,9 @@
       if (!msg || typeof msg !== "object") return;
       if (kind === STATUS_MESSAGE) {
         remote = msg;
-        if (msg.answered && asked.has(msg.answered)) {
-          const resolve2 = asked.get(msg.answered);
-          asked.delete(msg.answered);
+        if (msg.answered && asked2.has(msg.answered)) {
+          const resolve2 = asked2.get(msg.answered);
+          asked2.delete(msg.answered);
           resolve2({ ok: !!msg.safe, reason: msg.safe ? null : msg.state || "unsafe" });
         }
         emit2();
@@ -4461,11 +4580,11 @@
         if (leading()) return runner.release().then(() => ({ ok: true, reason: null }));
         const id = newId3();
         return new Promise((resolve2) => {
-          asked.set(id, () => resolve2({ ok: true, reason: null }));
+          asked2.set(id, () => resolve2({ ok: true, reason: null }));
           o.tabs.post(ASK_MESSAGE, { id, release: true, at: now() });
           timers.set(() => {
-            if (!asked.has(id)) return;
-            asked.delete(id);
+            if (!asked2.has(id)) return;
+            asked2.delete(id);
             resolve2({ ok: false, reason: "no-answer" });
           }, timeoutMs);
         });
@@ -4482,11 +4601,11 @@
         }
         const id = newId3();
         return new Promise((resolve2) => {
-          asked.set(id, resolve2);
+          asked2.set(id, resolve2);
           o.tabs.post(ASK_MESSAGE, { id, round: true, at: now() });
           timers.set(() => {
-            if (!asked.has(id)) return;
-            asked.delete(id);
+            if (!asked2.has(id)) return;
+            asked2.delete(id);
             resolve2({ ok: false, reason: "no-answer" });
           }, timeoutMs);
         });
@@ -4508,7 +4627,7 @@
       o.device.set(HELD_ROW, String(o.account));
       o.runner.hold();
     }
-    function waiting() {
+    function waiting2() {
       if (!checking) {
         checking = Promise.resolve().then(() => o.engine.localChanges()).then((list3) => list3.length > 0, () => true).finally(() => {
           checking = null;
@@ -4527,7 +4646,7 @@
           return;
         }
         if (offline(st)) return;
-        waiting().then((any) => {
+        waiting2().then((any) => {
           const now = o.runner.status();
           if (!stopped && !any && now.held && !offline(now)) o.runner.release();
         });
@@ -4542,7 +4661,7 @@
         hold();
         return;
       }
-      waiting().then((any) => {
+      waiting2().then((any) => {
         const now = o.runner.status();
         if (!stopped && any && now.leader && !now.held && asking() && offline(now) && !heldHere()) hold();
       });
@@ -4582,20 +4701,20 @@
       set: (fn, ms) => globalThis.setTimeout(fn, ms),
       clear: (h) => globalThis.clearTimeout(h)
     };
-    const state = { persisted: null, workToLose: false, asked: false, warned: false };
+    const state2 = { persisted: null, workToLose: false, asked: false, warned: false };
     let unsubscribe = null;
     let recount = null;
     let onClick = null;
     let disposed = false;
     function warnIfAtRisk() {
-      if (!o.sevenDayRule || state.persisted || o.device.get("durabilityWarnedAt")) return;
+      if (!o.sevenDayRule || state2.persisted || o.device.get("durabilityWarnedAt")) return;
       o.device.set("durabilityWarnedAt", now());
-      state.warned = true;
+      state2.warned = true;
       o.warn();
     }
     function settle2(granted) {
-      state.persisted = !!granted;
-      if (!state.persisted) warnIfAtRisk();
+      state2.persisted = !!granted;
+      if (!state2.persisted) warnIfAtRisk();
     }
     function askAtNextClick() {
       if (onClick || !o.events) return;
@@ -4604,7 +4723,7 @@
         onClick = null;
         if (disposed || askedLately()) return;
         o.device.set("persistAskedAt", now());
-        state.asked = true;
+        state2.asked = true;
         let answer;
         try {
           answer = o.storage.persist();
@@ -4620,13 +4739,13 @@
       return !!last && now() - last < ASK_EVERY;
     }
     function thereIsWork() {
-      state.workToLose = true;
+      state2.workToLose = true;
       const canAsk = !!(o.storage && typeof o.storage.persist === "function");
       if (canAsk && !askedLately()) askAtNextClick();
       else warnIfAtRisk();
     }
     function count() {
-      if (state.workToLose || disposed) return;
+      if (state2.workToLose || disposed) return;
       if (countWork(o.work, WORK_TO_LOSE) < WORK_TO_LOSE) return;
       if (unsubscribe) {
         unsubscribe();
@@ -4638,13 +4757,13 @@
       /** Learn whether the browser already keeps the storage; then wait for work to lose. */
       async start() {
         try {
-          state.persisted = !!(o.storage && typeof o.storage.persisted === "function" && await o.storage.persisted());
+          state2.persisted = !!(o.storage && typeof o.storage.persisted === "function" && await o.storage.persisted());
         } catch (_) {
-          state.persisted = false;
+          state2.persisted = false;
         }
-        if (state.persisted || disposed) return;
+        if (state2.persisted || disposed) return;
         count();
-        if (state.workToLose) return;
+        if (state2.workToLose) return;
         unsubscribe = o.store.subscribe((e) => {
           if (e.cls !== "work" || recount != null) return;
           recount = timers.set(() => {
@@ -4660,7 +4779,7 @@
        * That is state, not news: home shows it for as long as it holds.
        */
       status() {
-        return Object.assign({ atRisk: !!o.sevenDayRule && state.workToLose && !state.persisted }, state);
+        return Object.assign({ atRisk: !!o.sevenDayRule && state2.workToLose && !state2.persisted }, state2);
       },
       dispose() {
         disposed = true;
@@ -4751,8 +4870,8 @@
       alsoWipe,
       migrations: MIGRATIONS,
       onMissingMigration: "refuse",
-      onCapacity: function(state, detail) {
-        if (state === "blocked") reportCapacityFailure(detail);
+      onCapacity: function(state2, detail) {
+        if (state2 === "blocked") reportCapacityFailure(detail);
         else clearCapacityFailure();
       },
       onVersionAhead: function() {
@@ -4770,21 +4889,21 @@
   }
   var tabStore = createStore({ storage: sessionArea || createMemoryStorage() });
   var Settings2;
-  var Device;
+  var Device2;
   var work;
   var files;
   var documents;
   var records;
   function compose() {
     Settings2 = createSettings(store);
-    Device = createTable(store, {
+    Device2 = createTable(store, {
       key: DEVICE_KEY,
       rows: DEVICE,
       unknown: function(id) {
         return 'device: no row "' + id + '" (declare it in device-schema.mjs)';
       }
     });
-    work = createWork({ store, device: Device });
+    work = createWork({ store, device: Device2 });
     files = create({ work, settings: Settings2 });
     documents = createDocuments({ work, settings: Settings2, files });
     records = create2({ store, tabStore, work, settings: Settings2 });
@@ -4928,7 +5047,7 @@
   var durability = createDurability({
     store,
     work,
-    device: Device,
+    device: Device2,
     storage: nav0 && nav0.storage || null,
     events: typeof window !== "undefined" ? window : null,
     sevenDayRule: underSevenDayRule(),
@@ -5002,7 +5121,7 @@
     holdPolicy = createHoldPolicy({
       runner: syncRunner,
       engine,
-      device: Device,
+      device: Device2,
       settings: Settings2,
       account,
       online: function() {
@@ -5292,7 +5411,7 @@
   var g2 = typeof window !== "undefined" ? window : globalThis;
   g2.Persist = Persist2;
   g2.Settings = Settings2;
-  g2.Device = Device;
+  g2.Device = Device2;
   g2.BelJarPersist = g2.Persist;
 
   // js/workspace/float-placement.mjs
@@ -6124,9 +6243,422 @@
     globalThis.Tooltips = Tooltips2;
   }
 
-  // js/ui/menu.mjs
+  // js/ui/hint-seen.mjs
+  var SEEN_SETTING = {
+    library: "hintSeenLibrary",
+    "inspector-cursor": "hintSeenInspectorCursor",
+    "sign-in": "hintSeenSignIn"
+  };
+  function seenSetting(id) {
+    return Object.prototype.hasOwnProperty.call(SEEN_SETTING, id) ? SEEN_SETTING[id] : null;
+  }
+  function wasSeen(id, o) {
+    const row = seenSetting(id);
+    if (row && o.setting(row) === true) return true;
+    return (o.deviceList || []).indexOf(id) !== -1;
+  }
+  function carryForward(deviceList, setting2) {
+    return (deviceList || []).map(seenSetting).filter((row) => row && setting2(row) !== true);
+  }
+  function settingsKnown(summary2, syncSettingsOn) {
+    if (!summary2 || !summary2.signedIn || !syncSettingsOn) return true;
+    return summary2.lastSync > 0;
+  }
+
+  // js/ui/hint.mjs
   var global = globalThis;
-  var FRP = global.FloatingRectPlacement;
+  var DEFAULT_DURATION_MS = 1e4;
+  var GAP_PX = 10;
+  var LEAVE_MS = 160;
+  var CLOSE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+  var rootEl = null;
+  var cardEl = null;
+  var bodyEl = null;
+  var closeBtn = null;
+  var anchorEl = null;
+  var activeId = null;
+  var autoTimer = null;
+  var leaveTimer = null;
+  var visible = false;
+  var dismissing = false;
+  var resizeBound = false;
+  var actionFn = null;
+  var placeSide = "right";
+  var placeAlign = "end";
+  function setting(row) {
+    return typeof Settings !== "undefined" && Settings.get ? Settings.get(row) : void 0;
+  }
+  function wasDismissed(id) {
+    if (!id) return false;
+    return wasSeen(id, { setting, deviceList: typeof Device !== "undefined" ? Device.get("dismissedHints") : [] });
+  }
+  function persistDismissed(id) {
+    if (!id) return;
+    var row = seenSetting(id);
+    if (row && typeof Settings !== "undefined") {
+      if (Settings.get(row) !== true) Settings.set(row, true);
+      return;
+    }
+    if (typeof Device === "undefined") return;
+    var list3 = Device.get("dismissedHints");
+    if (list3.indexOf(id) !== -1) return;
+    list3.push(id);
+    Device.set("dismissedHints", list3);
+  }
+  function clearTimers() {
+    if (autoTimer != null) {
+      clearTimeout(autoTimer);
+      autoTimer = null;
+    }
+    if (leaveTimer != null) {
+      clearTimeout(leaveTimer);
+      leaveTimer = null;
+    }
+  }
+  function releaseTooltip() {
+    if (anchorEl && global.Tooltips && Tooltips.releaseAnchor) Tooltips.releaseAnchor(anchorEl);
+  }
+  function suppressTooltip() {
+    if (anchorEl && global.Tooltips && Tooltips.suppressAnchor) Tooltips.suppressAnchor(anchorEl);
+    if (anchorEl && global.Tooltips && Tooltips.hideImmediate) Tooltips.hideImmediate();
+  }
+  function progressBar() {
+    return rootEl && rootEl.querySelector(".hint-progress-bar");
+  }
+  function freezeProgressBar() {
+    const bar = progressBar();
+    if (!bar) return;
+    const t = getComputedStyle(bar).transform;
+    bar.style.animation = "none";
+    bar.style.transition = "none";
+    bar.style.transform = t && t !== "none" ? t : "scaleX(0)";
+  }
+  function clearProgressBarFreeze() {
+    const bar = progressBar();
+    if (!bar) return;
+    bar.style.removeProperty("animation");
+    bar.style.removeProperty("transition");
+    bar.style.removeProperty("transform");
+  }
+  function ensureDom() {
+    if (rootEl) return true;
+    rootEl = document.getElementById("hint-root");
+    if (!rootEl) {
+      rootEl = document.createElement("div");
+      rootEl.id = "hint-root";
+      rootEl.className = "hint-root";
+      rootEl.setAttribute("role", "status");
+      rootEl.setAttribute("aria-live", "polite");
+      rootEl.setAttribute("aria-hidden", "true");
+      rootEl.hidden = true;
+      rootEl.innerHTML = '<div class="hint-card"><div class="hint-top"><div class="hint-body"></div><button type="button" class="icon-btn hint-close" aria-label="Dismiss">' + CLOSE_SVG + '</button></div><div class="hint-progress" aria-hidden="true"><span class="hint-progress-bar"></span></div></div>';
+      document.body.appendChild(rootEl);
+    }
+    cardEl = rootEl.querySelector(".hint-card");
+    bodyEl = rootEl.querySelector(".hint-body");
+    closeBtn = rootEl.querySelector(".hint-close");
+    if (closeBtn && !closeBtn._belHintBound) {
+      closeBtn._belHintBound = true;
+      closeBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dismiss();
+      });
+    }
+    if (cardEl && !cardEl._belHintActionBound) {
+      cardEl._belHintActionBound = true;
+      cardEl.addEventListener("click", (e) => {
+        if (e.target && e.target.closest && e.target.closest(".hint-close")) return;
+        if (!actionFn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        runAction();
+      });
+      cardEl.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        if (e.repeat || !actionFn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        runAction();
+      });
+    }
+    if (!resizeBound) {
+      resizeBound = true;
+      window.addEventListener("resize", onResize);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", onResize);
+      }
+    }
+    return true;
+  }
+  function finishHide() {
+    if (!rootEl) return;
+    rootEl.classList.remove("is-visible", "is-leaving");
+    clearProgressBarFreeze();
+    rootEl.style.removeProperty("width");
+    rootEl.hidden = true;
+    rootEl.setAttribute("aria-hidden", "true");
+    visible = false;
+    dismissing = false;
+    actionFn = null;
+    rootEl.classList.remove("is-hold");
+    delete rootEl.dataset.side;
+    rootEl.style.removeProperty("--hint-arrow-x");
+    if (cardEl) {
+      cardEl.classList.remove("is-action");
+      cardEl.removeAttribute("role");
+      cardEl.removeAttribute("tabindex");
+    }
+    releaseTooltip();
+    anchorEl = null;
+    activeId = null;
+  }
+  function fitWidth() {
+    if (!rootEl) return;
+    rootEl.style.removeProperty("width");
+    const cs = getComputedStyle(rootEl);
+    let maxW = parseFloat(cs.maxWidth);
+    if (!Number.isFinite(maxW) || maxW <= 0) {
+      maxW = Math.min(352, window.innerWidth - 20);
+    }
+    maxW = Math.min(Math.floor(maxW), window.innerWidth - 16);
+    if (maxW < 48) maxW = 48;
+    rootEl.style.width = maxW + "px";
+    const targetH = rootEl.offsetHeight;
+    let lo = 48;
+    let hi = maxW;
+    let best = maxW;
+    while (lo <= hi) {
+      const mid = lo + hi >> 1;
+      rootEl.style.width = mid + "px";
+      if (rootEl.offsetHeight > targetH) {
+        lo = mid + 1;
+      } else {
+        best = mid;
+        hi = mid - 1;
+      }
+    }
+    rootEl.style.width = best + "px";
+  }
+  function headerDrop(anchor) {
+    const header = anchor.closest && anchor.closest("header");
+    if (!header) return null;
+    const v = getComputedStyle(header).getPropertyValue("--header-menu-gap").trim();
+    const n = parseFloat(v);
+    let gap = GAP_PX;
+    if (Number.isFinite(n)) {
+      gap = /rem$/.test(v) ? n * parseFloat(getComputedStyle(document.documentElement).fontSize) : n;
+    }
+    return { bottom: header.getBoundingClientRect().bottom, gap };
+  }
+  function runAction() {
+    if (!actionFn || dismissing) return;
+    const fn = actionFn;
+    actionFn = null;
+    dismiss();
+    fn();
+  }
+  function place() {
+    if (!rootEl || !cardEl || !anchorEl) return;
+    rootEl.hidden = false;
+    rootEl.style.left = "0px";
+    rootEl.style.top = "0px";
+    rootEl.style.visibility = "hidden";
+    rootEl.style.opacity = "0";
+    rootEl.style.pointerEvents = "none";
+    fitWidth();
+    const ar = anchorEl.getBoundingClientRect();
+    const width = rootEl.offsetWidth;
+    const height = rootEl.offsetHeight;
+    const margin = 8;
+    let left;
+    let top;
+    if (placeSide === "below") {
+      const drop = headerDrop(anchorEl);
+      const anchorBottom = drop ? drop.bottom : ar.bottom;
+      const gap = drop ? drop.gap : GAP_PX;
+      if (placeAlign === "start") left = Math.round(ar.left);
+      else if (placeAlign === "center") left = Math.round(ar.left + ar.width / 2 - width / 2);
+      else left = Math.round(ar.right - width);
+      top = Math.round(anchorBottom + gap);
+      rootEl.dataset.side = "below";
+      cardEl.style.removeProperty("--hint-arrow-y");
+    } else {
+      left = Math.round(ar.right + GAP_PX);
+      top = Math.round(ar.top + ar.height / 2 - height / 2);
+      rootEl.dataset.side = "right";
+      rootEl.style.removeProperty("--hint-arrow-x");
+    }
+    const maxLeft = window.innerWidth - width - margin;
+    const maxTop = window.innerHeight - height - margin;
+    if (left < margin) left = margin;
+    if (left > maxLeft) left = Math.max(margin, maxLeft);
+    if (top < margin) top = margin;
+    if (top > maxTop) top = Math.max(margin, maxTop);
+    if (placeSide === "below") {
+      const arrowX = Math.max(12, Math.min(width - 12, ar.left + ar.width / 2 - left));
+      rootEl.style.setProperty("--hint-arrow-x", arrowX + "px");
+    } else {
+      const arrowY = Math.max(12, Math.min(height - 12, ar.top + ar.height / 2 - top));
+      cardEl.style.setProperty("--hint-arrow-y", arrowY + "px");
+    }
+    rootEl.style.left = left + "px";
+    rootEl.style.top = top + "px";
+    rootEl.style.removeProperty("visibility");
+    rootEl.style.removeProperty("opacity");
+    rootEl.style.removeProperty("pointer-events");
+  }
+  function dismiss(id) {
+    if (id != null && activeId != null && id !== activeId) {
+      persistDismissed(id);
+      return;
+    }
+    const dismissId = activeId || id;
+    if (!visible || dismissing) {
+      if (dismissId) persistDismissed(dismissId);
+      return;
+    }
+    dismissing = true;
+    if (dismissId) persistDismissed(dismissId);
+    clearTimers();
+    freezeProgressBar();
+    rootEl.classList.remove("is-visible");
+    rootEl.classList.add("is-leaving");
+    const finish = () => {
+      rootEl.removeEventListener("transitionend", onEnd);
+      finishHide();
+    };
+    const onEnd = (e) => {
+      if (e.target !== rootEl) return;
+      finish();
+    };
+    rootEl.addEventListener("transitionend", onEnd);
+    leaveTimer = setTimeout(finish, LEAVE_MS + 40);
+  }
+  function accountAnswered() {
+    var P = global.Persist;
+    var summary2 = P && typeof P.syncSummary === "function" ? P.syncSummary() : null;
+    return settingsKnown(summary2, setting("syncSettings") !== false);
+  }
+  var waiting = /* @__PURE__ */ new Map();
+  var waitUnsub = null;
+  function release() {
+    if (waitUnsub) {
+      waitUnsub();
+      waitUnsub = null;
+    }
+    var queued = Array.from(waiting.values());
+    waiting.clear();
+    for (var i = 0; i < queued.length; i++) {
+      var a = queued[i].anchor;
+      var box = a && a.isConnected ? a.getBoundingClientRect() : null;
+      if (box && box.width > 0 && box.height > 0 && show(Object.assign({}, queued[i], { waited: true }))) return;
+    }
+  }
+  function waitForAccount(o) {
+    waiting.set(String(o.id), o);
+    if (waitUnsub) return;
+    var P = global.Persist;
+    if (P && typeof P.onSyncSummary === "function") {
+      waitUnsub = P.onSyncSummary(function() {
+        if (accountAnswered()) release();
+      });
+    }
+  }
+  function show(opts) {
+    const o = opts && typeof opts === "object" ? opts : {};
+    const id = o.id != null ? String(o.id) : null;
+    const anchor = o.anchor;
+    const text = o.text != null ? String(o.text) : "";
+    const duration = typeof o.duration === "number" && o.duration > 0 ? o.duration : DEFAULT_DURATION_MS;
+    const once = o.once !== false;
+    if (!anchor || !text) return false;
+    if (once && id && wasDismissed(id)) return false;
+    if (once && id && seenSetting(id) && o.wait !== false && !o.waited && !accountAnswered()) {
+      waitForAccount(o);
+      return false;
+    }
+    if (!ensureDom()) return false;
+    if (visible || dismissing) {
+      clearTimers();
+      finishHide();
+    }
+    activeId = id;
+    anchorEl = anchor;
+    placeSide = o.side === "below" ? "below" : "right";
+    placeAlign = o.align === "start" || o.align === "center" ? o.align : "end";
+    actionFn = typeof o.onClick === "function" ? o.onClick : null;
+    if (cardEl) {
+      if (actionFn) {
+        cardEl.classList.add("is-action");
+        cardEl.setAttribute("role", "button");
+        cardEl.tabIndex = 0;
+      } else {
+        cardEl.classList.remove("is-action");
+        cardEl.removeAttribute("role");
+        cardEl.removeAttribute("tabindex");
+      }
+    }
+    bodyEl.textContent = text;
+    rootEl.classList.toggle("is-hold", !!o.hold);
+    rootEl.style.setProperty("--hint-duration", duration / 1e3 + "s");
+    clearProgressBarFreeze();
+    place();
+    suppressTooltip();
+    rootEl.setAttribute("aria-hidden", "false");
+    void rootEl.offsetWidth;
+    rootEl.classList.remove("is-leaving");
+    rootEl.classList.add("is-visible");
+    visible = true;
+    dismissing = false;
+    const placeId = activeId;
+    const fonts = document.fonts;
+    if (fonts && fonts.status !== "loaded" && fonts.ready) {
+      fonts.ready.then(() => {
+        if (!visible || dismissing || activeId !== placeId) return;
+        place();
+      });
+    }
+    if (once && id) persistDismissed(id);
+    if (!o.hold) {
+      autoTimer = setTimeout(() => {
+        autoTimer = null;
+        dismiss();
+      }, duration);
+    }
+    return true;
+  }
+  function onResize() {
+    if (!visible || dismissing) return;
+    place();
+  }
+  if (typeof Settings !== "undefined" && typeof Settings.subscribe === "function") {
+    Settings.subscribe(function(e) {
+      if (!visible || dismissing || !activeId || !e || e.origin === "local") return;
+      var row = seenSetting(activeId);
+      if (row && e && Array.isArray(e.ids) && e.ids.indexOf(row) !== -1 && setting(row) === true) dismiss();
+    });
+  }
+  if (typeof Settings !== "undefined" && typeof Device !== "undefined") {
+    carryForward(Device.get("dismissedHints"), setting).forEach(function(row) {
+      Settings.set(row, true);
+    });
+  }
+  global.Hint = {
+    show,
+    dismiss,
+    wasDismissed,
+    isVisible: function(id) {
+      if (!visible || dismissing) return false;
+      if (id == null) return true;
+      return activeId === String(id);
+    }
+  };
+  global.BelJarHint = global.Hint;
+
+  // js/ui/menu.mjs
+  var global2 = globalThis;
+  var FRP = global2.FloatingRectPlacement;
   var MARGIN = FRP.DEFAULT_MARGIN;
   var customRowTypes = /* @__PURE__ */ Object.create(null);
   var allControllers = /* @__PURE__ */ new Set();
@@ -6192,13 +6724,13 @@
     const SUBMENU_OPEN_DELAY_MS = 90;
     const MENU_ITEM_TIP_DELAY_MS = 300;
     function hideMenuTooltips() {
-      const T = global.Tooltips;
+      const T = global2.Tooltips;
       if (T && T.hide) T.hide();
     }
     function bindMenuItemTooltip(btn, item) {
       const text = item.tooltip;
       if (!text) return;
-      const T = global.Tooltips;
+      const T = global2.Tooltips;
       if (!T) return;
       let timer = null;
       btn.addEventListener("mouseenter", () => {
@@ -6258,7 +6790,13 @@
       }
       return { anchorRef, align };
     }
-    function layoutMenuEl(menuEl, anchor, side, align, isSubmenu) {
+    function dropGap(from) {
+      const v = getComputedStyle(from).getPropertyValue("--header-menu-gap").trim();
+      const n = parseFloat(v);
+      if (!Number.isFinite(n)) return 0;
+      return /rem$/.test(v) ? n * parseFloat(getComputedStyle(document.documentElement).fontSize) : n;
+    }
+    function layoutMenuEl(menuEl, anchor, side, align, isSubmenu, dropFrom) {
       let ar;
       if (isSubmenu && anchor instanceof Element) {
         const placed = submenuPlacementAnchor(anchor);
@@ -6266,6 +6804,10 @@
         align = placed.align;
       } else {
         ar = anchorRect(anchor);
+      }
+      if (dropFrom && !isSubmenu) {
+        const bar = dropFrom.getBoundingClientRect();
+        ar = { left: ar.left, right: ar.right, top: ar.top, bottom: bar.bottom + dropGap(dropFrom) };
       }
       const alreadyVisible = menuEl.classList.contains("is-visible");
       if (!alreadyVisible) {
@@ -6318,8 +6860,8 @@
     }
     function relayoutAll() {
       for (let i = 0; i < openMenus.length; i++) {
-        const { el: el5, anchorRef, side, align, isSubmenu } = openMenus[i];
-        layoutMenuEl(el5, anchorRef, side, align, isSubmenu);
+        const { el: el5, anchorRef, side, align, isSubmenu, dropFrom } = openMenus[i];
+        layoutMenuEl(el5, anchorRef, side, align, isSubmenu, dropFrom);
       }
     }
     function rovingTabIndexForPanel(menuEl) {
@@ -6761,9 +7303,10 @@
           triggerEl: null,
           side,
           align,
-          isSubmenu: false
+          isSubmenu: false,
+          dropFrom: opts.dropFrom || null
         });
-        layoutMenuEl(menuEl, anchor, side, align, false);
+        layoutMenuEl(menuEl, anchor, side, align, false, opts.dropFrom || null);
         setActiveController(controller);
         rovingTabIndexForPanel(menuEl);
         focusMenuItem(menuEl, 0);
@@ -6807,6 +7350,23 @@
       targetEl.addEventListener("contextmenu", handler);
       return () => targetEl.removeEventListener("contextmenu", handler);
     }
+    function update2(anchor, items) {
+      if (!openMenus.length || !anchor || rootAnchorEl !== anchor) return false;
+      const root = openMenus[0];
+      while (openMenus.length > 1) openMenus.pop().el.remove();
+      submenuSourceRow = null;
+      const fresh = buildMenu(items, 0);
+      for (const c of root.el.classList) if (c !== "menu" && c !== "menu--has-icons") fresh.classList.add(c);
+      fresh.style.left = root.el.style.left;
+      fresh.style.top = root.el.style.top;
+      const hadFocus = root.el.contains(document.activeElement);
+      root.el.replaceWith(fresh);
+      root.el = fresh;
+      layoutMenuEl(fresh, root.anchorRef, root.side, root.align, false, root.dropFrom);
+      rovingTabIndexForPanel(fresh);
+      if (hadFocus) focusMenuItem(fresh, 0);
+      return true;
+    }
     function destroy() {
       allControllers.delete(controller);
       if (activeController === controller) setActiveController(null);
@@ -6818,6 +7378,7 @@
     controller.closeAll = closeAll2;
     controller.isOpen = isOpen2;
     controller.rootAnchor = rootAnchor;
+    controller.update = update2;
     controller.relayoutAll = relayoutAll;
     controller.forceCloseSync = forceCloseSync;
     controller.destroy = destroy;
@@ -6851,7 +7412,7 @@
     }, { once: true });
     return ctrl;
   }
-  global.Menu = {
+  global2.Menu = {
     open(opts) {
       const anchor = opts && opts.anchor;
       const ctrl = menuControllerForAnchor(anchor instanceof Element ? anchor : null);
@@ -6859,6 +7420,11 @@
     },
     openContext(opts) {
       if (defaultMenu) defaultMenu.openContext(opts);
+    },
+    /** The open menu anchored at `anchor`, rebuilt from `items` in place: false when it is not open. */
+    update(anchor, items) {
+      const ctrl = menuControllerForAnchor(anchor instanceof Element ? anchor : null);
+      return ctrl ? ctrl.update(anchor, items) : false;
     },
     bindContextMenu(targetEl, itemsOrFn, opts) {
       if (defaultMenu) return defaultMenu.bindContextMenu(targetEl, itemsOrFn, opts);
@@ -6906,6 +7472,11 @@
         anchor: btn,
         side: menuOpts.side,
         align: menuOpts.align,
+        // ⛔ A button in the top bar drops its menu from the bar's bottom edge, the
+        // same for every one of them (`--header-menu-gap`, css/tokens.css). The
+        // menu bar's own items (Project, Edit, Tools) open flush under themselves,
+        // as a menu bar's do (Dean tried both, 2026-10-06).
+        dropFrom: btn.closest(".header-menu") ? null : btn.closest("body > header") || null,
         items,
         onClose: () => setOpen2(false)
       });
@@ -6931,7 +7502,7 @@
   g4.MenuTrigger = { wire: wireMenuTrigger };
 
   // js/ui/floating-window.mjs
-  var global2 = globalThis;
+  var global3 = globalThis;
   var MARGIN2 = 8;
   var open = /* @__PURE__ */ new Set();
   var zTop = 4e3;
@@ -6939,10 +7510,10 @@
     return Math.min(Math.max(v, lo), hi);
   }
   function viewportW() {
-    return typeof global2.innerWidth === "number" ? global2.innerWidth : 1024;
+    return typeof global3.innerWidth === "number" ? global3.innerWidth : 1024;
   }
   function viewportH() {
-    return typeof global2.innerHeight === "number" ? global2.innerHeight : 768;
+    return typeof global3.innerHeight === "number" ? global3.innerHeight : 768;
   }
   function makeEl(tag, cls) {
     const n = document.createElement(tag);
@@ -6975,7 +7546,7 @@
             btn.setAttribute("aria-pressed", on ? "true" : "false");
             const t = tip(on);
             if (t) btn.setAttribute("aria-label", t);
-            if (global2.Tooltips?.set) global2.Tooltips.set(btn, t);
+            if (global3.Tooltips?.set) global3.Tooltips.set(btn, t);
           };
           setPressed(!!act2.pressed);
           if (act2.ref) act2.ref.setPressed = setPressed;
@@ -6987,11 +7558,11 @@
           });
         } else {
           if (act2.label) btn.setAttribute("aria-label", act2.label);
-          if (typeof act2.tooltip === "function" && global2.Tooltips?.setRich) {
-            global2.Tooltips.setRich(btn, act2.tooltip, act2.label);
+          if (typeof act2.tooltip === "function" && global3.Tooltips?.setRich) {
+            global3.Tooltips.setRich(btn, act2.tooltip, act2.label);
             btn.classList.add("floating-window-action--info");
-          } else if (global2.Tooltips?.set && act2.label) {
-            global2.Tooltips.set(btn, act2.label);
+          } else if (global3.Tooltips?.set && act2.label) {
+            global3.Tooltips.set(btn, act2.label);
           }
           btn.addEventListener("click", (e) => {
             e.stopPropagation();
@@ -7002,11 +7573,11 @@
         barActions.appendChild(btn);
       }
     }
-    const closeBtn = makeEl("button", "floating-window-close");
-    closeBtn.type = "button";
-    closeBtn.setAttribute("aria-label", "Close");
-    closeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
-    bar.append(titleEl, barActions, closeBtn);
+    const closeBtn2 = makeEl("button", "floating-window-close");
+    closeBtn2.type = "button";
+    closeBtn2.setAttribute("aria-label", "Close");
+    closeBtn2.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+    bar.append(titleEl, barActions, closeBtn2);
     const body = makeEl("div", "floating-window-body");
     if (opts.content) body.appendChild(opts.content);
     const grip = makeEl("div", "floating-window-grip");
@@ -7053,23 +7624,23 @@
     function onDragUp() {
       if (!dragP) return;
       dragP = null;
-      global2.removeEventListener("pointermove", onDragMove);
-      global2.removeEventListener("pointerup", onDragUp);
-      global2.removeEventListener("pointercancel", onDragUp);
+      global3.removeEventListener("pointermove", onDragMove);
+      global3.removeEventListener("pointerup", onDragUp);
+      global3.removeEventListener("pointercancel", onDragUp);
       document.body.classList.remove("floating-window-dragging");
       notifyGeometryChange();
     }
     bar.addEventListener("pointerdown", (e) => {
-      if (e.target === closeBtn || closeBtn.contains(e.target)) return;
+      if (e.target === closeBtn2 || closeBtn2.contains(e.target)) return;
       for (const b of actionBtns) {
         if (e.target === b || b.contains(e.target)) return;
       }
       if (e.button !== 0) return;
       dragP = { px: e.clientX, py: e.clientY, startX: x, startY: y };
       document.body.classList.add("floating-window-dragging");
-      global2.addEventListener("pointermove", onDragMove);
-      global2.addEventListener("pointerup", onDragUp);
-      global2.addEventListener("pointercancel", onDragUp);
+      global3.addEventListener("pointermove", onDragMove);
+      global3.addEventListener("pointerup", onDragUp);
+      global3.addEventListener("pointercancel", onDragUp);
       e.preventDefault();
     });
     let rez = null;
@@ -7084,9 +7655,9 @@
     function onRezUp() {
       if (!rez) return;
       rez = null;
-      global2.removeEventListener("pointermove", onRezMove);
-      global2.removeEventListener("pointerup", onRezUp);
-      global2.removeEventListener("pointercancel", onRezUp);
+      global3.removeEventListener("pointermove", onRezMove);
+      global3.removeEventListener("pointerup", onRezUp);
+      global3.removeEventListener("pointercancel", onRezUp);
       document.body.classList.remove("floating-window-resizing");
       notifyGeometryChange();
     }
@@ -7094,9 +7665,9 @@
       if (e.button !== 0) return;
       rez = { px: e.clientX, py: e.clientY, startW: root.offsetWidth, startH: root.offsetHeight };
       document.body.classList.add("floating-window-resizing");
-      global2.addEventListener("pointermove", onRezMove);
-      global2.addEventListener("pointerup", onRezUp);
-      global2.addEventListener("pointercancel", onRezUp);
+      global3.addEventListener("pointermove", onRezMove);
+      global3.addEventListener("pointerup", onRezUp);
+      global3.addEventListener("pointercancel", onRezUp);
       e.preventDefault();
       e.stopPropagation();
     });
@@ -7116,7 +7687,7 @@
         }
       }
     }
-    closeBtn.addEventListener("click", close2);
+    closeBtn2.addEventListener("click", close2);
     function setTitleContent(target, title) {
       target.textContent = "";
       if (title == null) return;
@@ -7143,7 +7714,7 @@
   function closeAll() {
     for (const h of [...open]) h.close();
   }
-  global2.FloatingWindow = { open: openWindow, closeAll };
+  global3.FloatingWindow = { open: openWindow, closeAll };
 
   // js/ui/dialog.mjs
   var DIALOG_ROOT_CLASS = "jar-dialog";
@@ -7798,7 +8369,7 @@
   g9.BelJarConflictDialog = g9.ConflictDialog;
 
   // js/ui/download-zip.mjs
-  var global3 = globalThis;
+  var global4 = globalThis;
   var CRC_TABLE = (function() {
     var table = new Uint32Array(256);
     for (var n = 0; n < 256; n++) {
@@ -7949,7 +8520,7 @@
     });
     return { fileName: root + ".zip", entries };
   }
-  global3.DownloadZip = {
+  global4.DownloadZip = {
     buildZip,
     triggerDownload,
     downloadTextFile,
@@ -7957,7 +8528,7 @@
     fileSafeName,
     projectArchive
   };
-  global3.BelJarDownloadZip = global3.DownloadZip;
+  global4.BelJarDownloadZip = global4.DownloadZip;
 
   // js/persist/settings-apply.mjs
   var UI_FONT_SCALES = { sm: 0.875, md: 1, lg: 1.125, xl: 1.25 };
@@ -7981,9 +8552,9 @@
   }
 
   // js/ui/toasts.mjs
-  var global4 = globalThis;
-  var DEFAULT_DURATION_MS = TOAST_DURATION_MS.normal;
-  var LEAVE_MS = 280;
+  var global5 = globalThis;
+  var DEFAULT_DURATION_MS2 = TOAST_DURATION_MS.normal;
+  var LEAVE_MS2 = 280;
   var UNTIL_POLL_MS = 120;
   var stackEl = null;
   var seq = 0;
@@ -7993,7 +8564,7 @@
     return "toast-" + seq;
   }
   function durationForMode(mode) {
-    return TOAST_DURATION_MS[mode] || DEFAULT_DURATION_MS;
+    return TOAST_DURATION_MS[mode] || DEFAULT_DURATION_MS2;
   }
   function normalizeDuration(opts) {
     var fallback = durationForMode(readSetting("toastDuration"));
@@ -8029,7 +8600,7 @@
     return false;
   }
   function pushNotification(message, parsed) {
-    const N = global4.Notifications;
+    const N = global5.Notifications;
     if (!N) return;
     if (typeof N.fromToast === "function") {
       N.fromToast(message, {
@@ -8051,7 +8622,7 @@
     }
     return "toast--default";
   }
-  function clearTimers(entry) {
+  function clearTimers2(entry) {
     if (entry.autoTimer != null) {
       clearTimeout(entry.autoTimer);
       entry.autoTimer = null;
@@ -8069,12 +8640,12 @@
   function finishDismiss(id, entry) {
     if (!entry || entry.dismissed) return;
     entry.dismissed = true;
-    clearTimers(entry);
+    clearTimers2(entry);
     live.delete(id);
     try {
       if (entry.onDismiss) entry.onDismiss();
     } catch (err) {
-      if (global4.console && console.error) console.error("[toast]", err);
+      if (global5.console && console.error) console.error("[toast]", err);
     }
     removeNode(entry);
     if (live.size === 0) hideToastLayer();
@@ -8096,7 +8667,7 @@
   function animateOut(id, entry) {
     if (!entry || entry.leaving || entry.dismissed) return;
     entry.leaving = true;
-    clearTimers(entry);
+    clearTimers2(entry);
     const el5 = entry.el;
     el5.classList.remove("is-visible");
     el5.classList.add("is-leaving");
@@ -8112,7 +8683,7 @@
       finish();
     };
     el5.addEventListener("transitionend", onEnd);
-    setTimeout(finish, LEAVE_MS + 40);
+    setTimeout(finish, LEAVE_MS2 + 40);
   }
   function wireUntil(id, entry, untilFn) {
     const result = untilFn();
@@ -8125,12 +8696,12 @@
       try {
         if (untilFn()) animateOut(id, entry);
       } catch (err) {
-        if (global4.console && console.error) console.error("[toast]", err);
+        if (global5.console && console.error) console.error("[toast]", err);
         animateOut(id, entry);
       }
     }, UNTIL_POLL_MS);
   }
-  function show(message, opts) {
+  function show2(message, opts) {
     if (!stackEl) init();
     const parsed = parseOpts(message, opts);
     if (!parsed.message) return null;
@@ -8147,16 +8718,16 @@
     body.textContent = parsed.message;
     el5.appendChild(body);
     if (parsed.closable) {
-      const closeBtn = document.createElement("button");
-      closeBtn.type = "button";
-      closeBtn.className = "icon-btn toast-close";
-      closeBtn.setAttribute("aria-label", "Dismiss");
-      closeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-      closeBtn.addEventListener("click", (e) => {
+      const closeBtn2 = document.createElement("button");
+      closeBtn2.type = "button";
+      closeBtn2.className = "icon-btn toast-close";
+      closeBtn2.setAttribute("aria-label", "Dismiss");
+      closeBtn2.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+      closeBtn2.addEventListener("click", (e) => {
         e.stopPropagation();
         animateOut(id, entry);
       });
-      el5.appendChild(closeBtn);
+      el5.appendChild(closeBtn2);
     }
     const entry = {
       id,
@@ -8184,14 +8755,14 @@
   function typed(kind, message, opts) {
     const o = opts && typeof opts === "object" ? Object.assign({}, opts) : {};
     o.kind = kind;
-    return show(message, o);
+    return show2(message, o);
   }
-  function dismiss(id) {
+  function dismiss2(id) {
     const entry = live.get(id);
     if (entry) animateOut(id, entry);
   }
   function dismissAll() {
-    Array.from(live.keys()).forEach(dismiss);
+    Array.from(live.keys()).forEach(dismiss2);
   }
   function init() {
     stackEl = document.getElementById("toast-stack");
@@ -8216,19 +8787,19 @@
     }
     stackEl = null;
   }
-  global4.Toasts = {
+  global5.Toasts = {
     init,
     dispose,
-    show,
+    show: show2,
     error: (message, opts) => typed("error", message, opts),
     warn: (message, opts) => typed("warn", message, opts),
     success: (message, opts) => typed("success", message, opts),
     info: (message, opts) => typed("info", message, opts),
-    dismiss,
+    dismiss: dismiss2,
     dismissAll,
-    _pure: { normalizeDuration, parseOpts, shouldNotify, DEFAULT_DURATION_MS }
+    _pure: { normalizeDuration, parseOpts, shouldNotify, DEFAULT_DURATION_MS: DEFAULT_DURATION_MS2 }
   };
-  global4.BelJarToasts = global4.Toasts;
+  global5.BelJarToasts = global5.Toasts;
 
   // js/ui/notification-store.mjs
   var SCHEMA_VERSION = 1;
@@ -8415,7 +8986,7 @@
       notify();
       return rec;
     }
-    function dismiss3(id) {
+    function dismiss4(id) {
       const idx = items.findIndex((r) => r.id === id);
       if (idx < 0) return false;
       items.splice(idx, 1);
@@ -8464,7 +9035,7 @@
       list: list3,
       get: get2,
       upsert,
-      dismiss: dismiss3,
+      dismiss: dismiss4,
       clear: clear2,
       markRead,
       markAllRead,
@@ -8598,7 +9169,7 @@
   }
 
   // js/ui/notifications.mjs
-  var global5 = globalThis;
+  var global6 = globalThis;
   var bellBtn = null;
   var panelEl = null;
   var listEl = null;
@@ -8664,10 +9235,10 @@
     btn.innerHTML = '<svg class="notif-item-chevron" viewBox="0 0 8 10" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.15 1.2 6.35 5 1.15 8.8"/></svg><span>Diagnostic</span>';
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      const show2 = pre.hidden;
-      pre.hidden = !show2;
-      btn.setAttribute("aria-expanded", show2 ? "true" : "false");
-      btn.classList.toggle("is-open", show2);
+      const show3 = pre.hidden;
+      pre.hidden = !show3;
+      btn.setAttribute("aria-expanded", show3 ? "true" : "false");
+      btn.classList.toggle("is-open", show3);
       if (fade) fade.update();
     });
     return btn;
@@ -8758,7 +9329,7 @@
     dismissBtn.innerHTML = svgMarkup('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>');
     dismissBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      dismiss2(view.id);
+      dismiss3(view.id);
     });
     li.appendChild(dismissBtn);
     return li;
@@ -8848,7 +9419,7 @@
       origin: "local"
     });
   }
-  function dismiss2(id) {
+  function dismiss3(id) {
     store2.dismiss(id);
   }
   function clear() {
@@ -8910,8 +9481,8 @@
     track(document, "pointerdown", onDocPointerDown, true);
     track(document, "keydown", onDocKeyDown, true);
     track(window, "resize", onWindowResize);
-    if (listEl && global5.ScrollFade && typeof global5.ScrollFade.attach === "function") {
-      fade = global5.ScrollFade.attach(listEl, { axis: "y", size: 14 });
+    if (listEl && global6.ScrollFade && typeof global6.ScrollFade.attach === "function") {
+      fade = global6.ScrollFade.attach(listEl, { axis: "y", size: 14 });
     }
     positionPanel();
     renderList();
@@ -8943,14 +9514,14 @@
     clearBtn = null;
     countEl = null;
   }
-  global5.Notifications = {
+  global6.Notifications = {
     init: init2,
     dispose: dispose2,
     emit,
     push,
     teaching,
     fromToast,
-    dismiss: dismiss2,
+    dismiss: dismiss3,
     clear,
     markRead: (id) => store2.markRead(id),
     markAllRead: () => store2.markAllRead(),
@@ -8973,10 +9544,10 @@
       SCHEMA_VERSION
     }
   };
-  global5.BelJarNotifications = global5.Notifications;
+  global6.BelJarNotifications = global6.Notifications;
 
   // js/frame/frame.mjs
-  var global6 = globalThis;
+  var global7 = globalThis;
   var teardown2 = [];
   var mounted = false;
   function track2(target, type, fn, opts) {
@@ -8987,7 +9558,7 @@
   function toggleTheme() {
     const next = Settings.get("theme") === "light" ? "dark" : "light";
     Settings.set("theme", next);
-    global6.dispatchEvent(new CustomEvent("beljar:settings-changed", {
+    global7.dispatchEvent(new CustomEvent("beljar:settings-changed", {
       detail: { key: "theme" }
     }));
     return next;
@@ -9004,8 +9575,8 @@
     if (home) home.setAttribute("href", Routes.homeUrl());
   }
   function onSettings() {
-    if (global6.SettingsUI && typeof global6.SettingsUI.open === "function") {
-      global6.SettingsUI.open();
+    if (global7.SettingsUI && typeof global7.SettingsUI.open === "function") {
+      global7.SettingsUI.open();
     }
   }
   function mount() {
@@ -9013,12 +9584,16 @@
     mounted = true;
     repaint();
     teardown2.push(Settings.subscribe(onSettingsChanged));
-    if (global6.Toasts && typeof global6.Toasts.init === "function") global6.Toasts.init();
-    if (global6.Notifications && typeof global6.Notifications.init === "function") {
-      global6.Notifications.init();
+    if (global7.Toasts && typeof global7.Toasts.init === "function") global7.Toasts.init();
+    if (global7.Notifications && typeof global7.Notifications.init === "function") {
+      global7.Notifications.init();
     }
     track2(document.getElementById("btn-theme"), "click", toggleTheme);
     track2(document.getElementById("btn-settings"), "click", onSettings);
+    track2(document.getElementById("btn-go-home"), "click", () => {
+      if (global7.Commands && global7.Commands.run("app.home")) return;
+      if (global7.Account && global7.Account.goHome) global7.Account.goHome();
+    });
     nameHome();
   }
   function unmount() {
@@ -9031,7 +9606,7 @@
       } catch (_) {
       }
     }
-    for (const peer of [global6.Notifications, global6.Toasts]) {
+    for (const peer of [global7.Notifications, global7.Toasts]) {
       if (peer && typeof peer.dispose === "function") {
         try {
           peer.dispose();
@@ -9047,12 +9622,15 @@
     isMounted: () => mounted,
     pendingTeardown: () => teardown2.length
   };
-  global6.Frame = Frame;
-  global6.BelJarFrame = global6.Frame;
+  global7.Frame = Frame;
+  global7.BelJarFrame = global7.Frame;
 
   // js/account/avatar.mjs
   var seen = /* @__PURE__ */ new Map();
-  function identiconBackground(data, size) {
+  function rgb(c) {
+    return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+  }
+  function identiconColours(data, size) {
     if (!data || !size || data.length < size * size * 4) return null;
     const px = (x, y) => (y * size + x) * 4;
     const b = px(0, 0);
@@ -9060,7 +9638,11 @@
     if (data[b + 3] < 250 || bg[0] + bg[1] + bg[2] < 600) return null;
     const near = (i, c) => Math.abs(data[i] - c[0]) + Math.abs(data[i + 1] - c[1]) + Math.abs(data[i + 2] - c[2]) <= 12;
     const band = Math.max(1, Math.round(size / 12) - 1);
+    const counts = /* @__PURE__ */ new Map();
     let ink = null;
+    let bestKey = 0;
+    let bestN = 0;
+    let bestFar = -1;
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
         const i = px(x, y);
@@ -9068,9 +9650,23 @@
         if (x < band || y < band || x >= size - band || y >= size - band) return null;
         if (!ink) ink = [data[i], data[i + 1], data[i + 2]];
         else if (!near(i, ink)) return null;
+        const key = data[i] << 16 | data[i + 1] << 8 | data[i + 2];
+        const n = (counts.get(key) || 0) + 1;
+        counts.set(key, n);
+        if (n < bestN) continue;
+        const far = Math.abs(data[i] - bg[0]) + Math.abs(data[i + 1] - bg[1]) + Math.abs(data[i + 2] - bg[2]);
+        if (n > bestN || far > bestFar) {
+          bestN = n;
+          bestFar = far;
+          bestKey = key;
+        }
       }
     }
-    return ink ? `rgb(${bg[0]}, ${bg[1]}, ${bg[2]})` : null;
+    if (!ink) return null;
+    return {
+      background: rgb(bg),
+      ink: rgb([bestKey >> 16 & 255, bestKey >> 8 & 255, bestKey & 255])
+    };
   }
   function read(img) {
     const size = img.naturalWidth;
@@ -9080,12 +9676,13 @@
     c.height = size;
     const cx = c.getContext("2d", { willReadFrequently: true });
     cx.drawImage(img, 0, 0);
-    return identiconBackground(cx.getImageData(0, 0, size, size).data, size);
+    return identiconColours(cx.getImageData(0, 0, size, size).data, size);
   }
-  function apply(img, bg) {
-    if (!bg) return;
+  function apply(img, colours) {
+    if (!colours) return;
     img.classList.add("is-identicon");
-    img.style.setProperty("--avatar-bg", bg);
+    img.style.setProperty("--avatar-bg", colours.background);
+    img.style.setProperty("--avatar-ink", colours.ink);
   }
   function decorateAvatar(img) {
     const src = img.currentSrc || img.src;
@@ -9093,13 +9690,80 @@
       apply(img, seen.get(src));
       return;
     }
-    let bg = null;
+    let colours = null;
     try {
-      bg = read(img);
+      colours = read(img);
     } catch (_) {
     }
-    seen.set(src, bg);
-    apply(img, bg);
+    seen.set(src, colours);
+    apply(img, colours);
+  }
+  function motionHeld() {
+    const root = typeof document !== "undefined" ? document.documentElement : null;
+    if (!root) return false;
+    if (root.classList.contains("jar-motion-full")) return false;
+    if (root.classList.contains("jar-motion-reduce")) return true;
+    try {
+      return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (_) {
+      return false;
+    }
+  }
+  function whenPaintable(face) {
+    if (!face || face.tagName !== "IMG") return Promise.resolve(true);
+    if (typeof face.decode === "function") return face.decode().then(() => true, () => false);
+    if (face.complete) return Promise.resolve(face.naturalWidth > 0);
+    return new Promise((resolve2) => {
+      face.addEventListener("load", () => resolve2(true), { once: true });
+      face.addEventListener("error", () => resolve2(false), { once: true });
+    });
+  }
+  function revealAvatar(btn, face, onFail) {
+    const prior = btn && btn.querySelector(":scope > .account-avatar--placeholder");
+    if (btn && btn._avatarReveal) return true;
+    if (!prior || motionHeld()) return false;
+    const token = {};
+    btn._avatarReveal = token;
+    face.classList.add("is-arriving");
+    let settled = false;
+    const alive = () => btn._avatarReveal === token;
+    const finish = () => {
+      if (settled || !alive()) return;
+      settled = true;
+      btn._avatarReveal = null;
+      face.classList.remove("is-arriving", "is-shown");
+      if (prior.isConnected) prior.remove();
+    };
+    const fail = () => {
+      if (settled || !alive()) return;
+      settled = true;
+      btn._avatarReveal = null;
+      if (onFail) onFail();
+    };
+    const start = () => {
+      if (!alive()) return;
+      if (!prior.isConnected) {
+        btn._avatarReveal = null;
+        return;
+      }
+      if (face.tagName === "IMG" && face.complete && face.naturalWidth) decorateAvatar(face);
+      btn.appendChild(face);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!alive() || !face.isConnected) {
+          if (alive()) btn._avatarReveal = null;
+          return;
+        }
+        face.classList.add("is-shown");
+        face.addEventListener("transitionend", (ev) => {
+          if (ev.target === face && ev.propertyName === "opacity") finish();
+        });
+        window.setTimeout(finish, 800);
+      }));
+    };
+    whenPaintable(face).then((ok) => {
+      (ok ? start : fail)();
+    });
+    return true;
   }
   function avatarImage(src, cls) {
     const img = document.createElement("img");
@@ -9170,7 +9834,43 @@
   var user = null;
   var available = false;
   var unreachable2 = null;
+  var asked = false;
   var adopting = false;
+  var placeholder = null;
+  function accountState(o) {
+    if (!o.asked) return "checking";
+    if (!o.available) return "none";
+    if (o.unreachable) return "unreachable";
+    return o.user ? "signed-in" : "signed-out";
+  }
+  function accountMenu(state2, o = {}) {
+    if (state2 === "checking") return [{ type: "status", title: "Checking your account\u2026" }];
+    if (state2 === "none") {
+      return [{ type: "status", title: "No accounts here", detail: "This copy of BelJar has no server, so your projects stay in this browser." }];
+    }
+    if (state2 === "unreachable") {
+      return [
+        { type: "status", title: "Can\u2019t reach BelJar\u2019s server", detail: o.reasonWords || null, tone: "warning" },
+        { type: "separator" },
+        { label: "Try again", act: "try-again" }
+      ];
+    }
+    if (state2 === "signed-out") {
+      return [
+        { type: "status", title: "Not signed in", detail: "Sign in to keep your projects on every device." },
+        { type: "separator" },
+        { label: "Sign in with GitHub", act: "sign-in" }
+      ];
+    }
+    const u = o.user || {};
+    return [
+      { type: "status", title: u.name || "@" + u.handle, detail: u.name ? "@" + u.handle : null, media: "avatar" },
+      { type: "separator" },
+      // Only where there is a Settings dialog to open (home has none).
+      ...o.settings ? [{ label: "Account settings", act: "settings" }] : [],
+      { label: "Sign out", act: "sign-out" }
+    ];
+  }
   function accountStep(me, local) {
     if (!me) return local ? "ended" : "signed-out";
     if (local === me.id) return "same";
@@ -9286,6 +9986,7 @@
     if (!(user && user.avatar)) return initialNode(cls);
     const img = avatarImage(user.avatar, cls);
     img.addEventListener("error", () => {
+      if (img.classList.contains("is-arriving")) return;
       if (img.parentNode) img.replaceWith(initialNode(cls));
     }, { once: true });
     return img;
@@ -9293,51 +9994,56 @@
   function onEditor() {
     return Routes.pageOf(g10.location) === "edit";
   }
+  var state = () => accountState({ asked, available, unreachable: unreachable2, user });
+  var BUTTON_WORDS = {
+    checking: "Account",
+    none: "Account",
+    unreachable: "Can\u2019t reach BelJar\u2019s server",
+    "signed-out": "Sign in"
+  };
   function render() {
     const btn = document.getElementById("btn-account");
     if (!btn) return;
-    const shown = available && (!!user || !!unreachable2 || !onEditor());
-    btn.hidden = !shown;
-    if (!shown) return;
-    btn.replaceChildren();
-    btn.classList.toggle("is-signed-in", !!user);
-    btn.classList.toggle("is-unreachable", !!unreachable2);
-    if (user) {
+    if (!placeholder) {
+      const shipped = btn.querySelector(".account-avatar--placeholder");
+      if (shipped) placeholder = shipped.cloneNode(true);
+    }
+    const s = state();
+    btn.hidden = false;
+    btn.dataset.state = s;
+    btn.classList.toggle("is-signed-in", s === "signed-in");
+    btn.classList.toggle("is-unreachable", s === "unreachable");
+    if (s === "signed-in") {
       btn.setAttribute("aria-label", "Account: @" + user.handle);
       btn.setAttribute("data-tooltip", "@" + user.handle);
-      btn.appendChild(avatarNode("account-avatar"));
+      const face = avatarNode("account-avatar");
+      if (!revealAvatar(btn, face, () => {
+        btn.replaceChildren(initialNode("account-avatar"));
+      })) btn.replaceChildren(face);
     } else {
-      const label = unreachable2 ? "Can\u2019t reach BelJar\u2019s server" : "Sign in";
-      btn.setAttribute("aria-label", label);
-      btn.setAttribute("data-tooltip", label);
-      btn.insertAdjacentHTML(
-        "beforeend",
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>'
-      );
+      btn.setAttribute("aria-label", BUTTON_WORDS[s]);
+      btn.setAttribute("data-tooltip", BUTTON_WORDS[s]);
+      btn._avatarReveal = null;
+      btn.replaceChildren(...placeholder ? [placeholder.cloneNode(true)] : []);
     }
+    if (g10.Menu && g10.Menu.update && g10.Menu.rootAnchor && g10.Menu.rootAnchor() === btn) g10.Menu.update(btn, menuItems());
   }
   function menuItems() {
-    if (unreachable2) {
-      return [
-        { type: "status", title: "Can\u2019t reach BelJar\u2019s server", detail: unreachableWords(unreachable2), tone: "warning" },
-        { type: "separator" },
-        { label: "Try again", onSelect: () => connect() }
-      ];
-    }
-    if (!user) return [{ label: "Sign in with GitHub", onSelect: signIn }];
-    return [
-      {
-        type: "status",
-        title: user.name || "@" + user.handle,
-        detail: user.name ? "@" + user.handle : null,
-        media: avatarNode("account-avatar account-avatar--menu")
-      },
-      { type: "separator" },
-      ...onEditor() ? [{ label: "Home", onSelect: () => goHome() }] : [],
-      // Only where there is a Settings dialog to open (home has none yet).
-      ...g10.SettingsUI ? [{ label: "Settings", onSelect: () => g10.SettingsUI.open("account") }] : [],
-      { label: "Sign out", onSelect: signOut }
-    ];
+    const acts = {
+      "try-again": () => connect(),
+      "sign-in": signIn,
+      settings: () => g10.SettingsUI.open("account"),
+      "sign-out": signOut
+    };
+    return accountMenu(state(), {
+      user,
+      reasonWords: unreachable2 ? unreachableWords(unreachable2) : null,
+      settings: !!g10.SettingsUI
+    }).map((item) => {
+      if (item.media === "avatar") return Object.assign({}, item, { media: avatarNode("account-avatar account-avatar--menu") });
+      if (item.act) return { label: item.label, onSelect: acts[item.act] };
+      return item;
+    });
   }
   function goHome() {
     saveNow();
@@ -9640,10 +10346,16 @@
     g10.dispatchEvent(new CustomEvent("beljar:account", { detail: { user: user ? Object.assign({}, user) : null } }));
   }
   async function connect() {
+    if (asked) {
+      asked = false;
+      render();
+    }
     const answer = await askServer();
     const where = reach(answer, !!g10.BELJAR_DEPLOYED);
+    asked = true;
     if (where === "none") {
       noteNoServer();
+      render();
       announce();
       return;
     }
@@ -10074,10 +10786,10 @@
     syncing: '<path class="sync-cloud__mark sync-cloud__arrow" d="M12 15.75v-4m-1.75 1.75L12 11.75l1.75 1.75"/>',
     alert: '<path class="sync-cloud__mark" d="M12 11.5v2.75"/><path class="sync-cloud__mark" d="M12 16.5h.01"/>'
   };
-  function cloudLook(state) {
-    if (state === "pending" || state === "syncing") return "syncing";
-    if (state === "differs" || state === "error" || state === "held") return "alert";
-    return state === "offline" ? "offline" : "synced";
+  function cloudLook(state2) {
+    if (state2 === "pending" || state2 === "syncing") return "syncing";
+    if (state2 === "differs" || state2 === "error" || state2 === "held") return "alert";
+    return state2 === "offline" ? "offline" : "synced";
   }
   function cloudSvg(look) {
     const open6 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
@@ -10096,8 +10808,8 @@
     let told = false;
     return {
       observe(s) {
-        const state = s && s.state;
-        if (state === "error") {
+        const state2 = s && s.state;
+        if (state2 === "error") {
           if (since === null) since = now();
           if (!told && now() - since >= after) {
             told = true;
@@ -10105,7 +10817,7 @@
           }
           return null;
         }
-        if (state === "synced") {
+        if (state2 === "synced") {
           since = null;
           if (told) {
             told = false;
@@ -10192,6 +10904,7 @@
     btn.setAttribute("aria-label", tip);
     if (g13.Tooltips && typeof g13.Tooltips.set === "function") g13.Tooltips.set(btn, tip);
     else btn.setAttribute("data-tooltip", tip);
+    if (g13.Menu && g13.Menu.update && g13.Menu.rootAnchor && g13.Menu.rootAnchor() === btn) g13.Menu.update(btn, menuItems2());
   }
   function menuItems2() {
     const s = summary || g13.Persist.syncSummary();
@@ -10574,10 +11287,10 @@
       scopeKey: active ? `standalone:${active.name}` : "standalone:"
     };
   }
-  function developmentForFile(files2, activeId, getText, options = {}) {
+  function developmentForFile(files2, activeId2, getText, options = {}) {
     const activeCfgsForDir = resolveActiveCfgsForDir(options);
     const activeCfgForDir = resolveActiveCfgForDir(options);
-    const active = files2.find((f) => f.id === activeId);
+    const active = files2.find((f) => f.id === activeId2);
     if (!active) {
       return {
         kind: "standalone",
@@ -10629,8 +11342,8 @@
       scopeKey: `module:${cfgPath}`
     };
   }
-  function cfgPathForActive(files2, activeId, getText, options = {}) {
-    const dev = developmentForFile(files2, activeId, getText, options);
+  function cfgPathForActive(files2, activeId2, getText, options = {}) {
+    const dev = developmentForFile(files2, activeId2, getText, options);
     return dev.kind === "module" && dev.cfg ? dev.cfg : null;
   }
   function visibilityPaths(dev) {
@@ -10667,29 +11380,29 @@
     }
     return developments;
   }
-  function orderedDevelopmentPaths(files2, activeId, getText, options = {}) {
-    return developmentForFile(files2, activeId, getText, options).paths;
+  function orderedDevelopmentPaths(files2, activeId2, getText, options = {}) {
+    return developmentForFile(files2, activeId2, getText, options).paths;
   }
-  function preludePathsFor(files2, activeId, getText, options = {}) {
-    return developmentForFile(files2, activeId, getText, options).preludePaths;
+  function preludePathsFor(files2, activeId2, getText, options = {}) {
+    return developmentForFile(files2, activeId2, getText, options).preludePaths;
   }
-  function listDevelopmentMembers(files2, activeId, getText, options = {}, liveActiveText = null) {
-    const dev = developmentForFile(files2, activeId, getText, options);
+  function listDevelopmentMembers(files2, activeId2, getText, options = {}, liveActiveText = null) {
+    const dev = developmentForFile(files2, activeId2, getText, options);
     const byName = new Map(files2.map((f) => [f.name, f]));
     const members = [];
     for (const path of dev.paths) {
       const f = byName.get(path);
       if (!f) continue;
-      const text = f.id === activeId && liveActiveText != null ? liveActiveText : String(getText(f.id) ?? "");
+      const text = f.id === activeId2 && liveActiveText != null ? liveActiveText : String(getText(f.id) ?? "");
       members.push({ id: f.id, name: f.name, text });
     }
     if (!members.length) {
-      const f = files2.find((x) => x.id === activeId);
+      const f = files2.find((x) => x.id === activeId2);
       if (f) {
         members.push({
           id: f.id,
           name: f.name,
-          text: String(liveActiveText != null && f.id === activeId ? liveActiveText : getText(f.id) ?? "")
+          text: String(liveActiveText != null && f.id === activeId2 ? liveActiveText : getText(f.id) ?? "")
         });
       }
     }
@@ -10843,8 +11556,8 @@
     }
     return out;
   }
-  function developmentFilesFor(files2, activeId, getText, options) {
-    const ordered = orderedDevelopmentPaths(files2, activeId, getText, options);
+  function developmentFilesFor(files2, activeId2, getText, options) {
+    const ordered = orderedDevelopmentPaths(files2, activeId2, getText, options);
     const out = [];
     for (const name of ordered) {
       for (const f of files2) {
@@ -10909,8 +11622,8 @@
     }
     return best;
   }
-  function preludeFilesFor(files2, activeId, getText, options) {
-    const paths = preludePathsFor(files2, activeId, getText, options || {});
+  function preludeFilesFor(files2, activeId2, getText, options) {
+    const paths = preludePathsFor(files2, activeId2, getText, options || {});
     if (!paths.length) return [];
     const out = [];
     for (const name of paths) {
@@ -11023,8 +11736,8 @@
       spans
     };
   }
-  function buildPrelude(files2, activeId, getText, options) {
-    const pre = preludeFilesFor(files2, activeId, getText, options);
+  function buildPrelude(files2, activeId2, getText, options) {
+    const pre = preludeFilesFor(files2, activeId2, getText, options);
     if (!pre.length) return null;
     const parts = [];
     const spans = [];
@@ -12619,16 +13332,16 @@
   }
 
   // js/commands/command-registry.mjs
-  var global7 = globalThis;
+  var global8 = globalThis;
   var POLICIES = ["off", "yield", "insert-only", "always"];
   var DEFAULT_POLICY = "always";
   var order = [];
   var byId = /* @__PURE__ */ Object.create(null);
   var version = 0;
   function currentPage() {
-    const routes = global7.Routes;
-    if (!routes || typeof routes.pageOf !== "function" || !global7.location) return null;
-    return routes.pageOf(global7.location) === "edit" ? "editor" : "home";
+    const routes = global8.Routes;
+    if (!routes || typeof routes.pageOf !== "function" || !global8.location) return null;
+    return routes.pageOf(global8.location) === "edit" ? "editor" : "home";
   }
   function runsOn(cmd, page) {
     return !page || cmd.pages === "both" || cmd.pages === page;
@@ -12738,7 +13451,7 @@
     return readableStyleChord((STYLE_CHORDS[style] || {})[id] || "");
   }
   function baseOwnerOf(spec, exceptId) {
-    const KB = global7.Keybindings;
+    const KB = global8.Keybindings;
     if (!spec || !KB || typeof KB.findConflict !== "function") return null;
     const id = KB.findConflict(spec, exceptId);
     if (!id) return null;
@@ -12750,7 +13463,7 @@
     if (!cmd) return null;
     const o = opts || {};
     const style = o.style || "default";
-    const KB = global7.Keybindings;
+    const KB = global8.Keybindings;
     let spec = "";
     let chord = "";
     if (KB && typeof KB.has === "function" && KB.has(cmd.id)) {
@@ -12879,10 +13592,10 @@
     version: () => version,
     _pure: { normalize, POLICIES, DEFAULT_POLICY, chordShadow, STYLE_TAKES, STYLE_CHORDS, specFromStyleKey, CATALOG }
   };
-  global7.Commands = Commands;
+  global8.Commands = Commands;
 
   // js/ui/keybindings.mjs
-  var global8 = globalThis;
+  var global9 = globalThis;
   var IS_MAC = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || "");
   var DEFAULTS = [];
   var BY_ID3 = /* @__PURE__ */ Object.create(null);
@@ -12990,10 +13703,10 @@
   function notifyChanged() {
     globalTable = null;
     try {
-      if (typeof global8.CustomEvent === "function") {
-        global8.dispatchEvent(new global8.CustomEvent("beljar:keybindings-changed", { detail: {} }));
-      } else if (typeof global8.dispatchEvent === "function") {
-        global8.dispatchEvent({ type: "beljar:keybindings-changed", detail: {} });
+      if (typeof global9.CustomEvent === "function") {
+        global9.dispatchEvent(new global9.CustomEvent("beljar:keybindings-changed", { detail: {} }));
+      } else if (typeof global9.dispatchEvent === "function") {
+        global9.dispatchEvent({ type: "beljar:keybindings-changed", detail: {} });
       }
     } catch (_) {
     }
@@ -13373,12 +14086,12 @@
     if (opts && typeof opts.fallback === "function") globalFallback = opts.fallback;
     if (listening) return;
     listening = true;
-    global8.addEventListener("keydown", onGlobalKeydown, true);
+    global9.addEventListener("keydown", onGlobalKeydown, true);
   }
   function setGlobalHandler(id, fn) {
     globalHandlers[id] = fn;
   }
-  global8.Keybindings = {
+  global9.Keybindings = {
     DEFAULTS,
     IS_MAC,
     has: has2,
@@ -13424,7 +14137,7 @@
       RESERVED
     }
   };
-  global8.BelJarKeybindings = global8.Keybindings;
+  global9.BelJarKeybindings = global9.Keybindings;
 
   // js/ui/list-step.mjs
   var LIST_STEP = { n: 1, m: 1, p: -1 };
@@ -13456,7 +14169,7 @@
   }
 
   // js/ui/command-palette.mjs
-  var global9 = globalThis;
+  var global10 = globalThis;
   function fuzzyScore(query2, text) {
     if (!query2) return { score: 0, positions: [] };
     const t = String(text || "");
@@ -13600,7 +14313,7 @@
   }
   function modeAvailable(mode) {
     if (mode === "anywhere" || mode === "commands" || mode === "help") return true;
-    if (mode === "line") return !!global9.CurrentEditor;
+    if (mode === "line") return !!global10.CurrentEditor;
     return typeof providers[mode] === "function";
   }
   function parseHere(raw) {
@@ -13748,7 +14461,7 @@
       detail: "Current file",
       mono: false,
       run: () => {
-        const ed = global9.CurrentEditor;
+        const ed = global10.CurrentEditor;
         if (!ed || typeof ed.getView !== "function") return;
         const view = ed.getView();
         if (!view) return;
@@ -13925,10 +14638,10 @@
     try {
       item.run();
     } catch (err) {
-      if (global9.console && console.error) console.error("[palette]", err);
-      if (global9.Toasts && global9.Toasts.warn) {
+      if (global10.console && console.error) console.error("[palette]", err);
+      if (global10.Toasts && global10.Toasts.warn) {
         const msg = err && err.message ? String(err.message) : String(err);
-        global9.Toasts.warn("Command failed: " + msg);
+        global10.Toasts.warn("Command failed: " + msg);
       }
     }
   }
@@ -14030,7 +14743,7 @@
     }
     return formatShortcut2(idOrSpec, IS_MAC2);
   }
-  global9.CommandPalette = {
+  global10.CommandPalette = {
     register,
     dispose: dispose3,
     unregister: unregister2,
@@ -14063,7 +14776,7 @@
   };
 
   // js/ui/double-tap.mjs
-  var global10 = globalThis;
+  var global11 = globalThis;
   var TRIGGERS = {
     off: null,
     shift: { key: "Shift", flag: "shiftKey" },
@@ -14081,8 +14794,8 @@
       windowMs: SPEEDS[Settings.get("doubleTapSpeed")] || SPEEDS.normal
     };
   }
-  function shouldFire(state) {
-    const s = state || {};
+  function shouldFire(state2) {
+    const s = state2 || {};
     if (!s.trigger || s.trigger === "off") return false;
     if (s.repeat) return false;
     if (s.otherKeySeen) return false;
@@ -14090,8 +14803,8 @@
     if (!(s.gap > 0)) return false;
     return s.gap <= s.windowMs;
   }
-  function blockReason(state) {
-    const s = state || {};
+  function blockReason(state2) {
+    const s = state2 || {};
     if (s.composing) return "composing";
     if (s.recordingChord) return "chord-recorder";
     if (s.modalOpen) return "modal";
@@ -14101,7 +14814,7 @@
   function blocked(e) {
     const doc2 = typeof document !== "undefined" ? document : null;
     const t = e && e.target || (doc2 ? doc2.activeElement : null);
-    const B = global10.StatusStrip;
+    const B = global11.StatusStrip;
     return !!blockReason({
       composing: !!(e && (e.isComposing || e.keyCode === 229)),
       recordingChord: !!(t && t.classList && t.classList.contains("jar-kb__chord") && t.classList.contains("is-recording")),
@@ -14163,18 +14876,18 @@
     return { close: true, run: id };
   }
   function run2(id) {
-    const C = global10.Commands;
-    const P = global10.CommandPalette;
+    const C = global11.Commands;
+    const P = global11.CommandPalette;
     const paletteOpen = !!(P && typeof P.isOpen === "function" && P.isOpen());
     const action = resolveAction(id, paletteOpen);
     if (action.close && P && typeof P.close === "function") P.close();
     if (action.run && C && typeof C.run === "function") C.run(action.run);
   }
   function init4() {
-    if (listening2 || typeof global10.addEventListener !== "function") return false;
+    if (listening2 || typeof global11.addEventListener !== "function") return false;
     listening2 = true;
-    global10.addEventListener("keydown", onKeyDown, true);
-    global10.addEventListener("keyup", onKeyUp, true);
+    global11.addEventListener("keydown", onKeyDown, true);
+    global11.addEventListener("keyup", onKeyUp, true);
     return true;
   }
   var GESTURE_TARGETS = [
@@ -14188,7 +14901,7 @@
     "view.harpoon",
     "keys.macros"
   ];
-  global10.DoubleTap = {
+  global11.DoubleTap = {
     init: init4,
     shouldFire,
     targets: () => GESTURE_TARGETS.slice(),
@@ -14292,7 +15005,7 @@
     } catch (_) {
       return [];
     }
-    const asked = [];
+    const asked2 = [];
     for (const src of scriptsOf(html)) {
       let url;
       try {
@@ -14306,9 +15019,9 @@
       link.as = "script";
       link.href = url.href;
       doc2.head.appendChild(link);
-      asked.push(url.href);
+      asked2.push(url.href);
     }
-    return asked;
+    return asked2;
   }
   function preloadEditorWhenIdle() {
     const run3 = () => {
@@ -14384,6 +15097,11 @@
     return o.state === "syncing" && !(o.lastSync > 0);
   }
   var ACCOUNT_WAIT_MS = 2500;
+  var SIGN_IN_HINT = "sign-in";
+  var SIGN_IN_HINT_TEXT = "Sign in with GitHub to keep your projects on every device.";
+  function signInHintDue(o) {
+    return !!(o && o.accountKnown && o.available && !o.signedIn && !o.unreachable && !o.seen);
+  }
   var drawn = null;
   var renderQueued = false;
   var pending = null;
@@ -14518,7 +15236,7 @@
   ];
   var LINKS = [
     { label: "Beluga", href: "https://www.cs.mcgill.ca/~complogic/beluga/" },
-    { label: "Report an issue", href: ISSUES_URL },
+    { label: "Email me", href: CONTACT_URL, here: true },
     { label: "GitHub", href: "https://github.com/dpbarry/bel-jar" },
     { label: "Privacy", href: Routes.privacyUrl(), here: true }
   ];
@@ -14560,6 +15278,13 @@
     li.appendChild(more);
     return li;
   }
+  function emptyRow() {
+    const li = el4("li", "home-row home-row--empty");
+    const line = el4("span", "home-row__open");
+    line.appendChild(el4("span", "home-row__name", "No projects"));
+    li.appendChild(line);
+    return li;
+  }
   function startNodes() {
     return START.map((s) => {
       const btn = el4("button", "home-tile");
@@ -14583,23 +15308,12 @@
       return a;
     });
   }
-  function signInLine(box, onSignIn) {
-    const btn = el4("button", "home-link-btn", "Sign in with GitHub");
-    btn.type = "button";
-    btn.addEventListener("click", onSignIn);
-    const more = el4("a", "home-head__more", "What BelJar keeps");
-    more.href = Routes.privacyUrl();
-    box.append(btn, document.createTextNode(" to keep your projects on every device. "), more);
-  }
   function findNodes(chord) {
     const nodes = [el4("span", null, "Search")];
     if (chord) nodes.push(el4("kbd", "home-kbd", chord));
     return nodes;
   }
   function drawFixed() {
-    const mark = document.getElementById("home-mark");
-    const logo = document.querySelector("header .header-logo");
-    if (mark && logo && !mark.querySelector("svg")) mark.prepend(logo.cloneNode(true));
     const actions = document.getElementById("home-actions");
     if (actions && !actions.childElementCount) actions.append(...startNodes());
     const links = document.getElementById("home-links");
@@ -14610,19 +15324,42 @@
     if (!btn) return;
     btn.hidden = !g19.CommandPalette;
     if (btn.hidden) return;
-    const C = g19.Commands;
-    const chord = C && typeof C.liveChord === "function" && C.liveChord("nav.anywhere") || "";
+    const KB = g19.Keybindings;
+    const chord = KB && typeof KB.labelFor === "function" && KB.labelFor("nav.anywhere") || "";
     if (btn.childElementCount && btn.dataset.chord === chord) return;
     btn.dataset.chord = chord;
     btn.replaceChildren(...findNodes(chord));
   }
-  function drawSignIn() {
+  function offerSignInHint() {
     const A = g19.Account;
-    const offer = !!A && A.available() && !A.user() && !A.unreachable();
-    const box = document.getElementById("home-signin");
-    if (!box) return;
-    box.hidden = !offer;
-    if (offer && !box.childElementCount) signInLine(box, () => A.signIn());
+    const Hint = g19.Hint;
+    const eligible = signInHintDue({
+      accountKnown,
+      available: !!(A && A.available()),
+      signedIn: !!(A && A.user()),
+      unreachable: !!(A && A.unreachable()),
+      seen: false
+    });
+    if (!eligible) {
+      if (Hint && Hint.isVisible && Hint.isVisible(SIGN_IN_HINT)) Hint.dismiss(SIGN_IN_HINT);
+      return;
+    }
+    if (!Hint || !Hint.show) return;
+    if (Hint.isVisible && Hint.isVisible(SIGN_IN_HINT)) return;
+    if (Hint.wasDismissed && Hint.wasDismissed(SIGN_IN_HINT)) return;
+    const anchor = document.getElementById("btn-account");
+    if (!anchor) return;
+    const box = anchor.getBoundingClientRect();
+    if (box.width < 1 || box.height < 1) return;
+    Hint.show({
+      id: SIGN_IN_HINT,
+      anchor,
+      text: SIGN_IN_HINT_TEXT,
+      side: "below",
+      align: "end",
+      wait: false,
+      onClick: () => anchor.click()
+    });
   }
   function drawRisk() {
     const note = document.getElementById("home-risk");
@@ -14664,13 +15401,13 @@
     if (says !== drawn) {
       drawn = says;
       main.dataset.mode = mode;
-      list3.replaceChildren(...ordered.map((p) => rowNode(p, stats.get(p.id), review.get(p.id) || 0)));
+      list3.replaceChildren(...ordered.length ? ordered.map((p) => rowNode(p, stats.get(p.id), review.get(p.id) || 0)) : mode === "arriving" ? [] : [emptyRow()]);
       const section = document.getElementById("home-projects-section");
-      if (section) section.hidden = !ordered.length;
+      if (section) section.hidden = mode === "arriving";
     }
     drawFixed();
     drawFind();
-    drawSignIn();
+    offerSignInHint();
     drawRisk();
     if (focusedPid) {
       const again = main.querySelector('.home-row[data-pid="' + focusedPid + '"] ' + (onMore ? ".home-row__more" : ".home-row__open"));
@@ -14700,10 +15437,10 @@
     const signedIn = !!(A && A.user());
     if (signedIn && !pending.asked) {
       pending.asked = true;
-      const waiting = pending;
+      const waiting2 = pending;
       P.confirmSynced(OPEN_WAIT_MS).then((res) => {
         if (res && res.reason === "not-syncing") return;
-        waiting.roundDone = true;
+        waiting2.roundDone = true;
         queueRender();
       });
     }
@@ -14816,7 +15553,15 @@
     if (g19.BELJAR_LEAVING) return;
     if (g19.Frame) g19.Frame.mount();
     attachHomeCommands({ newProject, pickFolder, projects: paletteProjects, say: say2 });
-    wireMenuTrigger(document.getElementById("btn-account"), {
+    const accountBtn = document.getElementById("btn-account");
+    if (accountBtn) {
+      const hideSignInHint = () => {
+        if (g19.Hint && g19.Hint.isVisible && g19.Hint.isVisible(SIGN_IN_HINT)) g19.Hint.dismiss(SIGN_IN_HINT);
+      };
+      accountBtn.addEventListener("pointerdown", hideSignInHint);
+      accountBtn.addEventListener("click", hideSignInHint);
+    }
+    wireMenuTrigger(accountBtn, {
       side: "bottom",
       align: "end",
       items: () => g19.Account ? g19.Account.menuItems() : []

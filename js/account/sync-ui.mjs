@@ -111,6 +111,8 @@ function renderCloud(s) {
   btn.setAttribute('aria-label', tip);
   if (g.Tooltips && typeof g.Tooltips.set === 'function') g.Tooltips.set(btn, tip);
   else btn.setAttribute('data-tooltip', tip);
+  // Open, its popover follows: it says what is true now, not when it was opened.
+  if (g.Menu && g.Menu.update && g.Menu.rootAnchor && g.Menu.rootAnchor() === btn) g.Menu.update(btn, menuItems());
 }
 
 /** The cloud's popover: the state, then what you can do. */

@@ -7,6 +7,9 @@ const hi = tagHighlighter([
   { tag: t.number, class: 'num' },
   { tag: t.propertyName, class: 'prop' },
   { tag: t.typeName, class: 'type' },
+  { tag: t.special(t.typeName), class: 'type' },
+  { tag: t.special(t.variableName), class: 'meta' },
+  { tag: t.function(t.variableName), class: 'fn' },
   { tag: t.typeOperator, class: 'arrow' },
   { tag: t.separator, class: 'colon' },
 ]);
@@ -36,23 +39,29 @@ expect(has(h1, '*', 'num'), 'max tries');
 expect(has(h1, 'D', 'prop'), 'solution metavar label');
 expect(has(h1, ':', 'colon'), 'label colon');
 expect(has(h1, 'oft', 'type'), 'predicate head');
-expect(has(h1, 'T', 'type'), 'type metavar');
+expect(has(h1, 'T', 'meta'), 'goal argument is an LF term metavar');
 
 const q2 = '--query * 5 P : oft X nat -> oft (suc X) nat.';
 const h2 = hits(q2);
 expect(has(h2, 'P', 'prop'), 'label P');
 expect(has(h2, '->', 'arrow'), 'comp arrow in query goal');
-expect(has(h2, 'nat', 'type'), 'nat type');
+expect(has(h2, 'nat', 'fn'), 'term constant in an LF goal');
 
-// Label required before colon (Beluga parser rejects bare `--query N * : goal.`)
 const q3 = '--query 1 * Q : oft (suc z) T.';
 const h3 = hits(q3);
 expect(has(h3, 'oft', 'type'), 'labeled goal parses');
 expect(has(h3, 'Q', 'prop'), 'solution label');
 expect(has(h3, ':', 'colon'), 'label colon');
 
+// The solution name is optional. The goal is an LF type, so a bare query parses.
+const q4 = '--query 1 * oft z nat.';
+const h4 = hits(q4);
+expect(has(h4, 'oft', 'type'), 'unlabeled goal parses');
+expect(has(h4, 'nat', 'fn'), 'unlabeled goal argument');
+expect(!has(h4, ':', 'colon'), 'unlabeled query has no label colon');
+
 // Parse tree: zero error nodes on real queries
-for (const src of [q1, q2, q3]) {
+for (const src of [q1, q2, q3, q4]) {
   let errs = 0;
   parser.parse(src).iterate({
     enter(n) { if (n.type.isError && n.from < n.to) errs++; },

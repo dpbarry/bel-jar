@@ -100,14 +100,8 @@ function headerOf(doc, signedIn) {
       account.classList.add('is-signed-in');
       account.replaceChildren(el('span', 'account-avatar account-initial', 'D'));
     }
-  } else {
-    const account = header.querySelector('#btn-account');
-    if (account && /home-page/.test(doc.body.className)) {
-      account.hidden = false;
-      account.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-        + '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>';
-    }
   }
+  // Signed out, the account button is as the page ships it: its placeholder.
   const name = header.querySelector('#header-context-name');
   if (name) name.textContent = 'Lecture notes';
   return header;
@@ -116,10 +110,43 @@ function headerOf(doc, signedIn) {
 // ── headers ─────────────────────────────────────────────────────────────────
 {
   const [homeDoc, editDoc] = await Promise.all([documentOf('index.html'), documentOf('edit.html')]);
-  const list = section('Headers', 'Read out of index.html and edit.html. Signed in, a header gains the cloud and the avatar.');
-  specimen(list, 'Home, signed out', 'kit-frame--flush').appendChild(headerOf(homeDoc, false));
+  const list = section('Headers', 'Read out of index.html and edit.html. Signed in, a header gains the cloud and the avatar. Signed out on home, the sign-in box sits under the account button, once.');
+  const signedOut = specimen(list, 'Home, signed out', 'kit-frame--flush');
+  const signedOutHeader = headerOf(homeDoc, false);
+  signedOut.appendChild(signedOutHeader);
+  await import('../js/ui/hint.mjs');
+  const account = signedOutHeader.querySelector('#btn-account');
+  window.Hint.show({
+    anchor: account,
+    text: home.SIGN_IN_HINT_TEXT,
+    side: 'below',
+    align: 'end',
+    once: false,
+    onClick: () => {},
+  });
+  const liveHint = document.getElementById('hint-root');
+  const hintCopy = liveHint.cloneNode(true);
+  hintCopy.removeAttribute('id');
+  hintCopy.classList.add('kit-inflow');
+  hintCopy.hidden = false;
+  hintCopy.style.left = '';
+  hintCopy.style.top = '';
+  hintCopy.style.visibility = '';
+  hintCopy.style.opacity = '';
+  hintCopy.style.pointerEvents = '';
+  const inset = signedOutHeader.getBoundingClientRect().right - account.getBoundingClientRect().right;
+  hintCopy.style.marginLeft = 'auto';
+  hintCopy.style.marginRight = inset + 'px';
+  hintCopy.style.marginTop = getComputedStyle(signedOutHeader).getPropertyValue('--header-menu-gap').trim() || '0.3rem';
+  hintCopy.style.marginBottom = '0.75rem';
+  signedOut.appendChild(hintCopy);
+  const arrowX = hintCopy.offsetWidth - account.offsetWidth / 2;
+  hintCopy.style.setProperty('--hint-arrow-x', Math.max(12, Math.min(hintCopy.offsetWidth - 12, arrowX)) + 'px');
+  window.Hint.dismiss();
+  liveHint.hidden = true;
+  liveHint.classList.remove('is-visible', 'is-leaving');
   specimen(list, 'Home, signed in', 'kit-frame--flush').appendChild(headerOf(homeDoc, true));
-  specimen(list, 'The editor, signed out: no account button', 'kit-frame--flush').appendChild(headerOf(editDoc, false));
+  specimen(list, 'The editor, signed out', 'kit-frame--flush').appendChild(headerOf(editDoc, false));
   specimen(list, 'The editor, signed in', 'kit-frame--flush').appendChild(headerOf(editDoc, true));
   window.__kitHomeDoc = homeDoc;
 }
@@ -230,7 +257,7 @@ function headerOf(doc, signedIn) {
 
 // ── home ────────────────────────────────────────────────────────────────────
 {
-  const list = section('Home', 'The page\'s own column, read out of index.html and filled by home\'s own builders (js/home/home.mjs): rowNode, startNodes, linkNodes, findNodes, signInLine.');
+  const list = section('Home', 'The page\'s own column, read out of index.html and filled by home\'s own builders (js/home/home.mjs): rowNode, startNodes, linkNodes, findNodes.');
   const now = Date.now();
   const rows = [
     [{ id: 'p_01m3xq1ph808nx8xjd4jj1rhca', name: 'Lecture notes' }, { editedAt: now - 2 * 60 * 1000 }, 0],
@@ -247,24 +274,25 @@ function headerOf(doc, signedIn) {
     main.dataset.mode = mode;
     frame.appendChild(main);
     const part = (id) => main.querySelector('#' + id);
-    part('home-mark').prepend(window.__kitHomeDoc.querySelector('header .header-logo').cloneNode(true));
     part('home-actions').append(...home.startNodes());
     part('home-links').append(...home.linkNodes());
     return { main, part };
   };
 
   // Coming back: the ways to start, then the projects (one with files to review, one being opened).
-  const back = page('Coming back, signed out where a server answers: the way in under the name, the ways to start, the projects (one with files to review, one being opened)', 'returning');
-  back.part('home-signin').hidden = false;
-  home.signInLine(back.part('home-signin'), () => {});
+  const back = page('Coming back: the ways to start, the projects (one with files to review, one being opened)', 'returning');
   back.part('home-projects-section').hidden = false;
   back.part('home-find').hidden = false;
   back.part('home-find').append(...home.findNodes('Ctrl+K'));
   for (const [p, stats, review] of rows) back.part('home-list').appendChild(home.rowNode(p, stats, review));
   back.part('home-list').children[1].setAttribute('data-opening', '');
 
-  // A browser with no project in it: the ways to start are all there is.
-  page('A browser with no project in it: the name and the ways to start', 'first');
+  // No project: the list stays, and says so where the first row would be.
+  const none = page('No project: the list stays, and says so', 'first');
+  none.part('home-projects-section').hidden = false;
+  none.part('home-find').hidden = false;
+  none.part('home-find').append(...home.findNodes('Ctrl+K'));
+  none.part('home-list').appendChild(home.emptyRow());
 
   // The quiet lines.
   const lines = page('The quiet lines: a project that is not here, news in passing, Safari\'s seven days', 'first');

@@ -39,7 +39,7 @@ second place things are saved.
 
 ### 3.1 One keyspace, one schema
 
-Every key starts with `beljar/`. `beljar/schema` holds the format version (now 4).
+Every key starts with `beljar/`. `beljar/schema` holds the format version (now 5).
 
 - **Older** than the code: each migration runs in order (`js/persist/migrations.mjs`: `MIGRATIONS[n]`
   turns format n into n + 1, in place). ⛔ **Older data is migrated or left alone, never deleted**
@@ -57,8 +57,8 @@ Every key starts with `beljar/`. `beljar/schema` holds the format version (now 4
   older format, every setting was the default for the first paint after a format change (a light
   theme painted dark, then light). The store then finds the format current.
   **Rehearsed in Chrome** (`npm run probe:migration`, part of `npm run probe`, kept for the next
-  format change): a profile with work in it in format 4, an old tab left open, and the next BelJar
-  (this one served with format 5 and a step from 4 that does nothing) loaded beside it. The new
+  format change): a profile with work in it in format 5, an old tab left open, and the next BelJar
+  (this one served with format 6 and a step from 5 that does nothing) loaded beside it. The new
   tab's first paint shows the person's settings, it carries every project, file and setting
   forward, and saves; the old tab goes read-only, says so, and saves nothing over the new format;
   the old BelJar loaded again opens it read-only and leaves it exactly as it was.
@@ -88,12 +88,10 @@ table** (`store.mjs`), never passed by callers who could mislabel it.
 ### 3.3 Layout
 
 ```
-beljar/schema                     4
+beljar/schema                     5
 beljar/settings                   settings   { values: { <setting id>: value } }         the settings table
 beljar/device                     device     { values: { <device id>: value } }          the device table (§4.3)
 beljar/notifications              device     [notification]
-beljar/repl/transcript            device     { html, scrollTop, savedAt }   in the store replHistoryPersist picks
-beljar/repl/commands              device     [command]                      likewise
 beljar/tabs/ping|pong|bye         device     the tab guard's handshake (a channel, not state)
 beljar/tombstones                 device     { pid: { version, owner, pending, at } }   synced projects deleted here, until the server knows (§5)
 beljar/settings-sync              device     { account, version, values, pending }   the settings as last synced (§5.6)
@@ -101,6 +99,7 @@ beljar/p/<pid>/meta               work       { name, createdAt, owner }   one pe
 beljar/p/<pid>/tree               work       { files: [{ id: fid, name: path }], folders: [path], suites: { dir: [cfg path] } }
 beljar/p/<pid>/f/<fid>            work       { text, via }   via: 'sync' when another device's version was written last
 beljar/p/<pid>/session            device     { open: [fid], active: fid, views: { fid: view }, workspace, panel, explorerFolds }
+beljar/p/<pid>/repl               device     { html, scrollTop, savedAt, commands }   this project's REPL; the store replHistoryPersist picks
 beljar/p/<pid>/folds              device     { fid: [fold key] }            in the store editorFoldPersist picks
 beljar/p/<pid>/undo               device     { undo, redo }                 the tab store, always
 beljar/p/<pid>/conflict/<fid>     device     { base, mine, theirs, at, source }   both sides, until a person chooses; source 'tab' | 'device'
@@ -268,7 +267,9 @@ account, the command-line history, the run-time estimator's model and the jump-l
 each tip that shows once has a synced setting of its own (`hintSeen*`, `reset: false` so no Reset
 brings it back), one row per tip because settings sync merges a setting at a time and two computers
 that each saw a different tip would fight over one list. The device's old `dismissedHints` still
-counts and is carried into the rows at boot. Signed in on a computer whose first round has not
+counts and is carried into the rows at boot. A tip is seen the moment it is shown: the
+countdown only takes the box down, and a refresh before it ends does not show the tip again.
+Signed in on a computer whose first round has not
 landed, a tip waits for that round however long it takes, and one showing closes when a round says
 it was seen (`tests/test-hint-seen.mjs`, `scratch/probes/probe-hints.mjs`: two computers, the
 second held offline for 25 s). Numbers are clamped to their row's range on the
@@ -278,8 +279,8 @@ layout* puts back; rows with a `cssVar` are painted by early boot before first p
 `writeDevice`, which fall back to the row's default without the shell.
 
 **Device records** (`device-records.mjs`): what is too large or too structured for a row: the REPL
-transcript and commands, editor folds, notifications, the undo stack, the tab guard's handshake,
-and this project's workspace, side panel and explorer folds (in its session).
+transcript and commands, one record per project, editor folds, notifications, the undo stack, the
+tab guard's handshake, and this project's workspace, side panel and explorer folds (in its session).
 
 ⛔ **A device value is declared once.** `tests/test-device-usage.mjs` fails on an id no row declares
 and on a row nothing uses.
@@ -703,7 +704,7 @@ the notifications (`signInFailure`; `tests/test-account.mjs` reads every step ou
   hour has passed; it also lets go of sessions past their time and the reasons kept for them.
   Projects in the browser that deleted stay, as its own.
 - **What BelJar keeps** (`privacy.html` at `/privacy`, `Routes.privacyUrl`; plan v6 c4): one page,
-  linked from home's foot (Privacy) and beside the sign-in ("What BelJar keeps"): what is stored,
+  linked from home's foot (Privacy): what is stored,
   where (Cloudflare D1 and R2, eastern North America), who can read it, logs and backups, and how
   to delete it. ⛔ It says what the code does: `tests/test-privacy-page.mjs` fails for a table the
   migrations make that the page does not name, for a number the page gives that the code does not
@@ -715,10 +716,22 @@ the notifications (`signInFailure`; `tests/test-account.mjs` reads every step ou
   (30 on the paid plan). Outside Cloudflare, once a week: `npm run backup:export` (the live
   database, only read, to `~/beljar-backups`, the newest four kept) and `npm run backup:restore`
   (the newest restored into a scratch local D1 and checked table by table against the rows in the
-  file; first run 2026-10-04, 55 rows in 9 tables). The texts in R2 are not in it: each is named
-  by its content and never overwritten, and only Delete account removes them.
-  `tests/test-d1-backup.mjs` holds the count, the four kept, and that the live database is only
-  ever exported from.
+  file; first run 2026-10-04, 55 rows in 9 tables). ⛔ **The texts are in it too** (Dean,
+  2026-10-06): until then they were left out because each is named by its content and never
+  overwritten, but that guards against overwriting, not loss. R2 has no Time Travel, and a
+  database restored without its texts is projects and versions whose files say nothing (a bug in
+  the deletion sweep, a mistyped command or a deleted bucket would have lost them for good).
+  The export reads the texts it lists (every `texts` row, counted, or it stops) and fetches the
+  ones `~/beljar-backups/texts/<account>/<hash>` lacks, each checked against its SHA-256 name
+  before it is kept; a text goes once none of the four kept exports lists it, so a deleted
+  account's texts leave the backups within the privacy page's 30 days. The restore check finds
+  every listed text there and intact. First run 2026-10-06: 13 texts, then 0 to fetch the week
+  after. Each fetch is a wrangler of its own (about 3 s, six at once): a class adding a few
+  thousand texts a week is most of an hour; R2's S3 API with a read-only token is the way past
+  that. Putting texts back in a disaster is `wrangler r2 object put beljar-texts/t/<account>/<hash>
+  --remote --file …` for each, not scripted yet.
+  `tests/test-d1-backup.mjs` holds the count, the four kept, the texts with them, and that the
+  live database and texts are only ever read.
 - **What sync costs, measured** (plan v6 c7, `tests/test-sync-budget.mjs`, which prints these and
   holds them as ceilings: a change that makes sync dearer fails there). Requests, through the real
   runner and engine on a fake clock: an hour of typing (a keystroke saved every 2 s) is 121 rounds
@@ -950,10 +963,11 @@ graph and fails when anything of the editor gets in.
   with `persisted`). A page going into it kept the sync lock, and Chrome did not hand the lock to
   a tab already waiting for it: with two tabs open, going from the editor to home left no tab
   syncing. A page that is left stops sync as it goes (`pagehide`).
-- **Signing in** is on home (the header's button, and one line under the name) and in the palette.
+- **Signing in** is in the account menu on both pages, in one line under home's name, and in the palette.
   `/api/auth/github/start?return=PATH` brings the person back to the page they were on
   (`server/auth.mjs` `safeReturn`: a same-site path and nothing else, kept in a cookie for the
-  trip). Signed out, the editor has no account button; a server that cannot be reached still shows.
+  trip). The account menu offers it on both pages (Dean, 2026-10-06: the button is always there,
+  and says where the account stands).
 - **Signing out lands on home.** ⛔ The account's projects leave this browser as the NEXT page
   loads, not under the page that signed out (`work.leaveAccount`, `finishSignOut`, device row
   `leftAccount`). That page is live until the browser has left it, and anything in it that read the

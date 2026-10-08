@@ -19,6 +19,7 @@ import { inhabit } from './prover-inhabit.mjs';
 import { declaresName, firstChildNamed, firstIdentChild, isLFDatatypeHead } from '../tree-helpers.mjs';
 import { reIdentDollarHashExact } from './ident.mjs';
 import { transport } from './prover-transport.mjs';
+import { nameBases } from '../semantic/pragma-scope.mjs';
 
 // ── Contextual type decomposition ───────────────────────────────────────────
 // A hole scrutinee var has a type like `[ |- nat]`, `[g |- tm]`, `[g, x:tm |- tm]`,
@@ -2020,6 +2021,28 @@ export function constructorTerm(ctor, fresh, opts = {}) {
   const ctxNames = ctxBinderNames(opts.ctxStr);
   const project = !!(opts.contextProjection && ctxNames.length);
   const lower = project ? freshLowerNamer([...(opts.usedNames || []), ...ctxNames]) : null;
+  const bases = nameBases(opts.code || '');
+  const taken = new Set(opts.usedNames || []);
+  const typeHeadOf = (typeText) => {
+    let t = String(typeText || '').trim();
+    const boxed = t.match(/^\[[^\]]*\|-\s*([^[\]]*)\]$/);
+    if (boxed) t = boxed[1].trim();
+    const m = t.match(/^([^\s(\\[:]+)/);
+    return m ? m[1] : null;
+  };
+  const mint = (typeText, kind) => {
+    const head = typeHeadOf(typeText);
+    const pref = head && bases.get(head);
+    const base = pref && (kind === 'comp' ? pref.comp : pref.meta);
+    if (!base) return null;
+    let n = 0;
+    let name;
+    do { name = n === 0 ? base : base + n; n += 1; } while (taken.has(name));
+    taken.add(name);
+    if (Array.isArray(opts.usedNames) && !opts.usedNames.includes(name)) opts.usedNames.push(name);
+    return name;
+  };
+  const nextMeta = (typeText) => mint(typeText, 'meta') || fresh();
   const blockFresh = freshBlockNamer(opts.usedNames || []);
   const piCovered = piArgsCoveredByHyp(ctor.args.map((a) => (a && a.piBinder ? `{${a.piBinder.name}:${a.piBinder.type}}` : (a && a.bodyType) || '')));
   for (let ai = 0; ai < ctor.args.length; ai += 1) {
@@ -2030,7 +2053,7 @@ export function constructorTerm(ctor, fresh, opts = {}) {
       // can't duplicate a sibling binder (`\x. \d. \y. \d.` was the bug).
       const bs = (arg.binderCtx || []).map((b) => {
         if (!project) return b.name;
-        if (ctxNames.includes(b.name)) return lower.next();
+        if (ctxNames.includes(b.name)) return mint(b.type, 'comp') || lower.next();
         lower.reserve(b.name);
         return b.name;
       });
@@ -2040,7 +2063,7 @@ export function constructorTerm(ctor, fresh, opts = {}) {
       // Dependency-closure annotation: the body metavar depends only on the context
       // binders whose types its family can reach (`linP'[.., x, z]` drops hz).
       const keepNames = arg.dep ? arg.dep.keep : ctxNames;
-      const body = project ? `${fresh()}${metaProjectionSuffix(bs, keepNames)}` : fresh();
+      const body = project ? `${nextMeta(arg.bodyType)}${metaProjectionSuffix(bs, keepNames)}` : nextMeta(arg.bodyType);
       parts.push('(' + bs.map((b) => '\\' + b + '. ').join('') + body + ')');
     } else if (isHypArgType(arg.bodyType)) {
       // A hypothesis argument: inhabit it with a block projection `#b.x[..] #b.h[..]`
@@ -2056,13 +2079,13 @@ export function constructorTerm(ctor, fresh, opts = {}) {
       // The arg family's dependency closure reaches NOTHING the context admits —
       // the metavar is necessarily closed there; pin it (`wtp_fwd D[] …`) so the
       // strengthened body can reuse it verbatim.
-      parts.push(`${fresh()}[]`);
+      parts.push(`${nextMeta(arg.bodyType)}[]`);
     } else if (arg.dep) {
       // Partial dependency: keep only the reachable-typed tail binders (plus the
       // context variable via `..`) — `linP1[.., z]` in a (…, z:name, hz:hyp …) ctx.
-      parts.push(`${fresh()}[..${arg.dep.keep.length ? ', ' + arg.dep.keep.join(', ') : ''}]`);
+      parts.push(`${nextMeta(arg.bodyType)}[..${arg.dep.keep.length ? ', ' + arg.dep.keep.join(', ') : ''}]`);
     } else {
-      parts.push(fresh());
+      parts.push(nextMeta(arg.bodyType));
     }
   }
   return parts.join(' ');
@@ -2124,16 +2147,24 @@ export function patternMetavars(term) {
 // declared fixity. Parsing already understands infix input (infixFamilySpine,
 // typeFamilyHead's operator fallback); this is the emission dual. Pragma names
 // are read from the program text, never hardcoded. Cached per code text.
-let _infixOpsSrc = null;
-let _infixOpsSet = null;
-export function infixDeclaredOps(code) {
+let _fixitySrc = null;
+let _fixity = null;
+function declaredFixity(code) {
   const src = String(code || '');
-  if (src !== _infixOpsSrc) {
-    _infixOpsSrc = src;
-    _infixOpsSet = new Set();
-    for (const m of src.matchAll(/(?:^|\n)\s*--infix\s+(\S+)/g)) _infixOpsSet.add(m[1]);
+  if (src !== _fixitySrc) {
+    _fixitySrc = src;
+    const infix = new Set();
+    const prefix = new Set();
+    const postfix = new Set();
+    for (const m of src.matchAll(/(?:^|\n)\s*--infix\s+(\S+)/g)) infix.add(m[1]);
+    for (const m of src.matchAll(/(?:^|\n)\s*--prefix\s+(\S+)/g)) prefix.add(m[1]);
+    for (const m of src.matchAll(/(?:^|\n)\s*--postfix\s+(\S+)/g)) postfix.add(m[1]);
+    _fixity = { infix, prefix, postfix };
   }
-  return _infixOpsSet;
+  return _fixity;
+}
+export function infixDeclaredOps(code) {
+  return declaredFixity(code).infix;
 }
 
 // Is `s` already ONE grouped operand (fully wrapped by a single bracket pair)?
@@ -2160,9 +2191,13 @@ function wrapOperand(t) {
 // everything else stays prefix (the checker arbitrates the leftovers).
 export function renderApp(code, head, indices) {
   const idx = (indices || []).map((x) => String(x == null ? '' : x).trim());
-  if (idx.length === 2 && infixDeclaredOps(code).has(String(head))) {
+  const fix = declaredFixity(code);
+  const name = String(head);
+  if (idx.length === 2 && fix.infix.has(name)) {
     return `${wrapOperand(idx[0])} ${head} ${wrapOperand(idx[1])}`;
   }
+  if (idx.length === 1 && fix.prefix.has(name)) return `${name} ${wrapOperand(idx[0])}`;
+  if (idx.length === 1 && fix.postfix.has(name)) return `${wrapOperand(idx[0])} ${name}`;
   return idx.length ? `${head} ${idx.join(' ')}` : String(head);
 }
 
@@ -2279,6 +2314,7 @@ export function buildSplitSkeleton(scrutVar, ctxStr, ctors, opts = {}) {
       contextProjection: opts.contextProjection,
       ctxStr,
       usedNames: used,
+      code: opts.code || '',
     });
     const metas = patternMetavars(pat);
     for (const n of metas) if (!used.includes(n)) used.push(n);
@@ -3094,7 +3130,7 @@ export function invertCandidates(hyp, code, used, scope, opts = {}) {
     const pat = constructorTerm({
       name: ctor.name,
       args: ctor.argTypes.map((at) => constructorArgDescriptor(at, usedArr)),
-    }, fresh);
+    }, fresh, { code, usedNames: usedArr });
     for (const n of patternMetavars(pat)) {
       if (!usedArr.includes(n)) usedArr.push(n);
     }

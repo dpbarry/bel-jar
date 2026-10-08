@@ -75,7 +75,7 @@ export function editUrl(pid) {
   return (short() ? '/edit' : 'edit.html') + query([['p', pid]]);
 }
 
-/** What BelJar keeps: the page home's foot and its sign-in line link to. */
+/** What BelJar keeps: the page home's foot links to. */
 export function privacyUrl() {
   return short() ? '/privacy' : 'privacy.html';
 }
@@ -124,6 +124,10 @@ export function pendingOf(loc) {
 /** Where problems with BelJar are reported. */
 export const ISSUES_URL = 'https://github.com/dpbarry/bel-jar/issues';
 
+/** Where a person writes to whoever runs BelJar: home's "Email me" (Dean, 2026-10-06). */
+export const CONTACT_EMAIL = 'dean.barry@mail.mcgill.ca';
+export const CONTACT_URL = 'mailto:' + CONTACT_EMAIL;
+
 /** The issue tracker, in a tab of its own: the work in this one stays. */
 export function reportIssue() {
   if (typeof g.open === 'function') g.open(ISSUES_URL, '_blank', 'noopener');
@@ -157,7 +161,7 @@ export function nameProject(pid) {
 }
 
 export const Routes = {
-  PROJECT_ID, ISSUES_URL, homeUrl, editUrl, privacyUrl, signInUrl, pageOf, projectOf, pendingOf, go, settle, nameProject, reportIssue,
+  PROJECT_ID, ISSUES_URL, CONTACT_URL, homeUrl, editUrl, privacyUrl, signInUrl, pageOf, projectOf, pendingOf, go, settle, nameProject, reportIssue,
 };
 
 g.Routes = Routes;

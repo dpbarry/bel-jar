@@ -1,6 +1,8 @@
 import { collectParseDiagnostics, walkTree } from '../tree-walk.mjs';
 import { collectUndefinedApplicationDiags } from '../name-resolve.mjs';
 import { lintQueryPragmaBounds, mergeDiagnostics as mergeDiagLists } from '../ide/query-diag.mjs';
+import { collectFixityDiagnostics } from '../infix.mjs';
+import { rewriteNotGuarded } from './pragma-scope.mjs';
 import { DEFAULT_DOCUMENT_ID, normalizeDocumentId, STATUS } from './ids.mjs';
 
 function lastBlockDirtyRange(prev, changes) {
@@ -110,7 +112,11 @@ export function createSyntaxStore({ documentId = DEFAULT_DOCUMENT_ID } = {}) {
           appDiags = collectUndefinedApplicationDiags(tree, doc);
         }
         lastAppDiags = appDiags;
-        lintDiags = mergeDiagLists(mergeDiagLists(parsePart(), queryDiags), appDiags).map((diag) => {
+        const fixityDiags = collectFixityDiagnostics(tree, doc);
+        lintDiags = rewriteNotGuarded(tree, mergeDiagLists(
+          mergeDiagLists(mergeDiagLists(parsePart(), queryDiags), appDiags),
+          fixityDiags,
+        )).map((diag) => {
           const hit = walk.blockAt(diag.from);
           return {
             ...diag,

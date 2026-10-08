@@ -34,7 +34,7 @@ npm run probe:cases       # deep: case completion, ghosts arriving unasked, acce
 npm run probe:kit         # the kit page (dev/kit.html): every component, one screenshot per theme (not in `probe`)
 npm run probe:migration   # the next stored format, rehearsed: old tab, new tab, no flash (in `probe`)
 npm run probe:notices     # the bell: a run finished elsewhere, a suite changing colour (in `probe`; docs/UI.md §3)
-npm run backup:export     # the live database, read only, to ~/beljar-backups (weekly); backup:restore, backup:rehearse
+npm run backup:export     # the live database and the texts of files, read only, to ~/beljar-backups (weekly); backup:restore, backup:rehearse
 npm run usage             # how big the live store has grown, beside its limits
 npm run probe:live        # AFTER A DEPLOY: the live site, R2, both Beluga workers (network; not in `probe`)
 npm run dev               # EVERYTHING locally at http://127.0.0.1:8787: sign-in, sync, Beluga checks (PERSIST §5.7; secrets in server/.dev.vars; local D1 in ~/.beljar-dev). A static server (Live Server) has no /api: online features are off there by design
@@ -87,9 +87,10 @@ Migrations applied remotely: 0001 and 0002 (2026-09-28), 0003 sessions and delet
 may lose a row), and only then `npx wrangler d1 migrations apply DB --remote`.
 **Backups** (PERSIST §5.7): D1 Time Travel covers 7 days (30 on paid,
 `npx wrangler d1 time-travel info beljar-sync`); once a week, `npm run backup:export` (the live
-database, read only, to `~/beljar-backups`, newest four kept) and `npm run backup:restore` (the
-newest into a scratch local D1, every table's rows checked against the file). R2 texts are named by
-content and never overwritten. ⛔ `privacy.html` says what is kept and for how long:
+database and the texts of files, read only, to `~/beljar-backups`, newest four kept, texts fetched
+only when new and checked against their hash) and `npm run backup:restore` (the newest into a
+scratch local D1, every table's rows and every text checked against the file). ⛔ R2 has no Time
+Travel: the weekly copy is the only one of the texts outside it. ⛔ `privacy.html` says what is kept and for how long:
 `tests/test-privacy-page.mjs` holds it to the migrations and the code; change both together.
 After `_rebuild/rebuild.ps1`: **upload both blobs to R2 first, then deploy**, then
 `npm run probe:live`. The runtime URL carries the build stamp (`?v=`, written by

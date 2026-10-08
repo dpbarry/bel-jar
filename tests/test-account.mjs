@@ -2,7 +2,7 @@
 // this browser, which projects it adopts, when a sync round makes removing
 // projects safe, and how a failed sign-in is explained.
 import fs from 'node:fs';
-import { accountStep, adoptable, roundIsSafe, signInFailure, reach, unreachableWords, resumeTarget } from '../js/account/account.mjs';
+import { accountStep, adoptable, roundIsSafe, signInFailure, reach, unreachableWords, resumeTarget, accountState, accountMenu } from '../js/account/account.mjs';
 
 let n = 0;
 function expect(cond, msg) {
@@ -90,4 +90,25 @@ for (const why of steps) for (const d of ['', 'no-cookie', 'mismatch', 'incorrec
   expect(resumeTarget(tied, 'u_1', '') === 'p_b', 'made in the same millisecond: the later in the list, every time');
 }
 
-console.log(`OK account (${n} checks: sign-in steps, what sign-in adopts, when removal is safe, every sign-in failure explained, where signing in comes back to)`);
+// ── The header's account button (Dean, 2026-10-06): always there, and its menu says where
+// the account stands at that moment, and holds only the account ──────────────────────
+{
+  const st = (o) => accountState(Object.assign({ asked: true, available: true, unreachable: null, user: null }, o));
+  expect(st({ asked: false }) === 'checking' && st({ asked: false, user: { id: 'u' } }) === 'checking', 'before the server answers: checking, whatever was known');
+  expect(st({ available: false }) === 'none', 'no server here: none');
+  expect(st({ unreachable: 'network' }) === 'unreachable', 'a server out of reach: unreachable');
+  expect(st({}) === 'signed-out' && st({ user: { id: 'u' } }) === 'signed-in', 'then signed out, or in');
+  const said = (state, o) => accountMenu(state, o).map((i) => i.type === 'status' ? '[' + i.title + ']' : i.type === 'separator' ? '|' : i.label).join(' ');
+  expect(said('checking') === '[Checking your account…]', `checking: says so, and offers nothing yet (${said('checking')})`);
+  expect(said('none') === '[No accounts here]', `no server: says why there is no account (${said('none')})`);
+  expect(said('unreachable', { reasonWords: 'x' }) === '[Can’t reach BelJar’s server] | Try again', `out of reach: says so, then Try again (${said('unreachable')})`);
+  expect(said('signed-out') === '[Not signed in] | Sign in with GitHub', `signed out: says so, then Sign in (${said('signed-out')})`);
+  const u = { handle: 'dean-b', name: 'Dean' };
+  expect(said('signed-in', { user: u, settings: true }) === '[Dean] | Account settings Sign out', `signed in: who, then Account settings and Sign out (${said('signed-in', { user: u, settings: true })})`);
+  expect(said('signed-in', { user: u, settings: false }) === '[Dean] | Sign out', 'where there is no Settings dialog (home), Sign out alone');
+  const every = ['checking', 'none', 'unreachable', 'signed-out', 'signed-in'].flatMap((x) => accountMenu(x, { user: u, settings: true }));
+  expect(!every.some((i) => /^(Home|Settings)$/.test(i.label || '')), 'and nothing that is not about the account: Home is its own button');
+  expect(every.filter((i) => i.label).every((i) => ['try-again', 'sign-in', 'settings', 'sign-out'].includes(i.act)), 'every action names what it does');
+}
+
+console.log(`OK account (${n} checks: sign-in steps, what sign-in adopts, when removal is safe, every sign-in failure explained, where signing in comes back to, the account menu in every state)`);

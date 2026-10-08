@@ -64,6 +64,29 @@
   cursor: pointer;
 }
 
+.hint-card.is-action:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-popover), var(--focus-ring);
+}
+
+.hint-root.is-hold .hint-close,
+.hint-root.is-hold .hint-progress {
+  display: none;
+}
+
+.hint-root[data-side="below"] {
+  transform-origin: var(--hint-arrow-x, 50%) top;
+}
+
+.hint-root[data-side="below"] .hint-card::before {
+  left: var(--hint-arrow-x, 50%);
+  top: calc(var(--hint-spout-size) * -0.55);
+  border: 1px solid var(--hint-border);
+  border-bottom: 0;
+  border-right: 0;
+  transform: translateX(-50%) rotate(45deg);
+}
+
 .hint-card::before {
   content: '';
   position: absolute;

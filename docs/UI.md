@@ -10,7 +10,16 @@ building or changing a surface.
 thing belongs to the page where a person looks for it: which projects there are, and who is signed
 in, on home; everything about the open project in the editor. The editor's brand goes home.
 
-- Signed out, the editor has no account button: signing in is home's (and the palette's).
+- The account button is on both pages, always (Dean, 2026-10-06): a placeholder picture shipped in
+  the page until the server answers, and a menu that says where the account stands at that moment
+  (checking, no server here, the server out of reach, signed out with Sign in, signed in with
+  Account settings and Sign out; `account.mjs` `accountState`, `accountMenu`). Only the account
+  lives there: Home is the editor's own button, between the theme and the account.
+- ⛔ Everything that opens from the top bar's buttons drops from the bar's bottom edge by one
+  token, `--header-menu-gap`: the menu trigger hands Menu the bar (`dropFrom`) for any button in
+  it, and the notifications panel uses the same token. The menu bar's items (Project, Edit, Tools)
+  open flush under themselves, as a menu bar's do: Dean tried them dropped too, and kept them flush
+  (`scratch/probes/probe-header-menus.mjs`).
 - Home says nothing it is not sure of. An empty list waits until it knows who is signed in and
   their first sync is back: "nothing here" (the keyboard on New project) is never a guess.
 - A row's menu on home does what the Project menu does in the editor, by the same code.
@@ -33,17 +42,19 @@ The mechanics (addresses, pinning, signing out across tabs) are [PERSIST §5.11]
 ### How home is composed
 
 One column, at the left of a measure (`css/home.css`, `js/home/home.mjs`), read from the top. The
-strip above it is the editor's, with the mark alone at the left and the person at the far right;
-the name is the page's own.
+strip above it is the editor's, with the mark and **BelJar** at the left and the person at the far right.
+Behind the column, on a wide page, an X in the top left and a lambda in the bottom right, drawn in
+the accent. Each is a straight stroke across a circular one.
 
 | Part | What it holds |
 |------|---------------|
-| The name | The mark and **BelJar**, at a restrained size. Under it, signed out where a server answers, one line: **Sign in with GitHub** to keep your projects on every device |
+| The strip | The mark and **BelJar**, beside each other. The name is not repeated in the column |
+| The sign-in box | Signed out, where a server answers, the first time this browser is shown home: one box under the account button, **Sign in with GitHub to keep your projects on every device.** The words are not a link. It counts down like the other boxes, and it is seen as it appears, so a refresh does not bring it back. Clicking the box opens the account menu and the box goes; clicking the account button does the same |
 | The ways to start | New project, Import folder, Browse examples: three flat tiles, a glyph above the words, boxed by a step in the ground and nothing else |
-| **Projects** | Every project, the last one opened first: its **name** and **when** it was last touched. A marker only when files wait to be reviewed (§2). **Search** (with the chord that opens the palette in the editing style in use) at the heading's right |
+| **Projects** | Every project, the last one opened first: its **name** and **when** it was last touched. A marker only when files wait to be reviewed (§2). **Search** (Ctrl+K, the same chord on every editing style — home does not run Vim or Emacs) at the heading's right |
 | The foot | Beluga, Report an issue, GitHub |
 
-- ⛔ **One column, two edges.** The name, the tiles and every row's words start at one left edge;
+- ⛔ **One column, two edges.** The tiles and every row's words start at one left edge;
   every date ends at the tiles' right edge (`scripts/probe-kit.mjs`, `probe-home`). A row's wash
   reaches half a gutter past them, so the words never touch it.
 - ⛔ **A row says its name and when, and nothing else.** No initials, no counts, no open file:
@@ -55,8 +66,9 @@ the name is the page's own.
   selected.
 - ⛔ One mechanism finds: the palette. Search opens it, and a letter typed on a row opens it with
   that letter; there is no second filter field for the list.
-- A browser with **no project** is the same page without the list: the name, the ways to start,
-  the foot. Nothing claims there is nothing here while projects may be on their way.
+- A browser with **no project** is the same page: **Projects**, Search, and where the first
+  row would be, an italic **No projects** with no date. Nothing claims there is nothing here
+  while projects may be on their way.
 - **What comes later has a place already.** A second list (shared with you) is another heading
   and list under Projects; a line about usage or storage goes in the foot.
 - Narrower than 34rem the tiles become three lines, the glyph before the words.

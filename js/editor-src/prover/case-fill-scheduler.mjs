@@ -281,7 +281,7 @@ export function createCaseFillScheduler(deps) {
     if (current && current.item.fileId === fileId && !stillCurrent(current.item)) cancelRec(fileId, current.item.recKey);
     if (deps.readSetting() !== 'auto') return;
     if (!snap || snap.state !== 'ready') return;
-    const coverage = (snap.belugaDiagnostics || []).filter((d) => /COVERAGE FAILURE/.test(String(d.message || '')));
+    const coverage = (snap.belugaDiagnostics || []).filter((d) => /COVERAGE FAILURE|This case is not exhaustive/.test(String(d.message || '')));
     if (!coverage.length) return;
     for (const p of proofs) {
       if (!p.outerCase) continue;

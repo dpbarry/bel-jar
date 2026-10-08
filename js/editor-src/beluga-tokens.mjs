@@ -1,5 +1,5 @@
 import { ExternalTokenizer } from '@lezer/lr';
-import { BlockComment, NamedProjection, ParameterSubstArg, ProofScript } from './beluga-parser.terms.js';
+import { BlockComment, DottedIdent, NamedProjection, ParameterSubstArg, ProofScript } from './beluga-parser.terms.js';
 
 // Beluga's lexer makes `.field` a single DOT_IDENT token and the PARSER decides
 // whether it is a projection or a lambda binder's `.` + body (it can split the
@@ -24,6 +24,19 @@ export const namedProjection = new ExternalTokenizer((input, stack) => {
   let i = 2;
   while (isIdentContinue(input.peek(i))) i += 1;
   input.acceptToken(NamedProjection, i);
+}, { contextual: true });
+
+// `.name` as a qualified-name segment or a copattern observation. Same split as
+// NamedProjection: only where the grammar can shift it, so `\x.M` and `T.` keep
+// their bare dots.
+export const dottedIdent = new ExternalTokenizer((input, stack) => {
+  if (input.peek(0) !== 46) return;
+  if (!isIdentStart(input.peek(1))) return;
+  if (stack.canShift(NamedProjection)) return;
+  if (!stack.canShift(DottedIdent)) return;
+  let i = 2;
+  while (isIdentContinue(input.peek(i))) i += 1;
+  input.acceptToken(DottedIdent, i);
 }, { contextual: true });
 
 // Nested block comments `%{ ... }%` (and `%{{ ... }}%` documentation comments,

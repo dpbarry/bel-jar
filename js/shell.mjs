@@ -52,4 +52,5 @@ import './account/account.mjs';
 import './account/sync-ui.mjs';
 import './ui/version-history.mjs';
 import './app/app.mjs';
+import './ui/clipboard-read-dialog.mjs';
 import './compat/beljar-window-aliases.mjs';

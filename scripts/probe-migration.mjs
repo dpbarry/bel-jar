@@ -2,8 +2,8 @@
 // c12, docs/PERSIST.md §3.1). The machinery has never run on real data, so it
 // runs here before the first format change ships, and stays for the next one.
 //
-// A browser holds a person's work in format 4. An old tab is left open; a new
-// BelJar (format 5, with a step from 4 that does nothing) is loaded beside it,
+// A browser holds a person's work in format 5. An old tab is left open; a new
+// BelJar (format 6, with a step from 5 that does nothing) is loaded beside it,
 // over the same storage. Then:
 //   - the new tab's first paint shows the person's settings, not the defaults
 //     (early boot migrates before it reads: js/boot/early-boot-core.mjs);
@@ -25,23 +25,25 @@ const { page: oldTab, browser, check, finish, wait } = await openProbe({ port, p
 const BASE = `http://localhost:${port}`;
 
 const NEXT = ['/js/boot/early-boot.js', '/js/boot/panel-restore.js', '/js/persist/persist.js', '/js/shell.js', '/js/home.js'];
-const STEP = 'MIGRATIONS = { 4: function () { globalThis.__rehearsalSteps = (globalThis.__rehearsalSteps || 0) + 1; } }';
-/** A bundle as the next BelJar ships it: format 5, and the step from 4. */
+/** A bundle as the next BelJar ships it: format 6, and a step from 5. */
 function nextBundle(file) {
   let src = fs.readFileSync(path.join(ROOT, file), 'utf8');
-  const schemas = src.split('SCHEMA = 4').length - 1;
-  if (schemas !== 1) throw new Error(`${file}: expected one SCHEMA = 4, found ${schemas}`);
-  src = src.replace('SCHEMA = 4', 'SCHEMA = 5');
-  if (src.includes('MIGRATIONS = {}')) src = src.replace('MIGRATIONS = {}', STEP);
+  const schemas = src.split('SCHEMA = 5').length - 1;
+  if (schemas !== 1) throw new Error(`${file}: expected one SCHEMA = 5, found ${schemas}`);
+  src = src.replace('SCHEMA = 5', 'SCHEMA = 6');
+  const mark = 'MIGRATIONS = {';
+  if (src.includes(mark)) {
+    src = src.replace(mark, mark + ' 5: function () { globalThis.__rehearsalSteps = (globalThis.__rehearsalSteps || 0) + 1; },');
+  }
   return src;
 }
 const nexts = NEXT.map((f) => [f, nextBundle(f.slice(1))]);
-check(nexts.every(([, s]) => s.includes('SCHEMA = 5')) && nexts.filter(([, s]) => s.includes('__rehearsalSteps')).length === 4,
-  'the next BelJar: format 5 in all five bundles, and its step in the four that migrate');
+check(nexts.every(([, s]) => s.includes('SCHEMA = 6')) && nexts.filter(([, s]) => s.includes('__rehearsalSteps')).length === 4,
+  'the next BelJar: format 6 in all five bundles, and its step in the four that migrate');
 
 let crash = null;
 try {
-  // ── a person's browser, in format 4 ──────────────────────────────────────
+  // ── a person's browser, in format 5 ──────────────────────────────────────
   await oldTab.evaluate(() => {
     Settings.set('theme', 'light');
     Settings.set('keymapStyle', 'emacs');
@@ -61,7 +63,7 @@ try {
     return { schema: localStorage.getItem('beljar/schema'), work: out };
   });
   const before = await snapshot(oldTab);
-  check(before.schema === '4' && Object.keys(before.work).length >= 7, `a profile with work in it, in format 4 (${Object.keys(before.work).length} records)`);
+  check(before.schema === '5' && Object.keys(before.work).length >= 7, `a profile with work in it, in format 5 (${Object.keys(before.work).length} records)`);
 
   // ── the next BelJar, in a new tab over the same storage ───────────────────
   const newTab = await browser.newPage();
@@ -91,13 +93,13 @@ try {
   await wait(800);
   check(served.has('/js/boot/early-boot.js') && served.has('/js/shell.js'), `the new tab runs the next BelJar (${[...served].join(', ')})`);
   const first = await newTab.evaluate(() => window.__firstPaint);
-  check(first && first.light === true && first.schema === '5',
+  check(first && first.light === true && first.schema === '6',
     `its first paint is the person's light theme, migrated before it was read: no flash of the default (${JSON.stringify(first)})`);
   const steps = await newTab.evaluate(() => window.__rehearsalSteps || 0);
-  check(steps === 1, `the step from 4 ran once, before first paint; the store found the format current (${steps})`);
+  check(steps === 1, `the step from 5 ran once, before first paint; the store found the format current (${steps})`);
 
   const after = await snapshot(newTab);
-  check(after.schema === '5', 'the storage is stamped format 5');
+  check(after.schema === '6', 'the storage is stamped format 6');
   const lost = Object.keys(before.work).filter((k) => JSON.stringify(after.work[k]) !== JSON.stringify(before.work[k]));
   check(!lost.length, `every project, file and setting carried forward unchanged (${lost.join(', ') || Object.keys(before.work).length + ' records'})`);
   const seen = await newTab.evaluate(() => ({
@@ -121,7 +123,7 @@ try {
   await oldTab.keyboard.type('% typed in the old tab\n');
   await wait(1500);
   const untouched = await snapshot(oldTab);
-  check(untouched.schema === '5' && !JSON.stringify(untouched.work).includes('typed in the old tab'), 'what is typed in it is not saved over the new format');
+  check(untouched.schema === '6' && !JSON.stringify(untouched.work).includes('typed in the old tab'), 'what is typed in it is not saved over the new format');
 
   // ── the old BelJar, loaded again ──────────────────────────────────────────
   await oldTab.reload({ waitUntil: 'domcontentloaded' });
@@ -129,7 +131,7 @@ try {
   await wait(800);
   const older = await oldTab.evaluate(() => ({ readOnly: Persist.isReadOnly() }));
   const kept = await snapshot(oldTab);
-  check(older.readOnly && kept.schema === '5' && JSON.stringify(kept.work) === JSON.stringify(after.work),
+  check(older.readOnly && kept.schema === '6' && JSON.stringify(kept.work) === JSON.stringify(after.work),
     'the old BelJar, loaded again over the newer format, opens it read-only and leaves it exactly as it was');
   await newTab.close();
 } catch (e) {

@@ -1,8 +1,9 @@
 /**
  * Home (index.html): your projects and the account, and nothing of the editor.
  *
- * One column (docs/UI.md §0): the name, the three ways to start, then the
+ * One column (docs/UI.md §0): the three ways to start, then the
  * projects, the last one opened first: it has the focus, so Enter resumes it.
+ * The name is the strip's, beside the mark.
  *
  * A row is a link to the editor on that project (js/frame/routes.mjs). It says
  * the project's name and when it was last touched, and nothing more unless
@@ -19,7 +20,7 @@
  * The list follows storage (another tab, another device through sync), so it
  * is true without a reload; sync runs here as it does in the editor.
  */
-import { Routes, ISSUES_URL } from '../frame/routes.mjs';
+import { Routes, CONTACT_URL } from '../frame/routes.mjs';
 import { wireMenuTrigger } from '../ui/menu-trigger.mjs';
 import { folderAsProject, createImportedProject } from '../workspace/import-project.mjs';
 import { attachHomeCommands } from './home-commands.mjs';
@@ -70,8 +71,8 @@ export function whenEdited(ms, now = Date.now()) {
 
 /**
  * What the page is: 'arriving' (an empty list that may be about to fill: the
- * keyboard waits for it), 'first' (no project in this browser: the ways to
- * start are all there is), or 'returning' (they, and the projects).
+ * keyboard waits for it, and the list says nothing yet), 'first' (no project:
+ * the list is there, and says so), or 'returning' (the projects).
  */
 export function homeMode(o) {
   if (o.count > 0) return 'returning';
@@ -133,6 +134,21 @@ export function listArriving(o) {
 
 /** How long an empty home waits to learn who is signed in before it says it is empty. */
 export const ACCOUNT_WAIT_MS = 2500;
+
+/** The once-ever box under the account button (hint-seen.mjs `sign-in`). */
+export const SIGN_IN_HINT = 'sign-in';
+
+/** Words only: clicking the box opens the account menu. It is not a link. */
+export const SIGN_IN_HINT_TEXT = 'Sign in with GitHub to keep your projects on every device.';
+
+/**
+ * Whether home should show that box. Signed out, where a server answers, and
+ * this browser has not been shown it. `seen` is the once-ever flag; a box
+ * already on screen has been stored and must not be treated as finished.
+ */
+export function signInHintDue(o) {
+  return !!(o && o.accountKnown && o.available && !o.signedIn && !o.unreachable && !o.seen);
+}
 
 // ── the page ────────────────────────────────────────────────────────────────
 
@@ -286,11 +302,12 @@ const START = [
   { id: 'examples', label: 'Browse examples', icon: 'library', run: () => Routes.go(Routes.editUrl() + '#library') },
 ];
 
-/** Where to read more, and where to say something is wrong. */
-// Another site opens in a tab of its own; BelJar's own page (`here`) in this one.
+/** Where to read more, and who to write to. */
+// Another site opens in a tab of its own; BelJar's own page, and the email (`here`), in this one.
+// GitHub is here already, issues and all: the second way to reach someone is an email (Dean, 2026-10-06).
 const LINKS = [
   { label: 'Beluga', href: 'https://www.cs.mcgill.ca/~complogic/beluga/' },
-  { label: 'Report an issue', href: ISSUES_URL },
+  { label: 'Email me', href: CONTACT_URL, here: true },
   { label: 'GitHub', href: 'https://github.com/dpbarry/bel-jar' },
   { label: 'Privacy', href: Routes.privacyUrl(), here: true },
 ];
@@ -348,6 +365,15 @@ function rowNode(p, stats, review) {
   return li;
 }
 
+/** Where the first row would be, when there is no project: the words, italic, and no date. */
+function emptyRow() {
+  const li = el('li', 'home-row home-row--empty');
+  const line = el('span', 'home-row__open');
+  line.appendChild(el('span', 'home-row__name', 'No projects'));
+  li.appendChild(line);
+  return li;
+}
+
 /** The ways to start, as tiles: a glyph above the words. */
 function startNodes() {
   return START.map((s) => {
@@ -374,17 +400,6 @@ function linkNodes() {
   });
 }
 
-/** The line under the name that offers to sign in, drawn into `box`. */
-function signInLine(box, onSignIn) {
-  const btn = el('button', 'home-link-btn', 'Sign in with GitHub');
-  btn.type = 'button';
-  btn.addEventListener('click', onSignIn);
-  // What signing in keeps, beside the way to it (privacy.html).
-  const more = el('a', 'home-head__more', 'What BelJar keeps');
-  more.href = Routes.privacyUrl();
-  box.append(btn, document.createTextNode(' to keep your projects on every device. '), more);
-}
-
 /** What Search says: the word, and the chord that does the same (where one is bound). */
 function findNodes(chord) {
   const nodes = [el('span', null, 'Search')];
@@ -392,11 +407,8 @@ function findNodes(chord) {
   return nodes;
 }
 
-/** The fixed parts: the mark beside the name, the ways to start, where to read more. Once. */
+/** The fixed parts: the ways to start, where to read more. Once. */
 function drawFixed() {
-  const mark = document.getElementById('home-mark');
-  const logo = document.querySelector('header .header-logo');
-  if (mark && logo && !mark.querySelector('svg')) mark.prepend(logo.cloneNode(true));
   const actions = document.getElementById('home-actions');
   if (actions && !actions.childElementCount) actions.append(...startNodes());
   const links = document.getElementById('home-links');
@@ -405,29 +417,62 @@ function drawFixed() {
 
 /**
  * Search, beside the list's heading: it opens the palette, which is the one
- * thing that searches. ⛔ Its chord is the one that works now, asked for at
- * every drawing: the editing style may have changed in another tab (Emacs gives
- * Ctrl+K to kill-line, and opens the palette with Ctrl+X Ctrl+F).
+ * thing that searches.
+ *
+ * ⛔ The chord is BelJar's own Go to File binding, always — Ctrl+K, or whatever
+ * that binding was changed to. Home has no editor, so Vim and Emacs do not get
+ * a say: Emacs would print Ctrl+X Ctrl+F here and give Ctrl+K to kill-line, and
+ * neither of those is how this page works.
  */
 function drawFind() {
   const btn = document.getElementById('home-find');
   if (!btn) return;
   btn.hidden = !g.CommandPalette;
   if (btn.hidden) return;
-  const C = g.Commands;
-  const chord = (C && typeof C.liveChord === 'function' && C.liveChord('nav.anywhere')) || '';
+  const KB = g.Keybindings;
+  const chord = (KB && typeof KB.labelFor === 'function' && KB.labelFor('nav.anywhere')) || '';
   if (btn.childElementCount && btn.dataset.chord === chord) return;
   btn.dataset.chord = chord;
   btn.replaceChildren(...findNodes(chord));
 }
 
-function drawSignIn() {
+/**
+ * The sign-in box, under the account button. Once, the first time home is
+ * shown to someone signed out where a server answers: directly, or after the
+ * editor (a start page that opened a project). It counts down like the other
+ * boxes, and it is remembered as it appears. Clicking the box opens the
+ * account menu; clicking the account button does too.
+ */
+function offerSignInHint() {
   const A = g.Account;
-  const offer = !!A && A.available() && !A.user() && !A.unreachable();
-  const box = document.getElementById('home-signin');
-  if (!box) return;
-  box.hidden = !offer;
-  if (offer && !box.childElementCount) signInLine(box, () => A.signIn());
+  const Hint = g.Hint;
+  const eligible = signInHintDue({
+    accountKnown,
+    available: !!(A && A.available()),
+    signedIn: !!(A && A.user()),
+    unreachable: !!(A && A.unreachable()),
+    seen: false,
+  });
+  if (!eligible) {
+    if (Hint && Hint.isVisible && Hint.isVisible(SIGN_IN_HINT)) Hint.dismiss(SIGN_IN_HINT);
+    return;
+  }
+  if (!Hint || !Hint.show) return;
+  if (Hint.isVisible && Hint.isVisible(SIGN_IN_HINT)) return;
+  if (Hint.wasDismissed && Hint.wasDismissed(SIGN_IN_HINT)) return;
+  const anchor = document.getElementById('btn-account');
+  if (!anchor) return;
+  const box = anchor.getBoundingClientRect();
+  if (box.width < 1 || box.height < 1) return;
+  Hint.show({
+    id: SIGN_IN_HINT,
+    anchor,
+    text: SIGN_IN_HINT_TEXT,
+    side: 'below',
+    align: 'end',
+    wait: false,
+    onClick: () => anchor.click(),
+  });
 }
 
 function drawRisk() {
@@ -480,13 +525,17 @@ function render() {
   if (says !== drawn) {
     drawn = says;
     main.dataset.mode = mode;
-    list.replaceChildren(...ordered.map((p) => rowNode(p, stats.get(p.id), review.get(p.id) || 0)));
+    // ⛔ The list stays when it is empty. "No projects" only once it is known to
+    // be empty: while a round may still bring some, the heading says nothing.
+    list.replaceChildren(...(ordered.length
+      ? ordered.map((p) => rowNode(p, stats.get(p.id), review.get(p.id) || 0))
+      : (mode === 'arriving' ? [] : [emptyRow()])));
     const section = document.getElementById('home-projects-section');
-    if (section) section.hidden = !ordered.length;
+    if (section) section.hidden = mode === 'arriving';
   }
   drawFixed();
   drawFind();
-  drawSignIn();
+  offerSignInHint();
   drawRisk();
 
   if (focusedPid) {
@@ -649,7 +698,15 @@ function mount() {
   if (g.Frame) g.Frame.mount();
   attachHomeCommands({ newProject, pickFolder, projects: paletteProjects, say });
 
-  wireMenuTrigger(document.getElementById('btn-account'), {
+  const accountBtn = document.getElementById('btn-account');
+  if (accountBtn) {
+    const hideSignInHint = () => {
+      if (g.Hint && g.Hint.isVisible && g.Hint.isVisible(SIGN_IN_HINT)) g.Hint.dismiss(SIGN_IN_HINT);
+    };
+    accountBtn.addEventListener('pointerdown', hideSignInHint);
+    accountBtn.addEventListener('click', hideSignInHint);
+  }
+  wireMenuTrigger(accountBtn, {
     side: 'bottom', align: 'end', items: () => (g.Account ? g.Account.menuItems() : []),
   });
   wireMenuTrigger(document.getElementById('btn-sync'), {
@@ -704,9 +761,8 @@ function mount() {
 
 export const Home = { mount, render, say };
 // Home's parts, for the kit page (dev/kit.html) to draw with the same code that
-// draws them here: a row, the ways to start, the links, Search, the line that
-// offers to sign in.
-export { rowNode, startNodes, linkNodes, findNodes, signInLine };
+// draws them here: a row, the empty line, the ways to start, the links, Search.
+export { rowNode, emptyRow, startNodes, linkNodes, findNodes };
 g.Home = Home;
 
 // Mounted as the script runs: it is the last thing in the document, so all it

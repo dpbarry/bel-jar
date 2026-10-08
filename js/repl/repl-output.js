@@ -10,6 +10,85 @@
     }
   }
 
+  // js/editor-src/ide/coverage-card.mjs
+  function splitTopLevel(text, sep) {
+    const out = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < text.length; i += 1) {
+      const c = text[i];
+      if (c === "(" || c === "[" || c === "{") depth += 1;
+      else if (c === ")" || c === "]" || c === "}") depth = Math.max(0, depth - 1);
+      else if (depth === 0 && c === sep) {
+        out.push(text.slice(start, i));
+        start = i + 1;
+      }
+    }
+    out.push(text.slice(start));
+    return out.map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean);
+  }
+  function assumptionsOf(prefix) {
+    const out = [];
+    for (const clause of splitTopLevel(prefix, ";")) {
+      for (const bit of splitTopLevel(clause, ",")) out.push(bit);
+    }
+    return out;
+  }
+  function topLevelTurnstile(item) {
+    let depth = 0;
+    for (let i = 0; i < item.length - 1; i += 1) {
+      const c = item[i];
+      if (c === "(" || c === "[" || c === "{") depth += 1;
+      else if (c === ")" || c === "]" || c === "}") depth -= 1;
+      else if (depth === 0 && c === "|" && item[i + 1] === "-") return i;
+    }
+    return -1;
+  }
+  function coverageCases(text) {
+    const raw = String(text || "");
+    const at = raw.indexOf("NOT COVERED");
+    if (at < 0) return [];
+    const end = raw.indexOf("\n##", at);
+    const block = raw.slice(raw.indexOf("\n", at) + 1, end < 0 ? raw.length : end);
+    const out = [];
+    for (const item of block.split(/^\(\d+\)/m).map((s) => s.trim()).filter(Boolean)) {
+      const turn = topLevelTurnstile(item);
+      if (turn < 0) continue;
+      const prefix = item.slice(0, turn);
+      const pattern = item.slice(turn + 2).replace(/\s+/g, " ").trim();
+      out.push({ prefix, pattern, assumptions: assumptionsOf(prefix) });
+    }
+    return out;
+  }
+  function isCoverageText(text) {
+    return /COVERAGE FAILURE|CASE\(S\) NOT COVERED|Cases didn't cover|CASES DID NOT COVER/i.test(text);
+  }
+  function formatCoverageCard(message) {
+    const text = String(message ?? "").trim();
+    if (!text) return null;
+    if (/^This case is not exhaustive\./.test(text)) return text;
+    if (!isCoverageText(text)) return null;
+    const cases = coverageCases(text);
+    if (!cases.length) {
+      const match = text.match(/Matching fails due to\s+([\s\S]+)/i);
+      if (match) {
+        const why = match[1].replace(/#/g, "").replace(/\s+/g, " ").trim().replace(/\.$/, "");
+        return why ? `This case is not exhaustive.
+
+Matching fails due to ${why}.` : "This case is not exhaustive.";
+      }
+      return "This case is not exhaustive.";
+    }
+    const blocks = cases.map((c) => {
+      const lines = [c.pattern || "(missing pattern)"];
+      for (const a of c.assumptions) lines.push(`  ${a}`);
+      return lines.join("\n");
+    });
+    return `This case is not exhaustive.
+
+${blocks.join("\n\n")}`;
+  }
+
   // js/repl/repl-output.mjs
   var global = globalThis;
   var output = document.getElementById("output");
@@ -220,23 +299,9 @@
       sub.textContent = "Cases not covered";
       head.appendChild(sub);
       shell.appendChild(head);
-      var lines = text.split("\n");
-      var bodyLines = [];
-      for (var k = 0; k < lines.length; k++) {
-        var ln = lines[k];
-        if (/^WARNING:\s*Cases didn't cover:?/i.test(ln.trim())) {
-          var rest = ln.replace(/^[^:]*:\s*[^:]*:?\s*/, "").trim();
-          if (/^CASE\(S\) NOT COVERED:?/i.test(rest)) continue;
-          if (rest) bodyLines.push(rest);
-        } else {
-          bodyLines.push(ln);
-        }
-      }
-      while (bodyLines.length && bodyLines[0].trim() === "") bodyLines.shift();
-      while (bodyLines.length && bodyLines[bodyLines.length - 1].trim() === "") bodyLines.pop();
       var pre = document.createElement("pre");
       pre.className = "repl-rich-pre repl-rich-pre--warning";
-      pre.textContent = bodyLines.join("\n");
+      pre.textContent = formatCoverageCard(text) || text;
       shell.appendChild(pre);
     });
   }
@@ -950,7 +1015,7 @@
       });
       return;
     }
-    var text = seg.text;
+    var text = formatCoverageCard(seg.text) || seg.text;
     if (!text || !String(text).trim()) return;
     appendRichShell(text, function(shell) {
       var pre = document.createElement("pre");
@@ -998,7 +1063,7 @@
         await morphPendingStacked(pending, seg0.statusText, seg0.holesText);
       } else {
         var pre = pending.querySelector(".repl-rich-pre--run-pending");
-        await morphPendingPre(pre, classifyRunOtherKind(seg0.text), seg0.text);
+        await morphPendingPre(pre, classifyRunOtherKind(seg0.text), formatCoverageCard(seg0.text) || seg0.text);
       }
       scrollReplBottom();
       for (var j = 1; j < segs.length; j++) appendRunSegment(segs[j]);
@@ -1101,7 +1166,19 @@
     });
   }
   function insertWelcomeBanner() {
-    if (typeof Persist !== "undefined" && !Settings.get("replWelcome")) return;
+    var banner = welcomeBanner();
+    if (banner) streamAppend(banner);
+  }
+  function refreshBanners(root) {
+    var old = (root || output).querySelectorAll(".repl-banner");
+    for (var i = 0; i < old.length; i++) {
+      var banner = welcomeBanner();
+      if (banner) old[i].replaceWith(banner);
+      else old[i].remove();
+    }
+  }
+  function welcomeBanner() {
+    if (typeof Persist !== "undefined" && !Settings.get("replWelcome")) return null;
     var wrap = document.createElement("div");
     wrap.className = "repl-banner";
     var lead = document.createElement("div");
@@ -1113,7 +1190,7 @@
     lead.appendChild(kHelp);
     lead.appendChild(document.createTextNode(" to see commands."));
     wrap.appendChild(lead);
-    streamAppend(wrap);
+    return wrap;
   }
   function clearOutput() {
     pendingRunBlock = null;
@@ -1157,6 +1234,7 @@
     appendProjectOpened,
     appendProjectEmpty,
     insertWelcomeBanner,
+    refreshBanners,
     clearOutput,
     scrollReplBottom,
     parseQuerySolutions,

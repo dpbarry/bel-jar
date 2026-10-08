@@ -41,6 +41,11 @@ try {
   const account = await page.waitForFunction(() => { const b = document.getElementById('btn-account'); return b && !b.hidden; }, { timeout: 15000 })
     .then(() => true, () => false);
   check(account, 'home found the server: its header shows the account button');
+  const offered = await page.waitForFunction(() => {
+    const root = document.getElementById('hint-root');
+    const body = root && root.querySelector('.hint-body');
+    return !!(root && !root.hidden && body && body.textContent.indexOf('Sign in with GitHub') !== -1 && !body.querySelector('a'));
+  }, { timeout: 20000 }).then(() => true, () => false);
   // The editor's scripts may be FETCHED ahead once home is idle (a prefetch link:
   // js/home/preload-editor.mjs). None is run here, and the Beluga runtime is not touched.
   const ahead = await page.waitForFunction(() => document.querySelectorAll('link[rel="prefetch"]').length > 0, { timeout: 15000 })
@@ -54,7 +59,6 @@ try {
         .map((r) => new URL(r.name).pathname),
       beluga: performance.getEntriesByType('resource').map((r) => new URL(r.name).pathname).filter((p) => /beluga_web|beluga-worker/.test(p)),
       edit: window.Routes.editUrl(),
-      signin: !!document.getElementById('home-signin') && !document.getElementById('home-signin').hidden,
       prefetched: [...document.querySelectorAll('link[rel="prefetch"]')].map((l) => new URL(l.href).pathname),
       scripts,
       optIn: /<style>\s*@view-transition\s*\{\s*navigation:\s*auto;\s*\}\s*<\/style>/.test(document.head.innerHTML) && /@view-transition/.test(editHtml),
@@ -63,7 +67,7 @@ try {
   });
   console.log('  home:', JSON.stringify(home));
   check(!home.editor && home.run.length === 0 && home.beluga.length === 0, `home runs no editor and touches no Beluga (${home.run.concat(home.beluga).join(', ')})`);
-  check(home.edit === '/edit' && home.signin, 'it links to the editor at /edit, and offers to sign in');
+  check(home.edit === '/edit' && offered, 'it links to the editor at /edit, and offers to sign in once, under the account button');
   check(ahead && home.scripts.length >= 5 && home.prefetched.join() === home.scripts.join(),
     `idle, it fetches the editor's scripts ahead: exactly the ones the editor's document loads (${home.prefetched.length} of ${home.scripts.length})`);
   check(home.optIn, 'both documents opt in to the transition between them, in their own heads');
@@ -221,10 +225,10 @@ try {
     `sign-in remembers the page it was started from (${kept ? kept.split(';')[0] : 'no cookie'})`);
   const away = cookieOf(await hit('/api/auth/github/start?return=' + encodeURIComponent('https://elsewhere.example/')), '__Host-bj_return');
   check(!away || /Max-Age=0/.test(away), `and never an address on another site (${away ? away.split(';')[0] : 'no cookie'})`);
-  // Signed out, the editor has no account button: signing in is home's, and the palette's.
-  const quiet = await page.waitForFunction(() => window.Account && window.Account.available() && document.getElementById('btn-account').hidden, { timeout: 15000 })
+  // Signed out, the editor's account button says so and offers Sign in, as home's does (Dean, 2026-10-06).
+  const quiet = await page.waitForFunction(() => window.Account && window.Account.available() && document.getElementById('btn-account').dataset.state === 'signed-out', { timeout: 15000 })
     .then(() => true, () => false);
-  check(quiet, 'the editor found the server too, and signed out shows no account button');
+  check(quiet, 'the editor found the server too, and its account button says signed out');
 
   console.log('  total wall:', Date.now() - t0, 'ms');
   if (consoleErrs.length) console.log('  console errors:', JSON.stringify(consoleErrs));

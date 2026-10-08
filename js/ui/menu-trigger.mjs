@@ -38,6 +38,11 @@ export function wireMenuTrigger(btn, menuOpts) {
       anchor: btn,
       side: menuOpts.side,
       align: menuOpts.align,
+      // ⛔ A button in the top bar drops its menu from the bar's bottom edge, the
+      // same for every one of them (`--header-menu-gap`, css/tokens.css). The
+      // menu bar's own items (Project, Edit, Tools) open flush under themselves,
+      // as a menu bar's do (Dean tried both, 2026-10-06).
+      dropFrom: btn.closest('.header-menu') ? null : (btn.closest('body > header') || null),
       items,
       onClose: () => setOpen(false),
     });

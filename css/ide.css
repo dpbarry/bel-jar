@@ -649,12 +649,15 @@ html.jar-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
 }
 
 /* Structure path bar (pref beljar-sticky-decl-header): cursor-driven a > b > c.
-   In-flow flex row above .cm-scroller (not an overlay). Muted panel surface +
-   desaturated tokens so it reads as chrome, not code. */
+   Painted over the editor, out of flow, so showing and hiding it does not
+   resize the code. Muted panel surface + desaturated tokens so it reads as
+   chrome, not code. */
 .beljar-sticky-decl,
 .beljar-structure-path {
-  position: relative;
-  flex: 0 0 auto;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   z-index: 6;
   pointer-events: auto;
   cursor: default;
@@ -667,8 +670,9 @@ html.jar-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
   font-size: 0.92em;
   font-family: var(--editor-mono, var(--mono));
   line-height: 1.35;
-  /* Keep height when empty so the row doesn't pop in/out with the cursor. */
-  min-height: calc(1.35em + 0.7em);
+  /* Border-box folds the 1px rule into this height. The line box needs that
+     pixel, or the row grows when a crumb appears and the editor judders. */
+  height: calc(1.35em + 0.7em + 1px);
   color: var(--muted-higher);
   background: var(--base-lower);
   border-bottom: 1px solid var(--base-mid);
@@ -676,6 +680,9 @@ html.jar-hole-loud .cm-lineNumbers .cm-gutterElement.cm-hole-gutter::before {
   overflow: hidden;
   text-overflow: ellipsis;
   user-select: none;
+}
+.beljar-structure-path:empty {
+  display: none;
 }
 .beljar-structure-sep {
   flex: 0 0 auto;

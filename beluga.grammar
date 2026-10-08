@@ -7,6 +7,7 @@
   arrow  @right
   ann    @left
   branch @left
+  qual   @cut
 }
 
 //  Top-level
@@ -32,10 +33,10 @@ Declaration {
   | NamePragma
   | InfixPragma
   | PrefixPragma
+  | PostfixPragma
   | AssocPragma
   | NotPragma
   | NoStrengthenPragma
-  | OpaquePragma
   | CoveragePragma
   | WarnCoveragePragma
   | QueryPragma
@@ -66,32 +67,34 @@ lfConstructorList { ("|"? LFConstructor ("|" LFConstructor)*)? }
 LFConstructor { (LowerIdentifier | UpperIdentifier) ":" LFType }
 
 //  Pragmas
+//
+// Beluga (signature_parser.ml): a qualified name is an identifier plus zero or
+// more dotted segments; precedence comes before associativity; both are
+// optional; the trailing dot is required. `--query`'s label is optional and
+// its goal is an LF type. `--not` and the three globals do not take a dot.
 
-OpenPragma          { "--open" UpperIdentifier "."? }
-AbbrevPragma        { "--abbrev" UpperIdentifier UpperIdentifier "."? }
-NamePreferred       { UpperIdentifier | LowerIdentifier }
-NamePragma          { "--name" LowerIdentifier NamePreferred NamePreferred? "." }
-InfixPragma         {
-    "--infix" LowerIdentifier Associativity Number "."?
-  | "--infix" LowerIdentifier Number Associativity "."?
-  | "--infix" LowerIdentifier Number "."?
-  | "--infix" LowerIdentifier Associativity "."?
+PragmaName {
+  (UpperIdentifier | LowerIdentifier) DottedIdent*
 }
-PrefixPragma        { "--prefix" LowerIdentifier Number? "."? }
-AssocPragma         { "--assoc" Associativity "."? }
+
+OpenPragma          { "--open" PragmaName "." }
+AbbrevPragma        { "--abbrev" PragmaName (UpperIdentifier | LowerIdentifier) "." }
+NamePreferred       { UpperIdentifier | LowerIdentifier }
+NamePragma          { "--name" PragmaName NamePreferred NamePreferred? "." }
+InfixPragma         { "--infix" PragmaName Number? Associativity? "." }
+PrefixPragma        { "--prefix" PragmaName Number? "." }
+PostfixPragma       { "--postfix" PragmaName Number? "." }
+AssocPragma         { "--assoc" Associativity "." }
 NotPragma           { "--not" "."? }
 NoStrengthenPragma  { "--nostrengthen" "."? }
-OpaquePragma        { "--opaque" LowerIdentifier "."? }
 CoveragePragma      { "--coverage" }
 WarnCoveragePragma  { "--warncoverage" }
 
 QueryPragma {
-    "--query" QueryBound QueryBound QuerySubject "."?
+    "--query" QueryBound QueryBound QueryLabel? LFType "."
 }
 
-QuerySubject {
-    UpperIdentifier ":" CompType
-}
+QueryLabel { (UpperIdentifier | LowerIdentifier) ":" }
 
 QueryBound { Number | "*" }
 
@@ -124,13 +127,22 @@ LFAppType {
 }
 
 LFAtomicType {
-    LowerIdentifier projection*
+    QualifiedConstant
+  | LowerIdentifier projection*
   | UpperIdentifier Substitution?
   | ParameterVariable
   | SubstitutionVariable
   | UnderscoreHole
   | "(" LFType ")"
   | "(" LFType !ann ":" LFType ")"
+}
+
+// A module path (`Nats.z`, `N.suc`). One or more dots, so a bare name stays an
+// identifier. The dot is the ordinary "." token: a glued projection
+// (NamedProjection) still wins where the grammar can shift one, which is
+// lowercase terms, not an uppercase module head.
+QualifiedConstant {
+  (UpperIdentifier | LowerIdentifier) !qual DottedIdent+
 }
 
 ArrowOp { "->" | "<-" | "←" | "→" }
@@ -153,7 +165,8 @@ LFAppTerm {
 }
 
 LFAtomicTerm {
-    LowerIdentifier projection* Substitution?
+    QualifiedConstant
+  | LowerIdentifier projection* Substitution?
   | UpperIdentifier Substitution?
   | ParameterVariable
   | SubstitutionVariable
@@ -387,6 +400,7 @@ CompAtomicType {
     ContextualType
   | SubstitutionType
   | ParameterType
+  | QualifiedConstant
   | UpperIdentifier
   | LowerIdentifier
   | TypeKeyword
@@ -510,12 +524,12 @@ Expression {
 AppExpression {
     AtomicExpression
   | AppExpression !app AtomicExpression
-    // Destructor application: `e .obs` eliminates a codata value.
-  | AppExpression !app Observation
 }
 
 AtomicExpression {
-    LowerIdentifier
+    QualifiedConstant
+  | DestructorApp
+  | LowerIdentifier
   | UpperIdentifier
   | ContextualObject
   | SubstitutionType
@@ -560,7 +574,15 @@ Copattern {
   | AtomicPattern
 }
 
-Observation { "." (LowerIdentifier | UpperIdentifier) }
+// A copattern observation (`.d`) or a destructor after a completed non-name
+// scrutinee (`(f x).d`, a box). A bare `N.suc` is a QualifiedConstant, which is
+// how Beluga reads a qualified identifier — not an observation.
+Observation { DottedIdent }
+
+DestructorApp {
+    "(" Expression ")" Observation
+  | ContextualObject Observation
+}
 
 MLamExpression {
   (MLamKeyword | FNKeyword) MLamParam "," MLamParam ("," MLamParam)* FatArrow Expression
@@ -640,6 +662,7 @@ TupleOrParenPattern {
 @external tokens parameterSubst from "./beluga-tokens.mjs" { ParameterSubstArg }
 @external tokens proofScript from "./beluga-tokens.mjs" { ProofScript }
 @external tokens namedProjection from "./beluga-tokens.mjs" { NamedProjection }
+@external tokens dottedIdent from "./beluga-tokens.mjs" { DottedIdent }
 
 //  Tokens
 
@@ -682,14 +705,14 @@ TupleOrParenPattern {
   "→"
   "⊢"
 
-  "--coverage" "--warncoverage" "--nostrengthen" "--infix" "--prefix"
-  "--assoc" "--name" "--abbrev" "--not" "--open" "--query" "--opaque"
+  "--coverage" "--warncoverage" "--nostrengthen" "--infix" "--prefix" "--postfix"
+  "--assoc" "--name" "--abbrev" "--not" "--open" "--query"
 
   @precedence {
     LineComment,
     "--coverage", "--warncoverage", "--nostrengthen",
-    "--infix", "--prefix", "--assoc", "--name",
-    "--abbrev", "--not", "--open", "--query", "--opaque",
+    "--infix", "--prefix", "--postfix", "--assoc", "--name",
+    "--abbrev", "--not", "--open", "--query",
     "|-#", "⊢#",
     "->", "<-", "←", "=>", "⇒", "::", "..", "…", "|-",
     "→", "⊢",

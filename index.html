@@ -51,7 +51,7 @@
 
   <header>
     <div class="header-start">
-      <span class="header-brand home-brand" aria-hidden="true">
+      <h1 class="header-brand home-brand">
         <svg class="header-logo" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M 25 65 Q 37.5 50, 50 60 T 75 55 V 80 H 25 Z" fill="currentColor" fill-opacity="0.2" stroke="none" />
           <path d="M 25 72 Q 40 60, 55 68 T 75 62 V 80 H 25 Z" fill="currentColor" fill-opacity="0.15" stroke="none" />
@@ -62,7 +62,8 @@
           <path d="M 18 80 V 86 C 18 94, 30 96, 50 96 C 70 96, 82 94, 82 86 V 80 Z" fill="currentColor" fill-opacity="0.15" />
           <circle cx="58" cy="44" r="3.5" stroke-width="2.5" />
         </svg>
-      </span>
+        <span class="home-brand__name">BelJar</span>
+      </h1>
     </div>
     <div class="header-context" aria-hidden="true"></div>
     <div class="header-end">
@@ -81,7 +82,7 @@
           <circle cx="12" cy="12" r="5.5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
         </svg>
       </button>
-      <button id="btn-account" type="button" class="icon-btn account-btn" data-tooltip="Sign in" aria-label="Sign in" aria-haspopup="menu" aria-expanded="false" hidden></button>
+      <button id="btn-account" type="button" class="icon-btn account-btn" data-tooltip="Account" aria-label="Account" aria-haspopup="menu" aria-expanded="false"><span class="account-avatar account-avatar--placeholder" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3.5"/><path d="M6 19.5c1.3-2.7 3.5-4 6-4s4.7 1.3 6 4"/></svg></span></button>
     </div>
   </header>
 
@@ -105,14 +106,20 @@
 
   <!-- The page under the header is the editor's own frame (docs/UI.md §0): a
        side panel for what you can start, and beside it what you have. What
-       fills each part is drawn by js/home/home.mjs; a browser with no project
-       in it gets the first screen (#home-empty) instead of both. -->
+       fills each part is drawn by js/home/home.mjs. With no project the list
+       stays, and says so where the first row would be. -->
   <main class="home" id="home" data-mode="arriving">
+    <div class="home-field" aria-hidden="true">
+      <svg class="home-stroke home-stroke--x" viewBox="-12 -28 220 210" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+        <path d="M132 -12A775.74 775.74 0 0 0 -6 168" vector-effect="non-scaling-stroke"/>
+        <path d="M-0.8 -15.57L196.2 138.35" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <svg class="home-stroke home-stroke--lambda" viewBox="-52 -4 310 400" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+        <path d="M91.84 11.26A640 640 0 0 1 -43.44 382.95" vector-effect="non-scaling-stroke"/>
+        <path d="M86 78L248 5.87" vector-effect="non-scaling-stroke"/>
+      </svg>
+    </div>
     <div class="home__column">
-      <div class="home-head">
-        <h1 class="home-mark" id="home-mark">BelJar</h1>
-        <p class="home-head__line" id="home-signin" hidden></p>
-      </div>
       <nav class="home-start" id="home-actions" aria-label="Start"></nav>
       <section class="home-projects" id="home-projects-section" aria-labelledby="home-projects-label" hidden>
         <div class="home-projects__head">

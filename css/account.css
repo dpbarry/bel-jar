@@ -8,6 +8,14 @@
 
 .account-btn {
   border-radius: 50%;
+  /* The face is stacked in one cell (the reveal draws the loaded picture over
+     the placeholder). A flex button would put the two side by side. */
+  display: grid;
+  place-items: center;
+}
+
+.account-btn > .account-avatar {
+  grid-area: 1 / 1;
 }
 
 .account-btn svg {
@@ -16,7 +24,9 @@
 }
 
 .account-avatar {
-  --avatar-size: 1.125rem;
+  /* The whole circle, ring and all: the picture is what is left inside the ring. */
+  --avatar-size: 1.25rem;
+  --avatar-ring-w: 2px;
   --avatar-ring: color-mix(in oklab, var(--muted-high) 55%, transparent);
   position: relative;
   z-index: 1;
@@ -26,34 +36,75 @@
   border-radius: 50%;
   display: block;
   object-fit: cover;
-  /* A ring a hair off the face: it gives a light picture an edge on the light
-     theme and a dark one on the dark, and it is what hover and the open menu
-     light up. */
-  outline: 1px solid var(--avatar-ring);
-  outline-offset: 1.5px;
-  transition: outline-color var(--transition);
+  /* A solid ring against the face, no gap (Dean, 2026-10-06; it was a hairline a
+     hair off it): it gives a light picture an edge on the light theme and a dark
+     one on the dark, and it is what hover and the open menu light up. */
+  border: var(--avatar-ring-w) solid var(--avatar-ring);
+  transition: border-color var(--transition);
 }
 
 /* GitHub's identicon (js/account/avatar.mjs): inset on its own background, so
-   the circle cuts only margin and every block of the pattern shows. */
+   the circle cuts only margin and every block of the pattern shows. The ring
+   is that pattern's colour. Hover, focus and the open menu still light it,
+   the same as every other face. */
 .account-avatar.is-identicon {
   padding: calc(var(--avatar-size) * 0.085);
   background: var(--avatar-bg);
   object-fit: contain;
+  --avatar-ring: var(--avatar-ink);
 }
 
-/* Signed in, the ring is the button's state, not a glow behind it. */
-.account-btn.is-signed-in::before {
+/* The loaded face draws in over the placeholder, same circle, so the ring never
+   moves: it only changes colour as the new disc covers the old. 400ms on the
+   house ease-in-out, so the blend is the thing you see. The sharp ease-out
+   would spend that time creeping after the face had already arrived.
+   ⛔ The placeholder stays opaque underneath. Fading it as well bares the
+   header through both: two half-opaque layers are not one opaque layer. */
+.account-btn > .account-avatar.is-arriving {
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 400ms var(--ease-in-out), border-color var(--transition);
+}
+
+.account-btn > .account-avatar.is-arriving.is-shown {
+  opacity: 1;
+}
+
+/* Before the server answers, and whenever there is no picture: a placeholder in
+   the avatar's own circle, shipped in the page, so the button is there from the
+   first paint and never changes shape (Dean, 2026-10-06). */
+.account-avatar--placeholder {
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklab, var(--muted-high) 16%, transparent);
+  color: var(--muted-high);
+}
+
+.account-btn .account-avatar--placeholder svg {
+  width: 72%;
+  height: 72%;
+  transition: opacity 400ms var(--ease-in-out), filter 400ms var(--ease-in-out);
+}
+
+/* The glyph leaves as the face arrives, softening so the two are not both
+   read at once. The disc and its ring stay: they are what the face covers. */
+.account-btn:has(> .account-avatar.is-shown) > .account-avatar--placeholder svg {
+  opacity: 0;
+  filter: blur(2px);
+}
+
+/* The ring is the button's state, not a glow behind it, in every state. */
+.account-btn::before {
   display: none;
 }
 
-.account-btn.is-signed-in[aria-expanded="true"] .account-avatar,
-.account-btn.is-signed-in:focus-visible .account-avatar {
+.account-btn[aria-expanded="true"] .account-avatar,
+.account-btn:focus-visible .account-avatar {
   --avatar-ring: var(--accent-high);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .account-btn.is-signed-in:hover .account-avatar {
+  .account-btn:hover .account-avatar {
     --avatar-ring: var(--accent-high);
   }
 }
@@ -73,7 +124,8 @@
 
 /* A deployed site whose server could not be asked: the button stays, in the
    warning colour, and its popover says why (js/account/account.mjs). */
-.account-btn.is-unreachable {
+.account-btn.is-unreachable,
+.account-btn.is-unreachable .account-avatar--placeholder {
   color: var(--ide-status-warning);
 }
 

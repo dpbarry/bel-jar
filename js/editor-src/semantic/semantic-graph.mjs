@@ -1,5 +1,6 @@
 import { mergeDiagnostics } from '../ide/query-diag.mjs';
 import { EDGE_KIND, NAMESPACE, STATUS } from './ids.mjs';
+import { coveredByNot } from './pragma-scope.mjs';
 
 function edgeId(from, to, kind) {
   return `${from}->${to}:${kind}`;
@@ -62,11 +63,12 @@ function overlappingSorted(sorted, range) {
   return out;
 }
 
-function unresolvedFromRefs(refs) {
+function unresolvedFromRefs(refs, tree) {
   const out = [];
   if (!refs) return out;
   for (const ref of refs) {
     if (ref.symbolId || ref.kind !== 'lower' || !ref.enclosingDeclarationId) continue;
+    if (tree && coveredByNot(tree, ref.from)) continue;
     out.push(ref);
   }
   return out;
@@ -253,7 +255,7 @@ export function createSemanticGraph() {
     for (const symbol of symbolSnapshot.globalSymbols) {
       const syntaxDiags = overlappingSorted(syntaxSorted, symbol.range);
       const belugaDiags = overlappingSorted(belugaSorted, symbol.range);
-      const blockedRefs = unresolvedFromRefs(symbolSnapshot.referencesByOwner.get(symbol.id));
+      const blockedRefs = unresolvedFromRefs(symbolSnapshot.referencesByOwner.get(symbol.id), syntaxSnapshot.tree);
       unresolvedByOwner.set(symbol.id, blockedRefs);
       const filled = fillNode(symbol, syntaxDiags, belugaDiags, blockedRefs, previous);
       meta.set(symbol.id, filled.meta);
@@ -306,10 +308,11 @@ export function createSemanticGraph() {
     const unresolvedByOwner = new Map();
     const byOwner = symbolSnapshot.referencesByOwner;
     if (byOwner) {
-      for (const [id, refs] of byOwner) unresolvedByOwner.set(id, unresolvedFromRefs(refs));
+      for (const [id, refs] of byOwner) unresolvedByOwner.set(id, unresolvedFromRefs(refs, syntaxSnapshot.tree));
     } else {
       for (const ref of symbolSnapshot.references) {
         if (ref.symbolId || ref.kind !== 'lower' || !ref.enclosingDeclarationId) continue;
+        if (coveredByNot(syntaxSnapshot.tree, ref.from)) continue;
         const list = unresolvedByOwner.get(ref.enclosingDeclarationId) || [];
         list.push(ref);
         unresolvedByOwner.set(ref.enclosingDeclarationId, list);

@@ -141,13 +141,13 @@ uniform float uTailLen;
 uniform vec3 uCometBody;
 uniform vec3 uCometSig;
 void main() {
-  float phase = fract(uTime * uSpeed - vT);
-  float len = max(vLen, uHeadLen * 0.35);
-  float headW = uHeadLen / len;
-  float tailFar = uTailLen / len;
+  float len = max(vLen, 0.001);
+  float headW = clamp(uHeadLen / len, 0.06, 0.22);
+  float tailFar = clamp(max(uTailLen / len, headW + 0.08), headW + 0.08, 0.62);
   float tailNear = headW * 0.35;
-  float head = smoothstep(headW, 0.0, phase);
-  float tail = smoothstep(tailFar, tailNear, phase) * 0.55;
+  float phase = fract(uTime * uSpeed - vT);
+  float head = 1.0 - smoothstep(0.0, max(headW, 0.001), phase);
+  float tail = (1.0 - smoothstep(tailNear, max(tailFar, tailNear + 0.001), phase)) * 0.55;
   float comet = (head + tail) * vComet;
   vec3 cometCol = mix(uCometSig, uCometBody, vBody);
   bool sigLight = uLight > 0.5 && vBody < 0.5 && vComet > 0.5;
@@ -294,10 +294,9 @@ export function createGraph3D(canvas, sim, opts = {}) {
   let focusedIdx = -1;
   let frozen = false;
 
-  // Comets animate ONLY within the focused node's immediate neighbourhood — both
-  // endpoints must be in `cometSet` (the focus + its direct neighbours). Gating on
-  // "touches a neighbour" instead lights every edge of a hub neighbour (a burst);
-  // requiring BOTH endpoints keeps it to the local star. No focus → no comets.
+  // The highlight travels every drawn edge, from the dependent toward what it
+  // depends on. Focus still decides which edges are emphasized; it does not
+  // turn the motion off.
   let cometSet = new Set();
   function cometForEdge(e) {
     if (e.k < 0.02 && !showBodyEdges) return false;
@@ -305,7 +304,8 @@ export function createGraph3D(canvas, sim, opts = {}) {
   }
   function updateEdgeComet() {
     for (let i = 0; i < E; i++) {
-      const on = cometForEdge(sim.edges[i]) ? 1 : 0;
+      const hidden = sim.edges[i].k < 0.02 && !showBodyEdges;
+      const on = hidden ? 0 : 1;
       edgeComet[i * 2] = on; edgeComet[i * 2 + 1] = on;
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, edgeCometBuf);

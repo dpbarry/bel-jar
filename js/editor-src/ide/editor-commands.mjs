@@ -33,6 +33,8 @@ import { travel } from './jump-list.mjs';
 import { normalizeType } from '../format/type-render.mjs';
 import { toggleRecording, replayMacro } from './macro-engine.mjs';
 import { stepEditorAutocomplete } from './completion/editor-autocomplete.mjs';
+import { pasteSystemClipboard } from './clipboard-bridge.mjs';
+import { pasteReadsClipboard } from '../../ui/clipboard-read.mjs';
 
 const global = globalThis;
 
@@ -278,11 +280,11 @@ export const EDITOR_COMMANDS = {
   'select.collapse': simplifySelection,
 
   // ── clipboard ─────────────────────────────────────────────────────────────
-  // `document.execCommand` — the same mechanism the context menu and the Edit
-  // menu already used ad hoc; see clipboardAction below.
+  // Cut and copy use the browser clipboard. Paste does too on a browser paste
+  // chord, and reads the clipboard on any other chord. See pasteCommand.
   'edit.cut': (view) => clipboardAction(view, 'cut'),
   'edit.copy': (view) => clipboardAction(view, 'copy'),
-  'edit.paste': (view) => clipboardAction(view, 'paste'),
+  'edit.paste': (view) => pasteCommand(view),
 
   // ── editing ───────────────────────────────────────────────────────────────
   'edit.delete-line': deleteLine,
@@ -300,16 +302,25 @@ export const EDITOR_COMMANDS = {
 };
 
 /**
- * Cut/copy/paste via the browser's own clipboard.
- *
- * ⛔ Not the async Clipboard API. `navigator.clipboard.readText()` needs a
- * permission grant that is not guaranteed synchronous with the keypress, and
- * `vim-setup.mjs`'s yank-to-clipboard bridge already documents why that makes
- * paste impossible to build that way. `execCommand` fires the same native
- * cut/copy/paste the browser would for a real Ctrl+X/C/V — CodeMirror's own
- * contenteditable listens for exactly that event and turns it into a normal,
- * historied transaction, so this is not a second path around EditHistory.
+ * Cut and copy go through the browser's own clipboard. Paste does too when
+ * the chord is one the browser pastes (Mod+V, Shift+Insert): the command
+ * returns false and the key falls through to the native paste event. Any
+ * other chord has no native paste, so it reads the clipboard. A menu row
+ * whose chord is still native has nothing to fall through to, and asks
+ * itself.
  */
+function pasteChordReadsClipboard() {
+  const KB = global.Keybindings;
+  if (!KB || typeof KB.resolve !== 'function') return false;
+  return pasteReadsClipboard(KB.resolve('edit.paste'));
+}
+
+function pasteCommand(view) {
+  if (!pasteChordReadsClipboard()) return clipboardAction(view, 'paste');
+  if (view.state.readOnly) return false;
+  return pasteSystemClipboard(view);
+}
+
 function clipboardAction(view, action) {
   if (action !== 'copy' && view.state.readOnly) return false;
   view.focus();

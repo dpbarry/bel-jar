@@ -670,7 +670,16 @@ html.light .output-header-progress {
 }
 
 #editor.editor-cm-host .cm-case-ghost__row {
+  position: relative;
   padding-left: 6px;
+}
+
+#editor.editor-cm-host .cm-case-ghost__tip-anchor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
 }
 
 #editor.editor-cm-host .cm-case-ghost__row[data-state="filled"] {

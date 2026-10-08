@@ -999,16 +999,18 @@ if (filesBtn && workspaceEl) {
 // Switching projects swaps the entire hot-memory container (editor, engine,
 // Beluga session). A new document is the clean boundary: the page leaves for
 // the other project's address (js/frame/routes.mjs), which boots fresh while
-// this one rests in storage. Order matters: flush the current editor while the
-// OLD project is still active (so the work lands in the right silo), THEN run
-// `mutate` (which switches the active project), then stop beforeunload from
-// re-flushing the stale buffer into the NEW project. `replace`: this address
-// names a project that is gone (deleted, or a blank placeholder dropped), so
-// Back must not return to it.
+// this one rests in storage. Order matters: flush the editor and the REPL
+// while the OLD project is still active (each project keeps its own), THEN
+// run `mutate` (which switches the active project), then stop the unload
+// hooks from filing this buffer under the NEW project. `replace`: this
+// address names a project that is gone (deleted, or a blank placeholder
+// dropped), so Back must not return to it.
 let suppressUnloadFlush = false;
 function switchProjectAndReload(mutate, opts) {
   if (persist) persist.flushCheckpoint();
   WorkspaceState.flushWorkspace();
+  if (typeof ReplPersist !== 'undefined' && ReplPersist.saveNow) ReplPersist.saveNow();
+  if (typeof ReplPersist !== 'undefined' && ReplPersist.hold) ReplPersist.hold();
   suppressUnloadFlush = true;
   try {
     mutate();

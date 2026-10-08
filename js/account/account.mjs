@@ -9,9 +9,12 @@
  * account's projects from this browser; signing in again brings them back. The
  * only question it ever asks is when that cannot be confirmed.
  *
- * Offline-first stays true: nothing on the page waits for this. Where the site
- * has no server (local development, the probes' static server), the account
- * button stays hidden and BelJar is exactly what it was.
+ * Offline-first stays true: nothing on the page waits for this. The header's
+ * account button is always there, a placeholder picture until the server
+ * answers, and its menu says where the account stands at that moment
+ * (`accountState`, `accountMenu`): checking, no server here (local
+ * development, the probes' static server), the server out of reach, signed
+ * out, or signed in.
  *
  * A session can also end without this browser signing out: from another
  * device (Settings > Account, Sign out there), with the account (Delete
@@ -20,10 +23,10 @@
  *
  * Both pages load this (js/frame/routes.mjs). ⛔ Home has no project of its own,
  * and asking Persist which project is open settles a page on one and makes one
- * when there is none: nothing here does on home. Signing in happens on home (or
- * from the palette); signed out, the editor's header shows no account button.
+ * when there is none: nothing here does on home. Signing in happens from the
+ * account menu on either page, or from the palette.
  */
-import { avatarImage } from './avatar.mjs';
+import { avatarImage, revealAvatar } from './avatar.mjs';
 import { createHttpTransport } from '../persist/sync/http-transport.mjs';
 import { Routes } from '../frame/routes.mjs';
 
@@ -32,9 +35,63 @@ export { roundIsSafe } from '../persist/sync/runner.mjs';
 const g = typeof window !== 'undefined' ? window : globalThis;
 
 let user = null; // { id, handle, name, avatar } | null
-let available = false; // the button shows: the server answered, or this host must have one
+let available = false; // this host has a server: it answered, or a deployed host must have one
 let unreachable = null; // why a deployed host's server could not be asked ('network', 'status-503', ...)
+let asked = false; // the server has answered (or there is none to ask) since the last time it was asked
 let adopting = false; // the write listener is on (once per page: Try again connects anew)
+let placeholder = null; // the header's placeholder picture, as the page ships it
+
+/**
+ * Where the account stands, for the header's button and its menu. ⛔ The button
+ * is always there (Dean, 2026-10-06): a placeholder picture until the server
+ * answers, and a menu that says what is true at that moment.
+ *   'checking'    the server has not answered yet
+ *   'none'        this copy of BelJar has no server (a static server, local development)
+ *   'unreachable' it has one, and it could not be reached
+ *   'signed-out' | 'signed-in'
+ */
+export function accountState(o) {
+  if (!o.asked) return 'checking';
+  if (!o.available) return 'none';
+  if (o.unreachable) return 'unreachable';
+  return o.user ? 'signed-in' : 'signed-out';
+}
+
+/**
+ * The account menu for a state: a status row, then what can be done from it,
+ * each named by what it does (`act`), and nothing that is not about the
+ * account. Pure (tests/test-account.mjs); `menuItems` gives each act its work.
+ * @param {string} state  accountState()
+ * @param {{ user?: object, reason?: string, reasonWords?: string, settings?: boolean }} o
+ */
+export function accountMenu(state, o = {}) {
+  if (state === 'checking') return [{ type: 'status', title: 'Checking your account…' }];
+  if (state === 'none') {
+    return [{ type: 'status', title: 'No accounts here', detail: 'This copy of BelJar has no server, so your projects stay in this browser.' }];
+  }
+  if (state === 'unreachable') {
+    return [
+      { type: 'status', title: 'Can’t reach BelJar’s server', detail: o.reasonWords || null, tone: 'warning' },
+      { type: 'separator' },
+      { label: 'Try again', act: 'try-again' },
+    ];
+  }
+  if (state === 'signed-out') {
+    return [
+      { type: 'status', title: 'Not signed in', detail: 'Sign in to keep your projects on every device.' },
+      { type: 'separator' },
+      { label: 'Sign in with GitHub', act: 'sign-in' },
+    ];
+  }
+  const u = o.user || {};
+  return [
+    { type: 'status', title: u.name || '@' + u.handle, detail: u.name ? '@' + u.handle : null, media: 'avatar' },
+    { type: 'separator' },
+    // Only where there is a Settings dialog to open (home has none).
+    ...(o.settings ? [{ label: 'Account settings', act: 'settings' }] : []),
+    { label: 'Sign out', act: 'sign-out' },
+  ];
+}
 
 /**
  * What to do with who the server says is signed in (`me`) and who this browser
@@ -219,6 +276,9 @@ function avatarNode(cls) {
   // An identicon is inset on its own background, a photo fills the circle (avatar.mjs).
   const img = avatarImage(user.avatar, cls);
   img.addEventListener('error', () => {
+    // A reveal still in flight owns the failure: the picture is not in the
+    // button yet, and swapping here would race it.
+    if (img.classList.contains('is-arriving')) return;
     if (img.parentNode) img.replaceWith(initialNode(cls));
   }, { once: true });
   return img;
@@ -228,54 +288,66 @@ function onEditor() {
   return Routes.pageOf(g.location) === 'edit';
 }
 
+const state = () => accountState({ asked, available, unreachable, user });
+
+/** What the button is called in each state (its tooltip and its name). */
+const BUTTON_WORDS = {
+  checking: 'Account',
+  none: 'Account',
+  unreachable: 'Can’t reach BelJar’s server',
+  'signed-out': 'Sign in',
+};
+
 function render() {
   const btn = document.getElementById('btn-account');
   if (!btn) return;
-  // Signed out, the editor has no account button: sign-in lives on home and in
-  // the palette. A server that cannot be reached still shows, there too.
-  const shown = available && (!!user || !!unreachable || !onEditor());
-  btn.hidden = !shown;
-  if (!shown) return;
-  btn.replaceChildren();
-  btn.classList.toggle('is-signed-in', !!user);
-  btn.classList.toggle('is-unreachable', !!unreachable);
-  if (user) {
+  // The page ships the placeholder in the button, so it is there from the first
+  // paint: kept here, it stands in whenever there is no picture to show.
+  if (!placeholder) {
+    const shipped = btn.querySelector('.account-avatar--placeholder');
+    if (shipped) placeholder = shipped.cloneNode(true);
+  }
+  const s = state();
+  btn.hidden = false;
+  btn.dataset.state = s;
+  btn.classList.toggle('is-signed-in', s === 'signed-in');
+  btn.classList.toggle('is-unreachable', s === 'unreachable');
+  if (s === 'signed-in') {
     btn.setAttribute('aria-label', 'Account: @' + user.handle);
     btn.setAttribute('data-tooltip', '@' + user.handle);
-    btn.appendChild(avatarNode('account-avatar'));
+    const face = avatarNode('account-avatar');
+    // Over the placeholder the page shipped with. A later render leaves a
+    // reveal already running alone; anything else replaces the face at once.
+    if (!revealAvatar(btn, face, () => {
+      btn.replaceChildren(initialNode('account-avatar'));
+    })) btn.replaceChildren(face);
   } else {
-    const label = unreachable ? 'Can’t reach BelJar’s server' : 'Sign in';
-    btn.setAttribute('aria-label', label);
-    btn.setAttribute('data-tooltip', label);
-    btn.insertAdjacentHTML('beforeend',
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-      + '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>');
+    btn.setAttribute('aria-label', BUTTON_WORDS[s]);
+    btn.setAttribute('data-tooltip', BUTTON_WORDS[s]);
+    btn._avatarReveal = null;
+    btn.replaceChildren(...(placeholder ? [placeholder.cloneNode(true)] : []));
   }
+  // Open, its menu follows: opened while checking, it shows the answer when it comes.
+  if (g.Menu && g.Menu.update && g.Menu.rootAnchor && g.Menu.rootAnchor() === btn) g.Menu.update(btn, menuItems());
 }
 
-/** The avatar's popover: who, then what you can do. State, then actions (docs/UI.md §1). */
+/** The avatar's popover: where the account stands, then what you can do about it (docs/UI.md §1). */
 function menuItems() {
-  if (unreachable) {
-    return [
-      { type: 'status', title: 'Can’t reach BelJar’s server', detail: unreachableWords(unreachable), tone: 'warning' },
-      { type: 'separator' },
-      { label: 'Try again', onSelect: () => connect() },
-    ];
-  }
-  if (!user) return [{ label: 'Sign in with GitHub', onSelect: signIn }];
-  return [
-    {
-      type: 'status',
-      title: user.name || '@' + user.handle,
-      detail: user.name ? '@' + user.handle : null,
-      media: avatarNode('account-avatar account-avatar--menu'),
-    },
-    { type: 'separator' },
-    ...(onEditor() ? [{ label: 'Home', onSelect: () => goHome() }] : []),
-    // Only where there is a Settings dialog to open (home has none yet).
-    ...(g.SettingsUI ? [{ label: 'Settings', onSelect: () => g.SettingsUI.open('account') }] : []),
-    { label: 'Sign out', onSelect: signOut },
-  ];
+  const acts = {
+    'try-again': () => connect(),
+    'sign-in': signIn,
+    settings: () => g.SettingsUI.open('account'),
+    'sign-out': signOut,
+  };
+  return accountMenu(state(), {
+    user,
+    reasonWords: unreachable ? unreachableWords(unreachable) : null,
+    settings: !!g.SettingsUI,
+  }).map((item) => {
+    if (item.media === 'avatar') return Object.assign({}, item, { media: avatarNode('account-avatar account-avatar--menu') });
+    if (item.act) return { label: item.label, onSelect: acts[item.act] };
+    return item;
+  });
 }
 
 /** Leave the editor for home, with what is typed saved first. */
@@ -678,10 +750,17 @@ function announce() {
 
 /** Ask who is signed in, and set the page up for the answer. Try again runs it anew. */
 async function connect() {
+  // Asked again (Try again): the button says it is checking until the answer comes.
+  if (asked) {
+    asked = false;
+    render();
+  }
   const answer = await askServer();
   const where = reach(answer, !!g.BELJAR_DEPLOYED);
-  if (where === 'none') { // no server here: BelJar stays as it was
+  asked = true;
+  if (where === 'none') { // no server here: BelJar is what it was, and the menu says why
     noteNoServer();
+    render();
     announce();
     return;
   }

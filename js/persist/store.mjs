@@ -12,7 +12,7 @@
  * the same change (tests/test-migrations.mjs): the app refuses older data it
  * cannot migrate, it does not delete it.
  */
-export const SCHEMA = 4;
+export const SCHEMA = 5;
 
 export const SCHEMA_KEY = 'beljar/schema';
 
@@ -61,6 +61,7 @@ export const CLASSES = [
   { pattern: /^beljar\/device$/, cls: 'device' },
   { pattern: /^beljar\/notifications$/, cls: 'device' },
   { pattern: /^beljar\/repl\/(transcript|commands)$/, cls: 'device' },
+  { pattern: /^beljar\/p\/[^/]+\/repl$/, cls: 'device' },
   // the tab guard's handshake, and sync telling the other tabs how it is (sync/sync-status.mjs)
   { pattern: /^beljar\/tabs\/(ping|pong|bye|sync-status|sync-ask)$/, cls: 'device' },
   { pattern: /^beljar\/tombstones$/, cls: 'device' },

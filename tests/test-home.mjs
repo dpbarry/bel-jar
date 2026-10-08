@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { scriptsOf, mayPreload, preloadEditor } from '../js/home/preload-editor.mjs';
 import {
   orderProjects, reviewWord, whenEdited, homeMode, findsByTyping, listMove, pendingStep, listArriving, OPEN_WAIT_MS, ACCOUNT_WAIT_MS,
+  signInHintDue, SIGN_IN_HINT_TEXT,
 } from '../js/home/home.mjs';
 
 let n = 0;
@@ -55,7 +56,7 @@ expect(reviewWord(1) === '1 file to review' && reviewWord(3) === '3 files to rev
 expect(homeMode({ count: 3, arriving: false }) === 'returning' && homeMode({ count: 3, arriving: true }) === 'returning' && homeMode({ count: 1, arriving: false }) === 'returning',
   'with projects, even one: the ways to start, and the list');
 expect(homeMode({ count: 0, arriving: true }) === 'arriving', 'none, and they may be on their way: the keyboard waits for them');
-expect(homeMode({ count: 0, arriving: false }) === 'first', 'none: the ways to start are all there is');
+expect(homeMode({ count: 0, arriving: false }) === 'first', 'none, and none are coming: the list says so');
 expect(findsByTyping('t') && findsByTyping('T') && findsByTyping('7') && findsByTyping('é')
   && !findsByTyping(' ') && !findsByTyping('Enter') && !findsByTyping('F2') && !findsByTyping('/') && !findsByTyping(undefined),
   'a letter or a digit pressed on a row starts a search; nothing else does');
@@ -105,6 +106,20 @@ expect(findsByTyping('t') && findsByTyping('T') && findsByTyping('7') && findsBy
   expect(ACCOUNT_WAIT_MS >= 1000 && ACCOUNT_WAIT_MS < OPEN_WAIT_MS, 'learning who is signed in is given less time than a round');
 }
 
+// ── 5b. the sign-in box: once, signed out, where a server answers ───────────
+{
+  const yes = { accountKnown: true, available: true, signedIn: false, unreachable: false, seen: false };
+  expect(signInHintDue(yes), 'signed out, a server, not seen yet: the box is due');
+  expect(!signInHintDue({ ...yes, signedIn: true }), 'signed in: not due');
+  expect(!signInHintDue({ ...yes, accountKnown: false }), 'still finding out who is signed in: not due');
+  expect(!signInHintDue({ ...yes, available: false }), 'no server here: not due');
+  expect(!signInHintDue({ ...yes, unreachable: true }), 'the server is out of reach: not due');
+  expect(!signInHintDue({ ...yes, seen: true }), 'already seen: never again');
+  expect(!signInHintDue(null) && !signInHintDue({}), 'nothing known: not due');
+  expect(SIGN_IN_HINT_TEXT === 'Sign in with GitHub to keep your projects on every device.' && !/[<]/.test(SIGN_IN_HINT_TEXT),
+    'the words are the old line, and they are not a link');
+}
+
 // ── 6. ⛔ what home's bundle may contain ─────────────────────────────────────
 {
   const seen = new Set();
@@ -135,11 +150,15 @@ expect(findsByTyping('t') && findsByTyping('T') && findsByTyping('7') && findsBy
   expect(seen.has('ui/command-palette.mjs') && seen.has('ui/keybindings.mjs') && seen.has('commands/shared-commands.mjs')
     && !seen.has('ui/settings-ui.mjs') && !seen.has('app/app-command-palette.mjs'),
     'the palette, its chords and the commands both pages run are here; the Settings dialog and the editor\'s commands are not');
+  const homeSrc = fs.readFileSync(path.join(ROOT, 'js', 'home', 'home.mjs'), 'utf8');
+  const drawFind = homeSrc.slice(homeSrc.indexOf('function drawFind'), homeSrc.indexOf('function drawSignIn'));
+  expect(/labelFor\('nav\.anywhere'\)/.test(drawFind) && !/liveChord/.test(drawFind),
+    'Search on home shows BelJar\'s own chord (Ctrl+K), not the editing style\'s');
 
   const built = fs.readFileSync(path.join(ROOT, 'js', 'home.js'), 'utf8');
   const editor = fs.statSync(path.join(ROOT, 'js', 'editor-cm.bundle.js')).size + fs.statSync(path.join(ROOT, 'js', 'shell.js')).size;
-  // Held at the size it ships with: 524 KB with the palette and the registry (2026-10-02).
-  expect(built.length < 560 * 1024, `home's script is under 560 KB (${Math.round(built.length / 1024)} KB; the editor's is ${Math.round(editor / 1024)} KB)`);
+  // Held at the size it ships with. 560 KB until the sign-in coachmark joined home (2026-10-08).
+  expect(built.length < 580 * 1024, `home's script is under 580 KB (${Math.round(built.length / 1024)} KB; the editor's is ${Math.round(editor / 1024)} KB)`);
   expect(built.length < editor / 5, 'and under a fifth of the editor\'s');
   expect(!/new Worker\(|beluga_web|BelugaClient\.|importScripts\(/.test(built), 'it starts no worker and names no Beluga runtime');
 
@@ -155,8 +174,16 @@ expect(findsByTyping('t') && findsByTyping('T') && findsByTyping('7') && findsBy
     const ids = [...end.matchAll(/<button id="([^"]+)"/g)].map((m) => m[1]);
     expect(ids[ids.length - 1] === 'btn-account', `${file}: the person is at the far right of the strip (${ids.join(', ')})`);
   }
-  expect(!/home-wordmark|>BelJar</.test(html.slice(html.indexOf('<header'), html.indexOf('</header>'))), 'home\'s strip holds the mark alone: the name is the page\'s');
-  for (const id of ['home', 'home-mark', 'home-actions', 'home-signin', 'home-links', 'home-find', 'home-list', 'home-projects-section',
+  const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
+  expect(/<h1 class="header-brand home-brand">[\s\S]*<span class="home-brand__name">BelJar<\/span>/.test(header),
+    'home\'s strip carries the name beside the mark');
+  expect(!/home-mark|home-wordmark/.test(html), 'the column has no wordmark of its own');
+  const field = html.slice(html.indexOf('class="home-field"'), html.indexOf('class="home__column"'));
+  expect(field.includes('aria-hidden="true"') && field.includes('home-stroke--x') && field.includes('home-stroke--lambda') && field.includes('A775.74') && !field.includes('home-field__light'),
+    'the ground is an X and a lambda, hidden from assistive tech, with no wash');
+  expect(!homeSrc.includes('pointermove') && !homeSrc.includes('--hx'), 'the lambda stays where it is drawn');
+  expect(!html.includes('id="home-signin"') && !html.includes('home-head'), 'the column has no sign-in line; the account button carries that');
+  for (const id of ['home', 'home-actions', 'home-links', 'home-find', 'home-list', 'home-projects-section',
     'home-projects-label', 'home-risk', 'home-waiting', 'home-news', 'btn-account', 'btn-sync', 'btn-theme', 'btn-notifications', 'menu-root', 'tooltip-root', 'toast-stack']) {
     expect(html.includes('id="' + id + '"'), `home's document has #${id}, which its script draws into`);
   }

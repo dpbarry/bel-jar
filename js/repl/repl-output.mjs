@@ -1,4 +1,5 @@
 import { prefersReducedMotion as reducedMotionFor } from '../persist/settings-apply.mjs';
+import { formatCoverageCard } from '../editor-src/ide/coverage-card.mjs';
 'use strict';
 
 const global = globalThis;
@@ -246,24 +247,9 @@ var output = document.getElementById('output');
       head.appendChild(sub);
       shell.appendChild(head);
 
-      var lines = text.split('\n');
-      var bodyLines = [];
-      for (var k = 0; k < lines.length; k++) {
-        var ln = lines[k];
-        if (/^WARNING:\s*Cases didn't cover:?/i.test(ln.trim())) {
-          var rest = ln.replace(/^[^:]*:\s*[^:]*:?\s*/, '').trim();
-          if (/^CASE\(S\) NOT COVERED:?/i.test(rest)) continue;
-          if (rest) bodyLines.push(rest);
-        } else {
-          bodyLines.push(ln);
-        }
-      }
-      while (bodyLines.length && bodyLines[0].trim() === '') bodyLines.shift();
-      while (bodyLines.length && bodyLines[bodyLines.length - 1].trim() === '') bodyLines.pop();
-
       var pre = document.createElement('pre');
       pre.className = 'repl-rich-pre repl-rich-pre--warning';
-      pre.textContent = bodyLines.join('\n');
+      pre.textContent = formatCoverageCard(text) || text;
       shell.appendChild(pre);
     });
   }
@@ -1047,7 +1033,7 @@ var output = document.getElementById('output');
       });
       return;
     }
-    var text = seg.text;
+    var text = formatCoverageCard(seg.text) || seg.text;
     if (!text || !String(text).trim()) return;
     appendRichShell(text, function (shell) {
       var pre = document.createElement('pre');
@@ -1099,7 +1085,7 @@ var output = document.getElementById('output');
         await morphPendingStacked(pending, seg0.statusText, seg0.holesText);
       } else {
         var pre = pending.querySelector('.repl-rich-pre--run-pending');
-        await morphPendingPre(pre, classifyRunOtherKind(seg0.text), seg0.text);
+        await morphPendingPre(pre, classifyRunOtherKind(seg0.text), formatCoverageCard(seg0.text) || seg0.text);
       }
       scrollReplBottom();
       for (var j = 1; j < segs.length; j++) appendRunSegment(segs[j]);
@@ -1218,7 +1204,28 @@ var output = document.getElementById('output');
   }
 
   function insertWelcomeBanner() {
-    if (typeof Persist !== 'undefined' && !Settings.get('replWelcome')) return;
+    var banner = welcomeBanner();
+    if (banner) streamAppend(banner);
+  }
+
+  /**
+   * A transcript kept from an earlier visit carries its banner as that version
+   * worded it ("Beluga 1.1.3 — help to see commands." outlived its rewording).
+   * The banner is chrome, not output: a restored one is drawn again in today's
+   * words, or taken away when the welcome is turned off (repl-persist.mjs).
+   */
+  function refreshBanners(root) {
+    var old = (root || output).querySelectorAll('.repl-banner');
+    for (var i = 0; i < old.length; i++) {
+      var banner = welcomeBanner();
+      if (banner) old[i].replaceWith(banner);
+      else old[i].remove();
+    }
+  }
+
+  /** The welcome banner as this version words it; null when the welcome is off. */
+  function welcomeBanner() {
+    if (typeof Persist !== 'undefined' && !Settings.get('replWelcome')) return null;
     var wrap = document.createElement('div');
     wrap.className = 'repl-banner';
 
@@ -1233,7 +1240,7 @@ var output = document.getElementById('output');
     lead.appendChild(document.createTextNode(' to see commands.'));
 
     wrap.appendChild(lead);
-    streamAppend(wrap);
+    return wrap;
   }
 
   function clearOutput() {
@@ -1280,6 +1287,7 @@ var output = document.getElementById('output');
     appendProjectOpened: appendProjectOpened,
     appendProjectEmpty: appendProjectEmpty,
     insertWelcomeBanner: insertWelcomeBanner,
+    refreshBanners: refreshBanners,
     clearOutput: clearOutput,
     scrollReplBottom: scrollReplBottom,
     parseQuerySolutions: parseQuerySolutions,

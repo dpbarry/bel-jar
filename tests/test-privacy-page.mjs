@@ -78,7 +78,9 @@ const routes = read('js/frame/routes.mjs');
 expect(/export function privacyUrl\(/.test(routes), 'the page has an address, from routes.mjs like every other');
 const home = read('js/home/home.mjs');
 expect(/label: 'Privacy', href: Routes\.privacyUrl\(\)/.test(home), 'home\'s foot links it');
-expect(/Routes\.privacyUrl\(\)/.test(home.slice(home.indexOf('function signInLine'), home.indexOf('function findNodes'))), 'and so does the line beside the sign-in');
+const signInText = /SIGN_IN_HINT_TEXT = '([^']*)'/.exec(home);
+expect(signInText && signInText[1] === 'Sign in with GitHub to keep your projects on every device.' && !/privacy|http|</.test(signInText[1]),
+  'the sign-in box does not link this page: it only says to sign in');
 for (const ref of [...html.matchAll(/(?:src|href)="([^"#:]+)"/g)].map((m) => m[1]).filter((r) => !r.startsWith('./?'))) {
   expect(fs.existsSync(path.join(root, ref)), `what the page loads is there (${ref})`);
 }

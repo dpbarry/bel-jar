@@ -16,6 +16,7 @@ var replHistory = [];
   }
 
   function persistHistory() {
+    if (typeof ReplPersist !== 'undefined' && ReplPersist.isHeld && ReplPersist.isHeld()) return;
     if (typeof Persist === 'undefined' || !Persist.writeReplCommands) return;
     Persist.writeReplCommands(replHistory);
   }

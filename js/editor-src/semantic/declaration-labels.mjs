@@ -28,7 +28,11 @@ const LABEL_BY_KIND = Object.freeze({
   [NAMESPACE.COMP_TYPE]: Object.freeze({ inductive: 'inductive type', stratified: 'stratified type', coinductive: 'coinductive type' }),
   [NAMESPACE.COMP_CONSTRUCTOR]: Object.freeze({ CompDestructor: 'destructor' }),
   [NAMESPACE.REC_FUNCTION]: Object.freeze({ ProofDeclaration: 'proof', LetDeclaration: 'value' }),
-  [NAMESPACE.PRAGMA]: Object.freeze({ PrefixPragma: 'prefix pragma', InfixPragma: 'infix pragma' }),
+  [NAMESPACE.PRAGMA]: Object.freeze({
+    PrefixPragma: 'prefix pragma',
+    InfixPragma: 'infix pragma',
+    PostfixPragma: 'postfix pragma',
+  }),
 });
 
 // `inductive` and `stratified` share one body node, so the flavour is read from the keyword before

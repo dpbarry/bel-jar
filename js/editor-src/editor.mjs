@@ -12,9 +12,10 @@ import {
   placeholder,
   rectangularSelection,
 } from '@codemirror/view';
-import { defaultKeymap, history, indentLess, indentMore, toggleComment, undo, redo, selectAll } from '@codemirror/commands';
+import { defaultKeymap, history, indentLess, indentMore, insertNewline, toggleComment, undo, redo, selectAll } from '@codemirror/commands';
 import { openSearchPanel, findNext, findPrevious, SearchCursor } from '@codemirror/search';
 import { searchPanel } from './ide/search-panel.mjs';
+import { inducedEnterEdit, inducedLayout } from './ide/induced-layout.mjs';
 import { ensureSyntaxTree, foldAll, foldKeymap, indentRange, indentUnit, syntaxTree, unfoldAll } from '@codemirror/language';
 import { diagnosticCount, forceLinting, linter } from '@codemirror/lint';
 import { beluga } from './language.mjs';
@@ -309,54 +310,16 @@ const settlementTickField = StateField.define({
   },
 });
 
-const PIPE_CONTEXT_NODES = new Set([
-  'LFDeclaration',
-  'LFDatatypeDeclaration',
-  'InductiveDeclaration',
-  'StratifiedDeclaration',
-  'LFConstructor',
-  'CompConstructor',
-  'InductiveBody',
-]);
-
-function inPipeContext(state, pos) {
-  let cur = syntaxTree(state).resolveInner(pos, -1);
-  while (cur) {
-    if (PIPE_CONTEXT_NODES.has(cur.name)) return true;
-    cur = cur.parent;
-  }
-  return false;
-}
-
-function continuePipeLine(view) {
-  const { state } = view;
-  const sel = state.selection.main;
-  if (!sel.empty) return false;
-
-  const line = state.doc.lineAt(sel.from);
-  if (sel.from !== line.to) return false;
-
-  const text = line.text;
-  const m = text.match(/^(\s*)\|(?:\s.*)?$/);
-  if (!m) return false;
-  if (!inPipeContext(state, sel.from) && !/:\s*.*=\s*$/.test(text)) return false;
-
-  const insert = `\n${m[1]}| `;
+function smartEnter(view) {
+  const edit = inducedEnterEdit(view.state);
+  if (!edit) return false;
   view.dispatch({
-    changes: { from: sel.from, to: sel.to, insert },
-    selection: { anchor: sel.from + insert.length },
+    changes: { from: edit.from, to: edit.to, insert: edit.insert },
+    selection: { anchor: edit.anchor },
+    scrollIntoView: true,
     userEvent: 'input',
   });
   return true;
-}
-
-const smartEnterRules = [continuePipeLine];
-
-function smartEnter(view) {
-  for (const rule of smartEnterRules) {
-    if (rule(view)) return true;
-  }
-  return false;
 }
 
 function sanitizePastedPlainText(text) {
@@ -701,6 +664,7 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
   return [
     settlementTickField,
     beluga(),
+    inducedLayout(),
     aliases(),
     EditorView.clipboardInputFilter.of((text) =>
       text == null || text === '' ? text ?? '' : sanitizePastedPlainText(text)
@@ -727,7 +691,7 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
       Prec.high(keymap.of(buildRemappableEditorKeymap(semanticEngine, prefs.keymapStyle)))
     ),
     keymap.of([
-      { key: 'Enter', run: smartEnter },
+      { key: 'Enter', run: smartEnter, shift: insertNewline },
       { key: 'F3', run: findNext, shift: findPrevious },
       // ⛔ NOT `...historyKeymap`. CodeMirror's stock history keymap binds FIVE
       // chords — `Mod-z`, `Mod-y`/`Mod-Shift-z`, linux `Ctrl-Shift-z`, `Mod-u`

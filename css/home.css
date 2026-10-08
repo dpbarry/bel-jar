@@ -4,8 +4,12 @@
  * §0): the ways to start, then what you have, as plain lines. The
  * name lives in the strip, beside the mark. Every line in the column starts at
  * the same edge, and every right-hand date ends at the tiles' right edge.
- * Nothing is boxed but the three things you can start, and they are boxed only
- * by a step in the ground.
+ * Nothing is boxed but the three things you can start.
+ *
+ * The page is drawn in two weights, as with one pen: the hairline, and the
+ * swell. Every line that holds something (a pane's edge, the rule under
+ * Projects) is the one hairline, `--home-rule`; the x and the λ behind the
+ * column are hairlines crossing swells. No glow, no gradient, no shadow.
  *
  * A row says a project's name and when it was last touched, and nothing else
  * unless something needs you (docs/UI.md §2). */
@@ -54,49 +58,78 @@
 
 /* ── the column ───────────────────────────────────────────────────────────── */
 
+/* The page is the container its corners are measured in (`cqw`, `cqh`).
+   ⛔ Its focus ring is written out, not `var(--focus-ring)`: that token is
+   wrapped in light-dark(), which takes only colours, so a shadow made of it is
+   invalid and draws nothing (found 2026-10-08). This is the ring it means. */
 .home {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  container: home / size;
+  --home-focus-ring: 0 0 0 0.125rem var(--base-mid);
 }
 
-/* An X in the top left and a lambda in the bottom right, in the accent.
-   Each is a line across an arc. They leave when the column has no margin. */
+/* An x in the top left and a λ in the bottom right (index.html says how they
+   are drawn). They are the page's corners, not the list's: the field is as
+   tall as what can be seen and stays there while a long list scrolls under
+   it, and takes no room from the column (its height, given back below it). */
 .home-field {
-  position: absolute;
-  inset: 0;
+  position: sticky;
+  top: 0;
   z-index: 0;
+  height: 100cqh;
+  margin-bottom: -100cqh;
   overflow: hidden;
   pointer-events: none;
   user-select: none;
-  color: var(--accent-mid);
 }
 
-html.light .home-field {
-  color: var(--accent-high);
-}
-
-.home-stroke {
+/* Both letters at one size, set by the margin beside the column (less the
+   gutter, so a point never reaches it) and by the height (so the two never
+   share a corner). Each box sits in its corner; the strokes leave the page
+   through the two edges that meet there. */
+.home-glyph {
+  --home-glyph: min(calc((100cqw - 35rem) / 2 - 2.5rem), 56cqh, 38rem);
   position: absolute;
   display: block;
+  width: var(--home-glyph);
+  height: var(--home-glyph);
 }
 
-.home-stroke--x {
-  top: -1.5rem;
-  left: -2rem;
-  width: min(15.5rem, calc((100% - 35rem) / 2 + 0.25rem));
-  aspect-ratio: 220 / 210;
+.home-glyph--x {
+  top: 0;
+  left: 0;
 }
 
-.home-stroke--lambda {
-  right: -1.75rem;
-  bottom: -12%;
-  width: min(15rem, calc((100% - 35rem) / 2 - 1rem));
-  aspect-ratio: 310 / 400;
+.home-glyph--lambda {
+  right: 0;
+  bottom: 0;
 }
 
-@media (max-width: 52rem) {
+/* The outline is the ground: where a hairline passes under, it is cut a hair
+   short on each side. In the box's units, so the gap grows with the letter. */
+.home-glyph__swell {
+  fill: var(--home-ink);
+  stroke: var(--bg);
+  stroke-width: 16;
+  paint-order: stroke;
+}
+
+.home-glyph__hair {
+  stroke: var(--home-ink-hair);
+  stroke-width: 1px;
+}
+
+/* Big enough to be letters, or not there: under 11rem they were crumbs. */
+@container home (width < 62rem) or (height < 20rem) {
+  .home-glyph {
+    display: none;
+  }
+}
+
+@media (forced-colors: active) {
   .home-field {
     display: none;
   }
@@ -133,17 +166,15 @@ html.light .home-field {
   padding: 0.875rem 0.875rem 0.75rem;
   border: 0;
   border-radius: var(--radius-md);
-  background: var(--home-tile-bg);
+  background: var(--home-pane);
   color: var(--base-highest);
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 500;
   text-align: left;
   cursor: pointer;
-  box-shadow: inset 0 1px 0 light-dark(
-    color-mix(in srgb, white 72%, transparent),
-    color-mix(in srgb, var(--base-highest) 14%, transparent)
-  );
+  /* The edge is drawn inside, so a tile is the same size with it or without. */
+  box-shadow: inset 0 0 0 1px var(--home-rule);
   transition: background-color var(--transition);
 }
 
@@ -162,15 +193,12 @@ html.light .home-field {
 }
 
 .home[data-keys] .home-tile:focus-visible {
-  box-shadow: var(--focus-ring), inset 0 1px 0 light-dark(
-    color-mix(in srgb, white 72%, transparent),
-    color-mix(in srgb, var(--base-highest) 14%, transparent)
-  );
+  box-shadow: var(--home-focus-ring), inset 0 0 0 1px var(--home-rule);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .home-tile:hover {
-    background: var(--home-tile-bg-hover);
+    background: var(--home-pane-hover);
   }
 
   .home-tile:hover .home-tile__icon {
@@ -184,12 +212,15 @@ html.light .home-field {
   margin-top: 2.25rem;
 }
 
+/* The heading stands on a rule: the page's one hairline, the panes' edge. */
 .home-projects__head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 0.375rem;
+  margin-bottom: var(--home-rule-gap);
+  padding-bottom: var(--home-rule-gap);
+  border-bottom: 1px solid var(--home-rule);
 }
 
 .home-projects__label {
@@ -218,7 +249,7 @@ html.light .home-field {
 
 .home-find:focus-visible {
   outline: none;
-  box-shadow: var(--focus-ring);
+  box-shadow: var(--home-focus-ring);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -427,7 +458,7 @@ html.light .home-field {
 
 .home-link:focus-visible {
   outline: none;
-  box-shadow: var(--focus-ring);
+  box-shadow: var(--home-focus-ring);
 }
 
 @media (hover: hover) and (pointer: fine) {

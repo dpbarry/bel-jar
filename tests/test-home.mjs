@@ -179,8 +179,24 @@ expect(findsByTyping('t') && findsByTyping('T') && findsByTyping('7') && findsBy
     'home\'s strip carries the name beside the mark');
   expect(!/home-mark|home-wordmark/.test(html), 'the column has no wordmark of its own');
   const field = html.slice(html.indexOf('class="home-field"'), html.indexOf('class="home__column"'));
-  expect(field.includes('aria-hidden="true"') && field.includes('home-stroke--x') && field.includes('home-stroke--lambda') && field.includes('A775.74') && !field.includes('home-field__light'),
-    'the ground is an X and a lambda, hidden from assistive tech, with no wash');
+  expect(field.includes('aria-hidden="true"') && field.includes('home-glyph--x') && field.includes('home-glyph--lambda') && !field.includes('home-field__light'),
+    'the ground is an x and a λ, hidden from assistive tech, with no wash');
+  // One pen (docs/UI.md §0): each letter is a hairline drawn first, then a swell
+  // that passes over it; the λ's swell is the x's, turned half a turn.
+  const glyphs = [...field.matchAll(/<svg class="home-glyph home-glyph--(\w+)"[\s\S]*?<\/svg>/g)].map((m) => ({
+    name: m[1],
+    parts: [...m[0].matchAll(/<path class="home-glyph__(\w+)" d="([^"]+)"([^>]*)>/g)].map((p) => ({ kind: p[1], d: p[2], rest: p[3] })),
+  }));
+  expect(glyphs.map((g) => g.name).join() === 'x,lambda' && glyphs.every((g) => g.parts.map((p) => p.kind).join() === 'hair,swell'),
+    `each letter is a hairline and then a swell, which passes over it (${glyphs.map((g) => g.name + ':' + g.parts.map((p) => p.kind).join('+')).join(', ')})`);
+  const [xSwell, lSwell] = glyphs.map((g) => g.parts.find((p) => p.kind === 'swell'));
+  expect(xSwell.d === lSwell.d && !/transform/.test(xSwell.rest) && /transform="rotate\(180 500 500\)"/.test(lSwell.rest),
+    'the λ\'s swell is the x\'s, turned half a turn');
+  const radii = [...xSwell.d.matchAll(/A(\d+(?:\.\d+)?) \1 /g)].map((m) => +m[1]);
+  expect(radii.length === 2 && radii[0] > radii[1],
+    `a swell is the space between two circles that touch at its point (${radii.join(', ')})`);
+  expect(glyphs.every((g) => g.parts.filter((p) => p.kind === 'hair').every((p) => /vector-effect="non-scaling-stroke"/.test(p.rest))),
+    'a hairline is one weight at every size');
   expect(!homeSrc.includes('pointermove') && !homeSrc.includes('--hx'), 'the lambda stays where it is drawn');
   expect(!html.includes('id="home-signin"') && !html.includes('home-head'), 'the column has no sign-in line; the account button carries that');
   for (const id of ['home', 'home-actions', 'home-links', 'home-find', 'home-list', 'home-projects-section',

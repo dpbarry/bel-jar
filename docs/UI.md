@@ -43,17 +43,33 @@ The mechanics (addresses, pinning, signing out across tabs) are [PERSIST §5.11]
 
 One column, at the left of a measure (`css/home.css`, `js/home/home.mjs`), read from the top. The
 strip above it is the editor's, with the mark and **BelJar** at the left and the person at the far right.
-Behind the column, on a wide page, an X in the top left and a lambda in the bottom right, drawn in
-the accent. Each is a straight stroke across a circular one.
+Behind the column, on a wide page, an x in the top left and a λ in the bottom right, blooming off
+the page through their corners.
 
 | Part | What it holds |
 |------|---------------|
 | The strip | The mark and **BelJar**, beside each other. The name is not repeated in the column |
 | The sign-in box | Signed out, where a server answers, the first time this browser is shown home: one box under the account button, **Sign in with GitHub to keep your projects on every device.** The words are not a link. It counts down like the other boxes, and it is seen as it appears, so a refresh does not bring it back. Clicking the box opens the account menu and the box goes; clicking the account button does the same |
-| The ways to start | New project, Import folder, Browse examples: three flat tiles, a glyph above the words, boxed by a step in the ground and nothing else |
-| **Projects** | Every project, the last one opened first: its **name** and **when** it was last touched. A marker only when files wait to be reviewed (§2). **Search** (Ctrl+K, the same chord on every editing style — home does not run Vim or Emacs) at the heading's right |
-| The foot | Beluga, Report an issue, GitHub |
+| The ways to start | New project, Import folder, Browse examples: three panes, a glyph above the words. A pane is half a step off the ground inside the page's hairline, and the same object in both themes: no lit edge, no shadow |
+| **Projects** | Every project, the last one opened first: its **name** and **when** it was last touched. A marker only when files wait to be reviewed (§2). **Search** (Ctrl+K, the same chord on every editing style — home does not run Vim or Emacs) at the heading's right. The heading stands on the hairline: a rule, not a box |
+| The foot | Beluga, Email me, GitHub, Privacy |
 
+- ⛔ **One pen, two weights.** Home is drawn the way mathematical italic is: a stroke down to the
+  right is a swell, one up to the right a hairline. Every line that holds something (a pane's edge,
+  the rule under Projects) is the one hairline (`--home-rule`); the x and the λ are each a hairline
+  and a swell, in one accent ink (`--home-ink`; the hairline a touch stronger, as a thin line reads
+  lighter). No glow, no gradient, no shadow, no entrance: the x and the λ are the identity, and
+  the column carries no wordmark.
+  - A swell is drawn with compasses: the space between two circles that touch at its point, so it
+    starts as nothing there and widens as it runs off the page. Its point aims at the column.
+  - The λ's swell is the x's turned half a turn (`index.html` holds the construction; the test
+    holds the half turn), so the two answer each other across the page.
+  - A hairline passes under a swell, cut a hair short on each side by the swell's outline in the
+    ground colour. Masks would need ids, and the kit page strips them.
+  - They are the page's corners, not the list's: pinned to what can be seen while a long list
+    scrolls. One size for both, from the margin beside the column (never within 2.5rem of it) and
+    the height. Under 11rem they are not letters, so they are not drawn: narrower than 62rem or
+    shorter than 20rem, and in forced colours.
 - ⛔ **One column, two edges.** The tiles and every row's words start at one left edge;
   every date ends at the tiles' right edge (`scripts/probe-kit.mjs`, `probe-home`). A row's wash
   reaches half a gutter past them, so the words never touch it.

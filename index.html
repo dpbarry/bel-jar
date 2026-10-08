@@ -109,14 +109,24 @@
        fills each part is drawn by js/home/home.mjs. With no project the list
        stays, and says so where the first row would be. -->
   <main class="home" id="home" data-mode="arriving">
+    <!-- An x in the top left and a λ in the bottom right, drawn with one pen
+         (docs/UI.md §0): a stroke down to the right is a swell, one up to the
+         right a hairline, as in mathematical italic. A swell is the space
+         between two circles that touch at its point, radii 2824 and 2087 (each
+         box is 1000 across, its 0 0 the page's corner): nothing at (800, 800),
+         and wider the further it runs off the page. The λ's swell is the x's,
+         turned half a turn. The x's hairline crosses its swell's middle at -45°;
+         the λ's leg leaves its swell's lower edge, 48% along, at 118°. A hairline
+         is drawn first and passes under its swell, whose outline in the ground
+         colour cuts it. -->
     <div class="home-field" aria-hidden="true">
-      <svg class="home-stroke home-stroke--x" viewBox="-12 -28 220 210" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-        <path d="M132 -12A775.74 775.74 0 0 0 -6 168" vector-effect="non-scaling-stroke"/>
-        <path d="M-0.8 -15.57L196.2 138.35" vector-effect="non-scaling-stroke"/>
+      <svg class="home-glyph home-glyph--x" viewBox="0 0 1000 1000" fill="none">
+        <path class="home-glyph__hair" d="M-640.2 1449.7L1339.7 -530.2" vector-effect="non-scaling-stroke"/>
+        <path class="home-glyph__swell" d="M800 800A2824 2824 0 0 1 -293 -360.6L-159.3 -450.6A2087 2087 0 0 0 800 800Z"/>
       </svg>
-      <svg class="home-stroke home-stroke--lambda" viewBox="-52 -4 310 400" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-        <path d="M91.84 11.26A640 640 0 0 1 -43.44 382.95" vector-effect="non-scaling-stroke"/>
-        <path d="M86 78L248 5.87" vector-effect="non-scaling-stroke"/>
+      <svg class="home-glyph home-glyph--lambda" viewBox="0 0 1000 1000" fill="none">
+        <path class="home-glyph__hair" d="M628 531.7L-29.2 1767.9" vector-effect="non-scaling-stroke"/>
+        <path class="home-glyph__swell" d="M800 800A2824 2824 0 0 1 -293 -360.6L-159.3 -450.6A2087 2087 0 0 0 800 800Z" transform="rotate(180 500 500)"/>
       </svg>
     </div>
     <div class="home__column">

@@ -228,10 +228,25 @@
   --notif-card-border: light-dark(hsla(220, 12%, 40%, 0.13), hsla(220, 12%, 82%, 0.11));
   --notif-recess-bg: light-dark(hsla(220, 14%, 88%, 0.7), hsla(222, 18%, 5%, 0.34));
 
-  /* Home's ways to start: flat tiles, one step off the page ground and no
-     edge, so the step alone makes them (css/home.css). */
-  --home-tile-bg: light-dark(hsl(220, 15%, 95%), hsl(222, 13%, 9.5%));
-  --home-tile-bg-hover: light-dark(hsl(220, 15%, 92.5%), hsl(222, 12%, 12.5%));
+  /* Home (css/home.css) is drawn in two weights, and these are its inks.
+     The swell and the hairline of the x and the λ are one accent; the hairline
+     is a little stronger, because a line one pixel wide reads lighter than the
+     same colour laid thick. Every structural line (a pane's edge, the rule
+     under Projects) is one hairline, `--home-rule`. A pane is the same object in
+     both themes: half a step off the ground, inside that hairline. */
+  --home-ink: light-dark(
+    color-mix(in oklab, var(--accent-high) 70%, var(--bg)),
+    color-mix(in oklab, var(--accent-mid) 62%, var(--bg))
+  );
+  --home-ink-hair: light-dark(
+    color-mix(in oklab, var(--accent-high) 80%, var(--bg)),
+    color-mix(in oklab, var(--accent-mid) 88%, var(--bg))
+  );
+  --home-rule: light-dark(hsla(220, 24%, 22%, 0.11), hsla(216, 20%, 80%, 0.09));
+  --home-pane: light-dark(hsl(0, 0%, 100%), hsl(223, 15%, 6.6%));
+  --home-pane-hover: light-dark(hsl(220, 22%, 97%), hsl(222, 14%, 9%));
+  /* The room on each side of the rule under Projects. */
+  --home-rule-gap: 0.5rem;
   --notif-kind-error: var(--repl-error);
   --notif-kind-warn: var(--repl-warn);
   --notif-kind-info: var(--accent-mid);

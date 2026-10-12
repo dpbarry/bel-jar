@@ -716,6 +716,7 @@ export const Persist = {
   // this project's session on this device: tabs, workspace, side panel, explorer folds
   getActiveFileId: files.getActiveFileId,
   setActiveFileId: files.setActiveFileId,
+  getRecentFileIds: files.getRecentFileIds,
   getOpenFileIds: files.getOpenFileIds,
   setOpenFileIds: files.setOpenFileIds,
   openFile: files.openFile,

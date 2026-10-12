@@ -74,7 +74,9 @@ for (const f of SURFACES) {
 const problems = [];
 const say = (s, why) => problems.push(`${s.file}  ${s.key}: "${s.text.slice(0, 80)}"  ${why}`);
 
-// Command titles: Title Case, one vocabulary.
+// Command titles: Title Case, one vocabulary. Not the settings' own commands
+// (command-settings.mjs): they keep the settings panel's words, "Toggle word wrap",
+// and are not held to Title Case (Dean, 2026-10-12).
 for (const t of commandTitles) {
   const s = { file: 'js/commands/command-catalog.mjs', key: 'command', text: t };
   if (/[—–]/.test(t)) say(s, 'has a dash');
@@ -89,6 +91,8 @@ const names = [...new Set([...commandTitles, ...[...commandTitles].map((t) => t.
   .filter((n) => /\p{Lu}/u.test(n)).sort((a, b) => b.length - a.length);
 for (const s of strings) {
   const t = s.text;
+  // Named on the clipboard card, both words, as a title.
+  if (t === 'Nonstandard Copy') continue;
   if (/[—–]/.test(t)) say(s, 'has a dash');
   if (/·[^·]*·/.test(t)) say(s, 'is a stat dump strung on ·');
   const shout = t.match(/\b\p{Lu}{3,}\b(?:\s+\b\p{Lu}{3,}\b)+/u);

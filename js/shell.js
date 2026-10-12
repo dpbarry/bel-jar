@@ -1207,6 +1207,8 @@
     // what this device has learned or been told
     { id: "dismissedHints", type: "json", default: [], normalize: stringList() },
     { id: "commandLineHistory", type: "json", default: [], normalize: stringList(50) },
+    // the commands run from the palette, newest first: its Recent section (command-palette.mjs)
+    { id: "paletteRecent", type: "json", default: [], normalize: stringList(20) },
     { id: "runModel", type: "json", default: null, normalize: runModel },
     { id: "jumpLog", default: false }
   ];
@@ -1342,6 +1344,7 @@
   var DEFAULT_NAME_BEFORE = "Untitled Project";
   var FIRST_FILE_NAME = "main.bel";
   var CACHE_LIMIT = 1024;
+  var RECENT_FILES = 50;
   function cleanName(name) {
     return String(name != null ? name : "").trim() || DEFAULT_PROJECT_NAME;
   }
@@ -1386,10 +1389,11 @@
     };
   }
   function normalizeSession(raw) {
-    const s = { open: null, active: null, views: {}, workspace: null, panel: null, explorerFolds: [] };
+    const s = { open: null, active: null, recent: [], views: {}, workspace: null, panel: null, explorerFolds: [] };
     if (!raw || typeof raw !== "object") return s;
     if (Array.isArray(raw.open)) s.open = stringList2(raw.open);
     if (typeof raw.active === "string" && raw.active) s.active = raw.active;
+    s.recent = stringList2(raw.recent).slice(0, RECENT_FILES);
     if (raw.views && typeof raw.views === "object" && !Array.isArray(raw.views)) {
       for (const fid of Object.keys(raw.views)) {
         const v = raw.views[fid];
@@ -1817,6 +1821,7 @@
       const live2 = new Set(peekTree(pid).files.map((f) => f.id));
       if (next.open) next.open = next.open.filter((id) => live2.has(id));
       if (next.active && !live2.has(next.active)) next.active = null;
+      next.recent = next.recent.filter((id) => live2.has(id));
       for (const fid of Object.keys(next.views)) {
         if (!live2.has(fid)) delete next.views[fid];
       }
@@ -2245,6 +2250,18 @@
     function setActiveFileId(id) {
       work2.updateSession(function(s) {
         s.active = id || null;
+        if (id) s.recent = [id].concat(s.recent.filter(function(x) {
+          return x !== id;
+        }));
+      });
+    }
+    function getRecentFileIds() {
+      var live2 = {};
+      work2.peekTree().files.forEach(function(f) {
+        live2[f.id] = true;
+      });
+      return work2.peekSession().recent.filter(function(id) {
+        return live2[id];
       });
     }
     function getOpenFileIds() {
@@ -2743,6 +2760,7 @@
       // session
       getActiveFileId,
       setActiveFileId,
+      getRecentFileIds,
       getOpenFileIds,
       setOpenFileIds,
       openFile,
@@ -5663,6 +5681,7 @@
     // this project's session on this device: tabs, workspace, side panel, explorer folds
     getActiveFileId: files.getActiveFileId,
     setActiveFileId: files.setActiveFileId,
+    getRecentFileIds: files.getRecentFileIds,
     getOpenFileIds: files.getOpenFileIds,
     setOpenFileIds: files.setOpenFileIds,
     openFile: files.openFile,
@@ -14809,6 +14828,57 @@
       return [];
     }
   }
+  var RECENT_COMMANDS = 5;
+  var BEFORE_TYPING = {
+    anywhere: [
+      { from: "files", section: "Files", order: "recent" },
+      { from: "symbols", label: "Symbols" }
+    ],
+    commands: [
+      { from: "commands", label: "Recent", only: "used", order: "recent", max: RECENT_COMMANDS },
+      { from: "commands", unshown: true }
+    ],
+    symbols: [
+      { from: "symbols" }
+    ]
+  };
+  function byRecent(items3) {
+    return items3.map((item, i) => ({ item, i })).sort((a, b) => (b.item.usedAt || 0) - (a.item.usedAt || 0) || a.i - b.i).map((x) => x.item);
+  }
+  function listBeforeTyping(mode, source) {
+    const plan = BEFORE_TYPING[mode];
+    if (!plan) return null;
+    const shown = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const part of plan) {
+      let items3 = source(part.from) || [];
+      if (part.unshown) items3 = items3.filter((it) => !shown.has(it));
+      if (part.only === "used") items3 = items3.filter((it) => it.usedAt > 0);
+      if (part.order === "recent") items3 = byRecent(items3);
+      if (part.max) items3 = items3.slice(0, part.max);
+      for (const it of items3) {
+        shown.add(it);
+        out.push({ ...it, section: part.label || it.section || part.section || "", _match: null });
+      }
+    }
+    return out;
+  }
+  function recentCommands() {
+    const D = global14.Device;
+    try {
+      return D ? D.get("paletteRecent") || [] : [];
+    } catch {
+      return [];
+    }
+  }
+  function rememberCommand(id) {
+    const D = global14.Device;
+    if (!D || !id) return;
+    try {
+      D.set("paletteRecent", [id].concat(recentCommands().filter((x) => x !== id)));
+    } catch {
+    }
+  }
   var IS_MAC2 = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || "");
   var ui = null;
   var isOpen4 = false;
@@ -14885,8 +14955,11 @@
     const key = `${sessionId}|${Commands2.version()}`;
     if (commandItemsCache && commandItemsKey === key) return commandItemsCache;
     commandItemsKey = key;
+    const recent = recentCommands();
     commandItemsCache = activeCommands().map((c) => ({
       id: c.id,
+      command: true,
+      usedAt: recent.indexOf(c.id) < 0 ? 0 : recent.length - recent.indexOf(c.id),
       title: c.title,
       section: c.section || "Commands",
       shortcut: Commands2.liveChord ? Commands2.liveChord(c.id) || "" : "",
@@ -14943,6 +15016,10 @@
     }];
   }
   function gatherItems(parsed) {
+    if (!parsed.query) {
+      const listed = listBeforeTyping(parsed.mode, (from2) => from2 === "commands" ? commandItems() : providerItems(from2));
+      if (listed) return listed;
+    }
     if (parsed.mode === "symbols") {
       return rankItems(providerItems("symbols"), parsed.query, 80);
     }
@@ -15098,6 +15175,7 @@
   function runActive() {
     const item = flatItems[activeIndex];
     if (!item) return;
+    if (item.command) rememberCommand(item.id);
     close4();
     try {
       item.run();
@@ -15234,7 +15312,9 @@
       parseLineQuery,
       substringPositions,
       HELP_CATALOG,
-      MODE_PREFIX
+      MODE_PREFIX,
+      BEFORE_TYPING,
+      listBeforeTyping
     },
     _registry: { activeCommands }
   };
@@ -20120,6 +20200,44 @@
       renderTree();
       focusFolderToggle(id);
     }
+    function renderPreviewFile(child, depth, suiteByFile) {
+      var childExt = String(child.ext || "bel").toLowerCase();
+      var suiteMeta = suiteByFile[child.label];
+      var fileRow = document.createElement("div");
+      fileRow.className = "library-preview-tree-file" + (childExt === "cfg" ? " library-preview-tree-file--cfg" : "") + (childExt === "elf" ? " library-preview-tree-file--elf" : "") + suiteClassesForMeta(suiteMeta) + (suiteMeta && suiteMeta.suiteIndex > 0 && suiteMeta.role === "head" ? " library-preview-tree-file--suite-block-sep" : "");
+      if (child.id === selectedId) fileRow.classList.add("is-selected");
+      fileRow.setAttribute("role", "treeitem");
+      fileRow.setAttribute("aria-label", child.label);
+      fileRow.style.setProperty("--library-depth", String(depth));
+      fileRow.dataset.fileId = child.id;
+      fileRow.tabIndex = 0;
+      var fileLabel = document.createElement("span");
+      fileLabel.className = "library-preview-tree-label";
+      fileLabel.textContent = child.label;
+      fileRow.appendChild(fileLabel);
+      if (onCopyFile || onInsertFile) {
+        var fileActions = document.createElement("div");
+        fileActions.className = "library-actions";
+        if (onCopyFile) {
+          fileActions.appendChild(actionBtn(applyTip, "", "Copy to clipboard", ICON_COPY, function() {
+            onCopyFile(child);
+          }));
+        }
+        if (onInsertFile) {
+          fileActions.appendChild(actionBtn(applyTip, "", "Insert", ICON_INSERT, function(btn) {
+            onInsertFile(btn, child);
+          }));
+        }
+        fileRow.appendChild(fileActions);
+      }
+      if (child.description) applyTip(fileRow, child.description);
+      fileRow.addEventListener("click", function(e) {
+        if (e.target.closest(".library-actions")) return;
+        selectFile(child);
+      });
+      treePane.appendChild(fileRow);
+      treeRows.push(fileRow);
+    }
     function renderTreeFolder(folder, depth, pathLabel) {
       if (!folder || folder.type !== "folder") return;
       var hasNamedRoot = !!scopeFolder.name;
@@ -20172,45 +20290,7 @@
         renderTreeFolder(sub, depth, pathLabel ? pathLabel + "/" + sub.name : sub.name);
       }
       for (var i = 0; i < laid.files.length; i++) {
-        var child = laid.files[i];
-        var childExt = String(child.ext || "bel").toLowerCase();
-        var suiteMeta = laid.suiteByFile[child.label];
-        var fileRow = document.createElement("div");
-        fileRow.className = "library-preview-tree-file" + (childExt === "cfg" ? " library-preview-tree-file--cfg" : "") + (childExt === "elf" ? " library-preview-tree-file--elf" : "") + suiteClassesForMeta(suiteMeta) + (suiteMeta && suiteMeta.suiteIndex > 0 && suiteMeta.role === "head" ? " library-preview-tree-file--suite-block-sep" : "");
-        if (child.id === selectedId) fileRow.classList.add("is-selected");
-        fileRow.setAttribute("role", "treeitem");
-        fileRow.setAttribute("aria-label", child.label);
-        fileRow.style.setProperty("--library-depth", String(depth));
-        fileRow.dataset.fileId = child.id;
-        fileRow.tabIndex = 0;
-        var fileLabel = document.createElement("span");
-        fileLabel.className = "library-preview-tree-label";
-        fileLabel.textContent = child.label;
-        fileRow.appendChild(fileLabel);
-        if (onCopyFile || onInsertFile) {
-          var fileActions = document.createElement("div");
-          fileActions.className = "library-actions";
-          if (onCopyFile) {
-            fileActions.appendChild(actionBtn(applyTip, "", "Copy to clipboard", ICON_COPY, function() {
-              onCopyFile(child);
-            }));
-          }
-          if (onInsertFile) {
-            fileActions.appendChild(actionBtn(applyTip, "", "Insert", ICON_INSERT, function(btn) {
-              onInsertFile(btn, child);
-            }));
-          }
-          fileRow.appendChild(fileActions);
-        }
-        if (child.description) applyTip(fileRow, child.description);
-        fileRow.addEventListener("click", /* @__PURE__ */ (function(it) {
-          return function(e) {
-            if (e.target.closest(".library-actions")) return;
-            selectFile(it);
-          };
-        })(child));
-        treePane.appendChild(fileRow);
-        treeRows.push(fileRow);
+        renderPreviewFile(laid.files[i], depth, laid.suiteByFile);
       }
     }
     function ensureCfgTextsLoaded() {
@@ -40989,9 +41069,11 @@ ${doc2.documentElement.outerHTML}`;
       onEditor2("fold.unfold-all", (e) => e.unfoldAll());
       CommandPalette.setProvider("files", () => {
         const currentId = getPersist2() ? getPersist2().getCurrentFileId() : null;
+        const recent = Persist.getRecentFileIds ? Persist.getRecentFileIds() : [];
         return Persist.listFiles().filter((f) => f.id !== currentId).map((f) => ({
           title: f.name.slice(f.name.lastIndexOf("/") + 1),
           detail: ProjectSource.dirOf(f.name) || "",
+          usedAt: recent.indexOf(f.id) < 0 ? 0 : recent.length - recent.indexOf(f.id),
           run: () => switchToFile(f.id)
         }));
       });
@@ -42631,35 +42713,30 @@ ${doc2.documentElement.outerHTML}`;
   // js/ui/clipboard-read.mjs
   var WATCHED_SETTINGS = ["keymapStyle", "emacsYankSource", "keybindings", "clipboardReadDismissed"];
   var COPY = {
-    emacsOffer: {
-      message: "C-y pastes from the system clipboard, and Chrome will not allow that until this site may read it.",
-      note: "Allow opens Chrome's prompt. Ignore leaves C-y as it is."
-    },
-    rebindOffer: {
-      message: "That is not Chrome's paste key, so Chrome will not allow it until this site may read it.",
-      note: "Allow opens Chrome's prompt. Ignore leaves the key as it is."
+    offer: {
+      message: "Copy is currently bound to {chord}, which the browser will not recognize as valid unless you allow clipboard permissions."
     },
     asking: {
-      message: "Chrome is asking, at the top of the window.",
-      note: "Allow reads the clipboard. Block refuses it. Closing the prompt changes nothing."
+      note: "The browser is asking at the top of the window."
     },
-    emacsGranted: {
-      message: "Allowed. C-y can paste from the clipboard."
-    },
-    rebindGranted: {
-      message: "Allowed. This key can paste from the clipboard."
+    granted: {
+      note: "Allowed; {chord} can paste from the clipboard."
     },
     denied: {
-      message: "Blocked. Chrome will not ask again.",
-      note: "To allow it later, choose the lock icon in the address bar and turn clipboard on."
+      note: "Blocked; the browser won't ask again automatically."
     },
     closed: {
-      note: "The prompt was closed. Nothing changed."
+      note: "The prompt was closed."
+    },
+    // Firefox and Safari have no clipboard grant. A nonstandard paste asks for a click every time.
+    menu: {
+      message: "Your browser will only accept pastes from a nonstandard keybinding (currently {chord}) after a confirmation each time."
     }
   };
   var ALLOW = { action: "allow", label: "Allow", variant: "primary" };
   var IGNORE = { action: "ignore", label: "Ignore", variant: "ghost" };
   var CLOSE = { action: "ignore", label: "Close", variant: "ghost" };
+  var BINDINGS = { action: "bindings", label: "Keybindings", variant: "primary" };
   function isNativePasteSpec(spec) {
     return spec === "Mod+V" || spec === "Shift+Insert";
   }
@@ -42696,12 +42773,20 @@ ${doc2.documentElement.outerHTML}`;
     if (!id || cur.includes(id)) return cur;
     return cur.concat(id);
   }
+  function noticeId(sit, kind) {
+    if (!sit || !sit.id) return "";
+    return kind === "menu" ? sit.id + ":menu" : sit.id;
+  }
   function shouldOpen(permission, sit, dismissed) {
     if (!sit) return false;
     if (permission !== "prompt" && permission !== "denied") return false;
-    return !isDismissed(dismissed, sit.id);
+    return !isDismissed(dismissed, noticeId(sit, "grant"));
+  }
+  function shouldOpenMenu(sit, dismissed) {
+    return !!sit && !isDismissed(dismissed, noticeId(sit, "menu"));
   }
   function initialView(permission) {
+    if (permission === "menu") return { phase: "menu", noted: false };
     if (permission === "denied") return { phase: "denied", noted: false };
     if (permission === "granted") return { phase: "granted", noted: false };
     return { phase: "offer", noted: false };
@@ -42739,44 +42824,57 @@ ${doc2.documentElement.outerHTML}`;
   function buttons(allow, ignore) {
     const out = [];
     if (ignore) out.push({ action: ignore.action, label: ignore.label, variant: ignore.variant, disabled: false });
-    if (allow) out.push({ action: ALLOW.action, label: ALLOW.label, variant: ALLOW.variant, disabled: !!allow.disabled });
+    if (allow) {
+      out.push({
+        action: allow.action || ALLOW.action,
+        label: allow.label || ALLOW.label,
+        variant: allow.variant || ALLOW.variant,
+        disabled: !!allow.disabled
+      });
+    }
     return out;
   }
+  function withChord(template, chord) {
+    const mark = "{chord}";
+    const at = template.indexOf(mark);
+    if (at < 0) return { before: template, chord: "", after: "" };
+    return { before: template.slice(0, at), chord, after: template.slice(at + mark.length) };
+  }
   function copyFor(state3, sit) {
-    const kind = sit && sit.kind === "rebind" ? "rebind" : "emacs";
     const chord = sit && sit.chord ? sit.chord : "C-y";
-    const lead = kind === "rebind" ? chord : "";
     const phase = state3 && state3.phase;
-    if (phase === "asking") {
+    if (phase === "menu") {
+      const sentence2 = withChord(COPY.menu.message, chord);
       return {
-        lead,
-        message: COPY.asking.message,
-        note: COPY.asking.note,
-        buttons: buttons({ disabled: true }, IGNORE)
-      };
-    }
-    if (phase === "granted") {
-      return {
-        lead,
-        message: kind === "emacs" ? COPY.emacsGranted.message : COPY.rebindGranted.message,
+        before: sentence2.before,
+        chord: sentence2.chord,
+        after: sentence2.after,
         note: "",
-        buttons: []
+        buttons: buttons(BINDINGS, CLOSE)
       };
     }
-    if (phase === "denied") {
-      return {
-        lead,
-        message: COPY.denied.message,
-        note: COPY.denied.note,
-        buttons: buttons(null, CLOSE)
-      };
+    const sentence = withChord(COPY.offer.message, chord);
+    let note = "";
+    let row = buttons(ALLOW, IGNORE);
+    if (phase === "asking") {
+      note = COPY.asking.note;
+      row = buttons({ disabled: true }, IGNORE);
+    } else if (phase === "granted") {
+      const said = withChord(COPY.granted.note, chord);
+      note = said.before + said.chord + said.after;
+      row = [];
+    } else if (phase === "denied") {
+      note = COPY.denied.note;
+      row = buttons(null, CLOSE);
+    } else if (state3 && state3.noted) {
+      note = COPY.closed.note;
     }
-    const offer = kind === "emacs" ? COPY.emacsOffer : COPY.rebindOffer;
     return {
-      lead,
-      message: offer.message,
-      note: state3 && state3.noted ? COPY.closed.note : offer.note,
-      buttons: buttons(ALLOW, IGNORE)
+      before: sentence.before,
+      chord: sentence.chord,
+      after: sentence.after,
+      note,
+      buttons: row
     };
   }
 
@@ -42786,7 +42884,6 @@ ${doc2.documentElement.outerHTML}`;
   var readGen = 0;
   var dialogEl = null;
   var shell = null;
-  var subjectEl = null;
   var messageEl2 = null;
   var noteEl = null;
   var actionsEl = null;
@@ -42795,6 +42892,7 @@ ${doc2.documentElement.outerHTML}`;
   var status = null;
   var leaving2 = false;
   var rememberOnClose = true;
+  var openBindings = false;
   var holdTimer = null;
   function settings2() {
     return globalThis.Settings || null;
@@ -42880,10 +42978,11 @@ ${doc2.documentElement.outerHTML}`;
     clearHold();
     detachStatus();
     const grantedClose = !rememberOnClose && view && view.phase === "granted";
-    const id = rememberOnClose && current ? current.id : null;
+    const id = rememberOnClose && current ? current.notice : null;
+    const jump = openBindings;
+    openBindings = false;
     dialogEl = null;
     shell = null;
-    subjectEl = null;
     messageEl2 = null;
     noteEl = null;
     actionsEl = null;
@@ -42892,7 +42991,12 @@ ${doc2.documentElement.outerHTML}`;
     leaving2 = false;
     rememberOnClose = true;
     if (id) storeDismissal(id);
-    else if (!grantedClose) void consider();
+    if (jump) {
+      const ui2 = globalThis.SettingsUI;
+      if (ui2 && typeof ui2.open === "function") ui2.open("keybindings");
+      return;
+    }
+    if (!grantedClose) void consider();
   }
   function focusPrimary() {
     if (!actionsEl || !dialogEl) return;
@@ -42905,14 +43009,9 @@ ${doc2.documentElement.outerHTML}`;
     if (!shell || !view || !current) return;
     const card = copyFor(view, current);
     shell.dataset.phase = view.phase;
-    if (card.lead) {
-      subjectEl.hidden = false;
-      subjectEl.replaceChildren(markMono(card.lead));
-    } else {
-      subjectEl.hidden = true;
-      subjectEl.replaceChildren();
-    }
-    messageEl2.textContent = card.message;
+    const key = el2("span", "jar-kb__key");
+    key.textContent = card.chord;
+    messageEl2.replaceChildren(document.createTextNode(card.before), key, document.createTextNode(card.after));
     noteEl.hidden = !card.note;
     noteEl.textContent = card.note || "";
     actionsEl.hidden = card.buttons.length === 0;
@@ -42967,7 +43066,10 @@ ${doc2.documentElement.outerHTML}`;
     if (!btn || btn.disabled) return;
     e.preventDefault();
     if (btn.dataset.action === "allow") beginRead();
-    else if (btn.dataset.action === "ignore") apply3({ type: "ignore" });
+    else if (btn.dataset.action === "bindings") {
+      openBindings = true;
+      apply3({ type: "ignore" });
+    } else if (btn.dataset.action === "ignore") apply3({ type: "ignore" });
   }
   function mount3(permission) {
     if (typeof document === "undefined" || !document.body) return;
@@ -42978,17 +43080,16 @@ ${doc2.documentElement.outerHTML}`;
     const live2 = el2("div");
     live2.setAttribute("aria-live", "polite");
     live2.setAttribute("aria-atomic", "true");
-    subjectEl = el2("p", "jar-prompt-dialog__subject");
     messageEl2 = el2("p", "jar-prompt-dialog__message");
     noteEl = el2("p", "jar-prompt-dialog__note");
-    live2.append(subjectEl, messageEl2, noteEl);
+    live2.append(messageEl2, noteEl);
     actionsEl = el2("div", "jar-prompt-dialog__actions is-row");
     shell.append(live2, actionsEl);
     shell.addEventListener("click", onAction);
     dialogEl = createDialog({
-      title: "Clipboard",
+      title: "Nonstandard Copy",
       content: shell,
-      className: WRAP_CLASS,
+      className: WRAP_CLASS + " jar-clipboard-dialog",
       cardClass: CARD_CLASS,
       closeButton: true,
       removeOnClose: true
@@ -42999,14 +43100,23 @@ ${doc2.documentElement.outerHTML}`;
     focusPrimary();
     requestAnimationFrame(() => focusPrimary());
   }
+  function canReadClipboard() {
+    const clip = globalThis.navigator && globalThis.navigator.clipboard;
+    return !!(clip && typeof clip.readText === "function");
+  }
+  function tracked(next, kind) {
+    return { id: next.id, kind: next.kind, chord: next.chord, notice: noticeId(next, kind) };
+  }
   function adopt2(next) {
     readGen += 1;
-    const state3 = status ? status.state : "prompt";
-    if (!shouldOpen(state3, next, readDismissed())) {
+    const menu = !status;
+    const state3 = menu ? "menu" : status.state;
+    const dismissed = readDismissed();
+    if (menu ? !shouldOpenMenu(next, dismissed) : !shouldOpen(state3, next, dismissed)) {
       finish(false);
       return;
     }
-    current = next;
+    current = tracked(next, menu ? "menu" : "grant");
     const prev = view ? view.phase : "";
     view = initialView(state3);
     if (prev === "granted" && view.phase !== "granted") clearHold();
@@ -43025,7 +43135,7 @@ ${doc2.documentElement.outerHTML}`;
       }
       if (dialogEl && current && current.id === next.id) {
         if (current.chord !== next.chord) {
-          current = next;
+          current = tracked(next, status ? "grant" : "menu");
           paint3();
         }
         return;
@@ -43037,17 +43147,27 @@ ${doc2.documentElement.outerHTML}`;
       if (isDismissed(readDismissed(), next.id)) return;
       const perm = await queryPermission();
       if (mine !== ticket || leaving2) return;
-      if (!perm) return;
       const again = present();
-      if (!again || again.id !== next.id || isDismissed(readDismissed(), again.id)) return;
-      if (!shouldOpen(perm.state, again, readDismissed())) return;
+      if (!again || again.id !== next.id) return;
+      if (!perm) {
+        if (!canReadClipboard() || !shouldOpenMenu(again, readDismissed())) return;
+        if (dialogEl) {
+          adopt2(again);
+          return;
+        }
+        current = tracked(again, "menu");
+        mount3("menu");
+        if (!dialogEl) current = null;
+        return;
+      }
+      if (isDismissed(readDismissed(), again.id) || !shouldOpen(perm.state, again, readDismissed())) return;
       if (dialogEl) {
         watch(perm);
         adopt2(again);
         return;
       }
       watch(perm);
-      current = again;
+      current = tracked(again, "grant");
       mount3(perm.state);
       if (!dialogEl) current = null;
     } catch (_) {

@@ -17,7 +17,7 @@ try {
   const kit = await page.evaluate(() => ({
     sections: window.Kit.sections(),
     specimens: window.Kit.specimens(),
-    rows: document.querySelectorAll('.home-row').length,
+    rows: document.querySelectorAll('.home-row:not(.home-row--empty)').length,
     marks: [...document.querySelectorAll('.home-row__mark')].map((m) => m.textContent),
     clouds: [...document.querySelectorAll('.kit-cloud .sync-cloud')].map((b) => b.dataset.state + ':' + (b.querySelector('svg') ? 'drawn' : 'empty')),
     headers: document.querySelectorAll('.kit-frame--flush > header').length,
@@ -39,9 +39,19 @@ try {
     toasts: [...document.querySelectorAll('.kit-frame > .toast')].map((t) => getComputedStyle(t).opacity).join(),
     floating: document.querySelectorAll('#menu-root .menu, #toast-stack .toast').length,
     styled: [...document.styleSheets].map((s) => (s.href || '').split('/').pop()),
+    failed: [...document.querySelectorAll('.kit-failed')].map((n) => n.textContent),
+    notifCards: document.querySelectorAll('.kit-frame .notif-panel .notif-item, .kit-frame .notif-panel [class*="notif-card"]').length,
+    strips: document.querySelectorAll('.kit-frame > .jar-strip').length,
+    windows: document.querySelectorAll('.kit-frame > .floating-window').length,
+    paletteRows: document.querySelectorAll('.kit-frame > .jar-palette .jar-palette-item').length,
+    leftLive: document.querySelectorAll('body > .floating-window, body > #notif-panel').length + (window.CommandPalette && window.CommandPalette.isOpen() ? 1 : 0),
   }));
   console.log('  kit:', JSON.stringify({ sections: kit.sections, specimens: kit.specimens }));
-  check(kit.sections.join() === 'Headers,Panel headers,Buttons,The cloud,Menus,Dialogs,Home,Toasts,Not on this page yet', `the kit has its sections (${kit.sections.join(', ')})`);
+  check(kit.sections.join() === 'Headers,Panel headers,Buttons,The cloud,Menus,Dialogs,Home,Toasts,Notifications,The strip,A floating window,The palette,Not on this page yet', `the kit has its sections (${kit.sections.join(', ')})`);
+  check(!kit.failed.length, `every specimen drew, through the app's own module (${kit.failed.join(' | ') || 'all'})`);
+  check(kit.notifCards === 4 && kit.strips === 3 && kit.windows === 1 && kit.paletteRows > 0,
+    `one card of each kind, the strip in three states, a window, and the palette with its rows (${JSON.stringify({ cards: kit.notifCards, strips: kit.strips, windows: kit.windows, paletteRows: kit.paletteRows })})`);
+  check(kit.leftLive === 0, `and nothing live is left over the page (${kit.leftLive})`);
   check(kit.headers === 4, `both documents' headers, signed out and signed in (${kit.headers})`);
   check(kit.clouds.length === 7 && kit.clouds.every((c) => /:drawn$/.test(c)), `the cloud in every state of the summary (${kit.clouds.join(' ')})`);
   check(kit.rows === 5 && kit.marks.join() === '2 files to review', `home's rows, with the marker only where files wait to be reviewed (${kit.rows} rows; ${kit.marks.join(', ')})`);

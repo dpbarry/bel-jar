@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { exportedRows, backups, toPrune, KEEP, BUCKET, readTexts, fetchText, textsInExport, textFile, textObject, textsHeld, textIntact, textsToPrune } from '../scripts/d1-backup.mjs';
+import { exportedRows, backups, toPrune, KEEP, BUCKET, readTexts, fetchText, rowsOf, putTexts, textsInExport, textFile, textObject, textsHeld, textIntact, textsToPrune } from '../scripts/d1-backup.mjs';
 import { textPrefix } from '../server/sync-store.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -98,6 +98,27 @@ try {
   fs.rmSync(tdir, { recursive: true, force: true });
 }
 
+// ── Recovery (2026-10-10): an export's rows, read back; texts put back only when all are here ──
+const accountRows = [
+  `INSERT INTO "users" ("id","handle","display_name","avatar_url","created_at") VALUES('u_1','dean-b','O''Brien, D.',NULL,1790000000000);`,
+  `INSERT INTO "versions" ("project","version","base","commit_id","deleted","manifest","created_at") VALUES('p_1',2,1,'c2',0,'{"v":1,"name":"Thesis, draft","files":[{"id":"f1","path":"a.bel","hash":"${hA}"}]}',1790000000001);`,
+].join('\n');
+const users = rowsOf(accountRows, 'users');
+const versions = rowsOf(accountRows, 'versions');
+expect(users.length === 1 && users[0].display_name === "O'Brien, D." && users[0].avatar_url === null && users[0].created_at === 1790000000000,
+  `a row reads back by column: quotes undone, NULL as null, numbers as numbers (${JSON.stringify(users[0])})`);
+expect(versions.length === 1 && JSON.parse(versions[0].manifest).files[0].hash === hA && versions[0].version === 2,
+  'a manifest with commas in it reads back whole');
+{
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'beljar-put-'));
+  let refused = '';
+  // Pointed at a throwaway local store: were the refusal ever lost, the puts it let through
+  // could reach nothing but this folder.
+  try { await putTexts(withTexts.split('\n').slice(0, 2).join('\n'), ['--local', '--persist-to', empty], { dir: empty }); } catch (e) { refused = e.message; }
+  fs.rmSync(empty, { recursive: true, force: true });
+  expect(/missing or damaged here: nothing was put/.test(refused), `a text the backup lacks stops the recovery before anything is written (${refused})`);
+}
+
 // What privacy.html promises is what the script keeps.
 const page = fs.readFileSync(path.join(root, 'privacy.html'), 'utf8');
 expect(/a copy of it, with the text of your files, is saved\s+each week and kept for four\s+weeks/.test(page) && KEEP === 4,
@@ -105,7 +126,13 @@ expect(/a copy of it, with the text of your files, is saved\s+each week and kept
 const src = fs.readFileSync(path.join(root, 'scripts', 'd1-backup.mjs'), 'utf8');
 expect(/'--remote', '--output'/.test(src) && !/'d1', 'execute'[^\n]*'--remote'/.test(src) && !/execute', DB, '--remote/.test(src),
   'the live database is only ever exported from: nothing is executed against it');
-expect(/'r2', 'object', 'get'/.test(src) && !/'r2', 'object', '(put|delete)'/.test(src), 'and the live texts are only ever read');
+// The live texts: read by the export, never deleted, and put back only by put-texts, only
+// when the person says --remote (recovery, 2026-10-10).
+const putAt = src.indexOf("'r2', 'object', 'put'");
+expect(/'r2', 'object', 'get'/.test(src) && !/'r2', 'object', 'delete'/.test(src)
+  && putAt > src.indexOf('export async function putTexts') && putAt < src.indexOf('/** Every text an export lists is in the folder')
+  && /if \(!process\.argv\.includes\('--remote'\)\)/.test(src),
+  'the live texts are read by the export, never deleted, and put back only by put-texts, only when the person says --remote');
 expect(/os\.homedir\(\), 'beljar-backups'/.test(src), 'and the copies go outside the repository');
 
 console.log(`OK d1 backup (${n} checks: rows counted from the export, the newest four kept, the texts with them, the live database and texts only read)`);

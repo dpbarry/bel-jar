@@ -316,6 +316,9 @@
   --edge-strip-w-callout: 3px;
   --edge-strip-radius: var(--menu-item-radius);
   --search-row-pad-x: 0.9rem;
+  /* The palette: the space under its input, which is also the space above the
+     list's first heading (command-palette.css). */
+  --palette-list-gap: 0.16rem;
 
   /* Editor autocomplete — restrained; avoid saturated fill on single-item lists. */
   --editor-ac-radius: 2px;

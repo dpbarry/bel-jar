@@ -26,7 +26,8 @@
   width: min(34rem, 92vw);
   display: flex;
   flex-direction: column;
-  padding: var(--menu-pad);
+  padding: var(--menu-pad) var(--menu-pad) 0;
+  overflow: clip;
   background: var(--menu-bg);
   border: 1px solid var(--menu-border);
   border-radius: var(--radius-md);
@@ -108,11 +109,11 @@
   max-height: min(21rem, 55vh);
   overflow-y: auto;
   overscroll-behavior: contain;
-  margin: 0.25rem calc(-1 * var(--menu-pad)) 0;
+  margin: var(--palette-list-gap) calc(-1 * var(--menu-pad)) 0;
 }
 
 .jar-palette-section {
-  padding: 0.5rem calc(0.6rem + var(--menu-pad)) 0.25rem;
+  padding: 0.28rem calc(0.6rem + var(--menu-pad)) 0.08rem;
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -122,13 +123,17 @@
   user-select: none;
 }
 
+.jar-palette-list > .jar-palette-section:first-child {
+  padding-top: var(--palette-list-gap);
+}
+
 .jar-palette-item {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1.25rem;
-  padding: 0.34rem calc(var(--search-row-pad-x) + var(--menu-pad));
+  padding: 0.42rem calc(var(--search-row-pad-x) + var(--menu-pad));
   border-radius: 0;
   color: var(--menu-item-fg);
   font-size: 0.78rem;
@@ -206,7 +211,7 @@
 }
 
 .jar-palette-hint {
-  padding: 0.35rem calc(0.65rem + var(--menu-pad)) 0.15rem;
+  padding: 0.35rem calc(0.65rem + var(--menu-pad)) 0.45rem;
   font-size: 0.68rem;
   color: var(--muted-mid);
   text-align: center;

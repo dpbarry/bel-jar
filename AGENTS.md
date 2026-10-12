@@ -35,6 +35,7 @@ npm run probe:kit         # the kit page (dev/kit.html): every component, one sc
 npm run probe:migration   # the next stored format, rehearsed: old tab, new tab, no flash (in `probe`)
 npm run probe:notices     # the bell: a run finished elsewhere, a suite changing colour (in `probe`; docs/UI.md §3)
 npm run backup:export     # the live database and the texts of files, read only, to ~/beljar-backups (weekly); backup:restore, backup:rehearse
+npm run backup:rehearse-recovery  # the whole recovery on a local Worker: database + texts back, each account signs in, every version whole (before term)
 npm run usage             # how big the live store has grown, beside its limits
 npm run probe:live        # AFTER A DEPLOY: the live site, R2, both Beluga workers (network; not in `probe`)
 npm run dev               # EVERYTHING locally at http://127.0.0.1:8787: sign-in, sync, Beluga checks (PERSIST §5.7; secrets in server/.dev.vars; local D1 in ~/.beljar-dev). A static server (Live Server) has no /api: online features are off there by design

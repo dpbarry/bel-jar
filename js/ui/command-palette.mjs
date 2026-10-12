@@ -241,6 +241,80 @@ const global = globalThis;
     try { return fn(arg) || []; } catch { return []; }
   }
 
+  /**
+   * ⛔ What the palette lists before anything is typed, for every page and style,
+   * in one table (Dean, 2026-10-12): what you used last first, then the rest in
+   * the order its page gives them, and nothing cut off. Typing ranks as before.
+   *
+   * An item says when it was used with `usedAt` (larger is later; absent, never).
+   * A page's provider sets it: the editor's files from the project's session
+   * (`Persist.getRecentFileIds`), the commands from this palette's own record of
+   * what was run from it. Home's projects arrive newest first already
+   * (home.mjs `orderProjects`), and keep that order.
+   *
+   * A part takes items `from` a source; `only: 'used'` keeps those with a
+   * `usedAt`; `order: 'recent'` puts the latest first, ties in the page's order;
+   * `max` caps the part; `unshown` drops what an earlier part listed. `label` is
+   * the section the part is shown under; `section` only fills in a missing one.
+   * A mode not named here lists as it did.
+   */
+  const RECENT_COMMANDS = 5;
+  const BEFORE_TYPING = {
+    anywhere: [
+      { from: 'files', section: 'Files', order: 'recent' },
+      { from: 'symbols', label: 'Symbols' },
+    ],
+    commands: [
+      { from: 'commands', label: 'Recent', only: 'used', order: 'recent', max: RECENT_COMMANDS },
+      { from: 'commands', unshown: true },
+    ],
+    symbols: [
+      { from: 'symbols' },
+    ],
+  };
+
+  function byRecent(items) {
+    return items.map((item, i) => ({ item, i }))
+      .sort((a, b) => (b.item.usedAt || 0) - (a.item.usedAt || 0) || a.i - b.i)
+      .map((x) => x.item);
+  }
+
+  /** The rows for `mode` with nothing typed, or null when the table does not name it. `source(from)` gives a part's items. */
+  function listBeforeTyping(mode, source) {
+    const plan = BEFORE_TYPING[mode];
+    if (!plan) return null;
+    const shown = new Set();
+    const out = [];
+    for (const part of plan) {
+      let items = source(part.from) || [];
+      if (part.unshown) items = items.filter((it) => !shown.has(it));
+      if (part.only === 'used') items = items.filter((it) => it.usedAt > 0);
+      if (part.order === 'recent') items = byRecent(items);
+      if (part.max) items = items.slice(0, part.max);
+      for (const it of items) {
+        shown.add(it);
+        out.push({ ...it, section: part.label || it.section || part.section || '', _match: null });
+      }
+    }
+    return out;
+  }
+
+  // ── What was run from here ──────────────────────────────────────────────────
+  // A command run by its key is one you know; one found here by name is one you
+  // may come looking for again. So only the palette's own runs are kept, on this
+  // device, newest first (device-schema.mjs `paletteRecent`).
+
+  function recentCommands() {
+    const D = global.Device;
+    try { return D ? D.get('paletteRecent') || [] : []; } catch { return []; }
+  }
+
+  function rememberCommand(id) {
+    const D = global.Device;
+    if (!D || !id) return;
+    try { D.set('paletteRecent', [id].concat(recentCommands().filter((x) => x !== id))); } catch { /* the run still happens */ }
+  }
+
   // ── Overlay UI ──────────────────────────────────────────────────────────────
 
   const IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform || '');
@@ -363,8 +437,11 @@ const global = globalThis;
     const key = `${sessionId}|${Commands.version()}`;
     if (commandItemsCache && commandItemsKey === key) return commandItemsCache;
     commandItemsKey = key;
+    const recent = recentCommands();
     commandItemsCache = activeCommands().map((c) => ({
       id: c.id,
+      command: true,
+      usedAt: recent.indexOf(c.id) < 0 ? 0 : recent.length - recent.indexOf(c.id),
       title: c.title,
       section: c.section || 'Commands',
       shortcut: Commands.liveChord ? (Commands.liveChord(c.id) || '') : '',
@@ -425,6 +502,10 @@ const global = globalThis;
   }
 
   function gatherItems(parsed) {
+    if (!parsed.query) {
+      const listed = listBeforeTyping(parsed.mode, (from) => (from === 'commands' ? commandItems() : providerItems(from)));
+      if (listed) return listed;
+    }
     if (parsed.mode === 'symbols') {
       return rankItems(providerItems('symbols'), parsed.query, 80);
     }
@@ -599,6 +680,7 @@ const global = globalThis;
   function runActive() {
     const item = flatItems[activeIndex];
     if (!item) return;
+    if (item.command) rememberCommand(item.id);
     close();
     try { item.run(); } catch (err) {
       if (global.console && console.error) console.error('[palette]', err);
@@ -776,6 +858,8 @@ const global = globalThis;
       substringPositions,
       HELP_CATALOG,
       MODE_PREFIX,
+      BEFORE_TYPING,
+      listBeforeTyping,
     },
     _registry: { activeCommands },
   };

@@ -1932,6 +1932,57 @@
       return [];
     }
   }
+  var RECENT_COMMANDS = 5;
+  var BEFORE_TYPING = {
+    anywhere: [
+      { from: "files", section: "Files", order: "recent" },
+      { from: "symbols", label: "Symbols" }
+    ],
+    commands: [
+      { from: "commands", label: "Recent", only: "used", order: "recent", max: RECENT_COMMANDS },
+      { from: "commands", unshown: true }
+    ],
+    symbols: [
+      { from: "symbols" }
+    ]
+  };
+  function byRecent(items) {
+    return items.map((item, i) => ({ item, i })).sort((a, b) => (b.item.usedAt || 0) - (a.item.usedAt || 0) || a.i - b.i).map((x) => x.item);
+  }
+  function listBeforeTyping(mode, source) {
+    const plan = BEFORE_TYPING[mode];
+    if (!plan) return null;
+    const shown = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const part of plan) {
+      let items = source(part.from) || [];
+      if (part.unshown) items = items.filter((it) => !shown.has(it));
+      if (part.only === "used") items = items.filter((it) => it.usedAt > 0);
+      if (part.order === "recent") items = byRecent(items);
+      if (part.max) items = items.slice(0, part.max);
+      for (const it of items) {
+        shown.add(it);
+        out.push({ ...it, section: part.label || it.section || part.section || "", _match: null });
+      }
+    }
+    return out;
+  }
+  function recentCommands() {
+    const D = global2.Device;
+    try {
+      return D ? D.get("paletteRecent") || [] : [];
+    } catch {
+      return [];
+    }
+  }
+  function rememberCommand(id) {
+    const D = global2.Device;
+    if (!D || !id) return;
+    try {
+      D.set("paletteRecent", [id].concat(recentCommands().filter((x) => x !== id)));
+    } catch {
+    }
+  }
   var IS_MAC = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || "");
   var ui = null;
   var isOpen = false;
@@ -2008,8 +2059,11 @@
     const key = `${sessionId}|${Commands.version()}`;
     if (commandItemsCache && commandItemsKey === key) return commandItemsCache;
     commandItemsKey = key;
+    const recent = recentCommands();
     commandItemsCache = activeCommands().map((c) => ({
       id: c.id,
+      command: true,
+      usedAt: recent.indexOf(c.id) < 0 ? 0 : recent.length - recent.indexOf(c.id),
       title: c.title,
       section: c.section || "Commands",
       shortcut: Commands.liveChord ? Commands.liveChord(c.id) || "" : "",
@@ -2066,6 +2120,10 @@
     }];
   }
   function gatherItems(parsed) {
+    if (!parsed.query) {
+      const listed = listBeforeTyping(parsed.mode, (from) => from === "commands" ? commandItems() : providerItems(from));
+      if (listed) return listed;
+    }
     if (parsed.mode === "symbols") {
       return rankItems(providerItems("symbols"), parsed.query, 80);
     }
@@ -2221,6 +2279,7 @@
   function runActive() {
     const item = flatItems[activeIndex];
     if (!item) return;
+    if (item.command) rememberCommand(item.id);
     close();
     try {
       item.run();
@@ -2357,7 +2416,9 @@
       parseLineQuery,
       substringPositions,
       HELP_CATALOG,
-      MODE_PREFIX
+      MODE_PREFIX,
+      BEFORE_TYPING,
+      listBeforeTyping
     },
     _registry: { activeCommands }
   };

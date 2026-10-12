@@ -15,6 +15,8 @@
     "backup:export": "node scripts/d1-backup.mjs export",
     "backup:restore": "node scripts/d1-backup.mjs restore",
     "backup:rehearse": "node scripts/d1-backup.mjs rehearse",
+    "backup:put-texts": "node scripts/d1-backup.mjs put-texts",
+    "backup:rehearse-recovery": "node scripts/rehearse-recovery.mjs",
     "usage": "node scripts/usage.mjs",
     "check:build": "node scripts/check-build-stale.mjs",
     "test": "npm run check:build && node tests/run-all.mjs",

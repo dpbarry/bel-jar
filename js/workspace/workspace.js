@@ -1216,6 +1216,8 @@
     // what this device has learned or been told
     { id: "dismissedHints", type: "json", default: [], normalize: stringList() },
     { id: "commandLineHistory", type: "json", default: [], normalize: stringList(50) },
+    // the commands run from the palette, newest first: its Recent section (command-palette.mjs)
+    { id: "paletteRecent", type: "json", default: [], normalize: stringList(20) },
     { id: "runModel", type: "json", default: null, normalize: runModel },
     { id: "jumpLog", default: false }
   ];

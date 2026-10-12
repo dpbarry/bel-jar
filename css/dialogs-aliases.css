@@ -648,6 +648,55 @@
   padding-inline: 0.4rem;
 }
 
+/* Clipboard: the binding is the card. A second line appears only to report what changed. */
+.jar-clipboard-dialog .jar-dialog__card.jar-prompt-dialog__card {
+  width: min(26rem, calc(100vw - 2rem));
+}
+
+.jar-clipboard-dialog .jar-dialog__title {
+  margin-bottom: var(--pad-inline);
+}
+
+.jar-clipboard-dialog .jar-prompt-dialog__message {
+  padding-right: 0;
+  color: var(--base-highest);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.jar-clipboard-dialog .jar-prompt-dialog__message .jar-kb__key {
+  font-size: 0.86em;
+  line-height: 1.15;
+  vertical-align: 0.06em;
+  white-space: nowrap;
+}
+
+.jar-clipboard-dialog .jar-prompt-dialog__note {
+  margin-top: var(--pad-inline);
+  padding-right: 0;
+  color: var(--muted-high);
+  text-wrap: pretty;
+}
+
+.jar-clipboard-dialog .jar-prompt-dialog__actions.is-row {
+  margin-top: var(--pad-inline);
+  padding-top: var(--pad-inline);
+  border-top: 1px solid var(--muted-low);
+}
+
+.jar-clipboard-dialog .jar-prompt-dialog__actions.is-row .jar-prompt-dialog__btn.is-ghost {
+  min-width: 4.25rem;
+  border-color: var(--muted-low);
+  color: var(--base-higher);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .jar-clipboard-dialog .jar-prompt-dialog__btn.is-ghost:hover {
+    border-color: var(--muted-mid);
+    color: var(--base-highest);
+  }
+}
+
 /* Name conflict panel */
 .jar-conflict-dialog__panel {
   min-width: 0;
@@ -786,7 +835,8 @@
 .jar-dropdown__panel {
   position: fixed;
   min-width: max-content;
-  padding: var(--menu-pad) 0;
+  padding: 0;
+  overflow: clip;
   background: var(--menu-bg);
   border: 1px solid var(--menu-border);
   border-radius: var(--menu-radius);

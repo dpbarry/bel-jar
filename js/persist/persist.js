@@ -831,6 +831,8 @@
     // what this device has learned or been told
     { id: "dismissedHints", type: "json", default: [], normalize: stringList() },
     { id: "commandLineHistory", type: "json", default: [], normalize: stringList(50) },
+    // the commands run from the palette, newest first: its Recent section (command-palette.mjs)
+    { id: "paletteRecent", type: "json", default: [], normalize: stringList(20) },
     { id: "runModel", type: "json", default: null, normalize: runModel },
     { id: "jumpLog", default: false }
   ];
@@ -950,6 +952,7 @@
   var DEFAULT_NAME_BEFORE = "Untitled Project";
   var FIRST_FILE_NAME = "main.bel";
   var CACHE_LIMIT = 1024;
+  var RECENT_FILES = 50;
   function cleanName(name) {
     return String(name != null ? name : "").trim() || DEFAULT_PROJECT_NAME;
   }
@@ -994,10 +997,11 @@
     };
   }
   function normalizeSession(raw) {
-    const s = { open: null, active: null, views: {}, workspace: null, panel: null, explorerFolds: [] };
+    const s = { open: null, active: null, recent: [], views: {}, workspace: null, panel: null, explorerFolds: [] };
     if (!raw || typeof raw !== "object") return s;
     if (Array.isArray(raw.open)) s.open = stringList2(raw.open);
     if (typeof raw.active === "string" && raw.active) s.active = raw.active;
+    s.recent = stringList2(raw.recent).slice(0, RECENT_FILES);
     if (raw.views && typeof raw.views === "object" && !Array.isArray(raw.views)) {
       for (const fid of Object.keys(raw.views)) {
         const v = raw.views[fid];
@@ -1425,6 +1429,7 @@
       const live = new Set(peekTree(pid).files.map((f) => f.id));
       if (next.open) next.open = next.open.filter((id) => live.has(id));
       if (next.active && !live.has(next.active)) next.active = null;
+      next.recent = next.recent.filter((id) => live.has(id));
       for (const fid of Object.keys(next.views)) {
         if (!live.has(fid)) delete next.views[fid];
       }
@@ -1853,6 +1858,18 @@
     function setActiveFileId(id) {
       work2.updateSession(function(s) {
         s.active = id || null;
+        if (id) s.recent = [id].concat(s.recent.filter(function(x) {
+          return x !== id;
+        }));
+      });
+    }
+    function getRecentFileIds() {
+      var live = {};
+      work2.peekTree().files.forEach(function(f) {
+        live[f.id] = true;
+      });
+      return work2.peekSession().recent.filter(function(id) {
+        return live[id];
       });
     }
     function getOpenFileIds() {
@@ -2351,6 +2368,7 @@
       // session
       getActiveFileId,
       setActiveFileId,
+      getRecentFileIds,
       getOpenFileIds,
       setOpenFileIds,
       openFile,
@@ -5378,6 +5396,7 @@
     // this project's session on this device: tabs, workspace, side panel, explorer folds
     getActiveFileId: files.getActiveFileId,
     setActiveFileId: files.setActiveFileId,
+    getRecentFileIds: files.getRecentFileIds,
     getOpenFileIds: files.getOpenFileIds,
     setOpenFileIds: files.setOpenFileIds,
     openFile: files.openFile,

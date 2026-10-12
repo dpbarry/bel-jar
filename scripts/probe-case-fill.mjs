@@ -234,6 +234,20 @@ try {
 
   await page.evaluate(() => { Settings.set('keymapStyle', 'emacs'); BelEditor.applyEditorPrefs?.(); });
   await sleep(900);
+  // Choosing Emacs asks, once, whether C-y may read the system clipboard
+  // (js/ui/clipboard-read-dialog.mjs), and the card takes the keys until it is answered.
+  // A person answers it before pressing anything; so does this. Anything else open here fails.
+  {
+    const open = () => page.evaluate(() => [...document.querySelectorAll('.jar-dialog')].map((n) => n.textContent.replace(/\s+/g, ' ')).join(' | '));
+    const card = await open();
+    if (card) {
+      ok(/clipboard/i.test(card), 'all Emacs opens is the clipboard card', card.slice(0, 160));
+      await page.keyboard.press('Escape');
+      let gone = true;
+      try { await page.waitForFunction(() => !document.querySelector('.jar-dialog'), { timeout: 3000 }); } catch (_) { gone = false; }
+      ok(gone, 'Escape answers it', await open());
+    }
+  }
   await acceptAndUndo('Emacs C-c a', async () => {
     await page.keyboard.down('Control'); await page.keyboard.press('KeyC'); await page.keyboard.up('Control');
     await page.keyboard.press('KeyA');

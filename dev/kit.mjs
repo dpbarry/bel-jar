@@ -57,8 +57,28 @@ function inFlow(frame, nodes) {
     const copy = node.cloneNode(true);
     copy.style.left = '';
     copy.style.top = '';
+    copy.style.right = '';
+    copy.style.bottom = '';
+    // Where it sits is the kit's: a component that centres itself on the screen
+    // (the palette) is set in its frame instead.
+    copy.style.transform = 'none';
+    copy.style.margin = '0';
     copy.classList.add('kit-inflow');
+    // A picture of the component: its ids belong to the live one.
+    for (const n of [copy, ...copy.querySelectorAll('[id]')]) n.removeAttribute('id');
     frame.appendChild(copy);
+  }
+}
+
+/**
+ * A specimen that could not be drawn says so in its frame, by name, instead of
+ * taking the page down with it (probe-kit fails on any).
+ */
+async function drawn(frame, draw) {
+  try {
+    await draw();
+  } catch (e) {
+    frame.appendChild(el('p', 'kit-missing kit-failed', 'Could not draw this here: ' + String(e && e.message || e)));
   }
 }
 
@@ -326,11 +346,99 @@ function headerOf(doc, signedIn) {
   window.Toasts.dismissAll();
 }
 
+// ── notifications ───────────────────────────────────────────────────────────
+{
+  const list = section('Notifications', 'The panel (js/ui/notifications.mjs), read out of edit.html and filled by its own view: one card of each kind, newest first.');
+  const frame = specimen(list, 'A success, an error, a warning, a note', 'kit-frame--panel');
+  await drawn(frame, async () => {
+    const editDoc = await documentOf('edit.html');
+    const panel = editDoc.getElementById('notif-panel').cloneNode(true);
+    document.body.appendChild(panel);
+    await import('../js/ui/scroll-fade.mjs');
+    await import('../js/ui/notifications.mjs');
+    window.Notifications.init();
+    window.Notifications.clear();
+    window.Notifications.emit({ kind: 'info', category: 'ops', source: 'kit', title: 'Checked main.bel', body: 'No errors, with holes left to fill.' });
+    window.Notifications.emit({ kind: 'warn', category: 'ops', source: 'kit', title: 'Orca gave up on plus_zero', body: 'Harpoon shows how far it got.' });
+    window.Notifications.emit({ kind: 'error', category: 'ops', source: 'kit', title: 'Errors in lemmas.bel', body: 'The first is in lemmas.bel, line 12.' });
+    window.Notifications.emit({ kind: 'success', category: 'ops', source: 'kit', title: 'Suite nat checks again', body: 'main.bel was the last to be fixed.' });
+    window.Notifications.toggle();
+    await settled();
+    inFlow(frame, [panel]);
+    window.Notifications.toggle();
+    window.Notifications.clear();
+    window.Notifications.dispose();
+    panel.remove();
+  });
+}
+
+// ── the strip ───────────────────────────────────────────────────────────────
+{
+  const list = section('The strip', 'StatusStrip (js/status-strip/status-strip-view.mjs), fed the states an open file gives it.');
+  const states = [
+    ['Checked, the caret in a file', { style: 'standard', hasFile: true, line: 12, col: 4, holes: 2 }, { errors: 0, warnings: 0, checking: false }],
+    ['Checking', { style: 'standard', hasFile: true, line: 30, col: 1, holes: 0 }, { errors: 0, warnings: 0, checking: true }],
+    ['Errors, in Vim', { style: 'vim', mode: 'normal', hasFile: true, line: 7, col: 18, holes: 1 }, { errors: 2, warnings: 1, checking: false }],
+  ];
+  for (const [label, editor, diagnostics] of states) {
+    const frame = specimen(list, label, 'kit-frame--flush');
+    await drawn(frame, async () => {
+      await import('../js/status-strip/status-strip-view.mjs');
+      window.StatusStrip.init();
+      window.StatusStrip.setEditorState(editor);
+      window.StatusStrip.setDiagnostics(diagnostics);
+      await settled();
+      const live = document.querySelector('body > .jar-strip');
+      if (!live) throw new Error('the strip did not mount');
+      inFlow(frame, [live]);
+    });
+  }
+  const live = document.querySelector('body > .jar-strip');
+  if (live) live.hidden = true;
+}
+
+// ── a floating window ───────────────────────────────────────────────────────
+{
+  const list = section('A floating window', 'FloatingWindow (js/ui/floating-window.mjs): Available Keys, the trees and Harpoon open in one of these.');
+  const frame = specimen(list, 'Its bar, its close button, its body', 'kit-frame--panel');
+  await drawn(frame, async () => {
+    await import('../js/ui/floating-window.mjs');
+    const body = el('div', 'kit-window-body');
+    body.appendChild(el('p', 'kit-section__about', 'What the window holds is its owner’s.'));
+    window.FloatingWindow.open({ title: 'Available Keys', content: body, width: 320, height: 160 });
+    await settled();
+    const live = [...document.querySelectorAll('.floating-window')].pop();
+    if (!live) throw new Error('no window opened');
+    inFlow(frame, [live]);
+    window.FloatingWindow.closeAll();
+  });
+}
+
+// ── the palette ─────────────────────────────────────────────────────────────
+{
+  const list = section('The palette', 'CommandPalette (js/ui/command-palette.mjs) over the one command registry, as it opens before anything is typed.');
+  const frame = specimen(list, 'Commands, nothing typed yet', 'kit-frame--panel');
+  await drawn(frame, async () => {
+    const { Commands } = await import('../js/commands/command-registry.mjs');
+    const { CATALOG } = await import('../js/commands/command-catalog.mjs');
+    // Every command can run here, doing nothing: the palette orders the whole
+    // catalogue as it does in the editor, before anything is typed.
+    for (const c of CATALOG) Commands.attach(c.id, { run: () => true });
+    await import('../js/ui/command-palette.mjs');
+    window.CommandPalette.open({ mode: 'commands' });
+    await settled();
+    const live = document.querySelector('.jar-palette');
+    if (!live) throw new Error('the palette did not open');
+    inFlow(frame, [live]);
+    window.CommandPalette.close();
+  });
+}
+
 // ── what is not here ────────────────────────────────────────────────────────
 {
   const list = section('Not on this page yet', '');
-  const frame = specimen(list, 'These draw themselves from an open project, and the kit has none: phase 02 of the plan (u1) brings them here.');
-  frame.appendChild(el('p', 'kit-missing', 'The strip, explorer rows, the side panels below their headers, floating windows, the palette, the Settings dialog, the name prompt, notifications.'));
+  const frame = specimen(list, 'These draw themselves from an open project, and the kit has none.');
+  frame.appendChild(el('p', 'kit-missing', 'Explorer rows, the side panels below their headers, the Settings dialog, the name prompt.'));
 }
 
 // ── themes ──────────────────────────────────────────────────────────────────

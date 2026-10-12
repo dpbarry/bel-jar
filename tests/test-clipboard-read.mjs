@@ -1,7 +1,7 @@
 // When a paste chord has to read the clipboard, and how the explanation
 // dialog follows the permission (js/ui/clipboard-read.mjs).
 import {
-  situation, isNativePasteSpec, pasteReadsClipboard, shouldOpen, initialView, reduce,
+  situation, isNativePasteSpec, pasteReadsClipboard, shouldOpen, shouldOpenMenu, noticeId, initialView, reduce,
   isDismissed, rememberDismissal, copyFor, COPY,
 } from '../js/ui/clipboard-read.mjs';
 import { settingRow, isSyncedSetting, normalizeSetting } from '../js/persist/settings-schema.mjs';
@@ -80,20 +80,27 @@ const passed = reduce({ phase: 'granted', noted: false }, { type: 'ignore' });
 expect(passed.phase === 'closed' && passed.remember === false, 'closing after Allowed is not Ignore');
 expect(reduce(initialView('denied'), { type: 'allow' }).phase === 'denied', 'Allow does nothing once Chrome will not ask');
 
+const said = (card) => card.before + card.chord + card.after;
 const offer = copyFor(initialView('prompt'), emacs);
-expect(offer.message === COPY.emacsOffer.message && offer.note === COPY.emacsOffer.note && offer.lead === '', 'Emacs states C-y');
+expect(said(offer) === COPY.offer.message.replace('{chord}', 'C-y') && offer.note === '' && offer.chord === 'C-y', 'Emacs states C-y, and does not explain the buttons');
 expect(offer.buttons.map((b) => b.label).join() === 'Ignore,Allow' && offer.buttons[1].variant === 'primary', 'Allow is the primary, after Ignore');
 const noted = copyFor({ phase: 'offer', noted: true }, emacs);
-expect(noted.note === COPY.closed.note && noted.message === COPY.emacsOffer.message, 'a closed prompt keeps the problem and says nothing changed');
+expect(noted.note === COPY.closed.note && said(noted) === said(offer), 'a closed prompt keeps the problem and says nothing changed');
 const asking = copyFor({ phase: 'asking', noted: false }, rebound);
-expect(asking.message === COPY.asking.message && asking.buttons[1].disabled && asking.lead === 'Mod+Shift+V', 'while Chrome asks, Allow is disabled and the chord stays');
+expect(asking.note === COPY.asking.note && asking.buttons[1].disabled && asking.chord === 'Mod+Shift+V' && said(asking).includes('Mod+Shift+V'), 'while Chrome asks, Allow is disabled and the chord stays');
 const denied = copyFor(initialView('denied'), emacs);
-expect(denied.message === COPY.denied.message && denied.note === COPY.denied.note && denied.buttons.length === 1 && denied.buttons[0].label === 'Close', 'blocked explains the lock, and Close is Ignore');
+expect(denied.note === COPY.denied.note && said(denied) === said(offer) && denied.buttons.length === 1 && denied.buttons[0].label === 'Close', 'blocked reports that, and Close is Ignore');
 const granted = copyFor({ phase: 'granted', noted: false }, emacs);
-expect(granted.message === COPY.emacsGranted.message && granted.buttons.length === 0, 'Allowed names C-y and closes itself');
+expect(granted.note === COPY.granted.note.replace('{chord}', 'C-y') && granted.buttons.length === 0, 'Allowed names C-y and closes itself');
 const grantedKey = copyFor({ phase: 'granted', noted: false }, rebound);
-expect(grantedKey.message === COPY.rebindGranted.message && grantedKey.lead === 'Mod+Shift+V', 'Allowed names the rebound key');
+expect(grantedKey.note === COPY.granted.note.replace('{chord}', 'Mod+Shift+V') && grantedKey.chord === 'Mod+Shift+V', 'Allowed names the rebound key');
 const rebindOffer = copyFor(initialView('prompt'), rebound);
-expect(rebindOffer.lead === 'Mod+Shift+V' && rebindOffer.message === COPY.rebindOffer.message, 'a rebind shows its chord and why');
+expect(rebindOffer.chord === 'Mod+Shift+V' && rebindOffer.note === '' && said(rebindOffer) === COPY.offer.message.replace('{chord}', 'Mod+Shift+V'), 'a rebind shows its chord and why');
+
+const menu = copyFor(initialView('menu'), emacs);
+expect(initialView('menu').phase === 'menu' && said(menu) === COPY.menu.message.replace('{chord}', 'C-y') && menu.note === '' && menu.buttons.map((b) => b.label).join() === 'Close,Keybindings' && menu.buttons[1].action === 'bindings', 'a browser with no grant names the chord, and Keybindings is the choice');
+expect(noticeId(emacs, 'menu') === 'emacs-system:menu' && noticeId(emacs, 'grant') === 'emacs-system', 'the click notice is dismissed on its own');
+expect(shouldOpenMenu(emacs, []) && !shouldOpenMenu(emacs, ['emacs-system:menu']) && shouldOpen('prompt', emacs, ['emacs-system:menu']), 'closing the click notice leaves the permission card free');
+expect(reduce(initialView('menu'), { type: 'ignore' }).remember === true && reduce(initialView('menu'), { type: 'allow' }).phase === 'menu', 'Close remembers the click notice, and Allow is not offered');
 
 console.log(`OK clipboard read (${n} checks: Emacs and a rebound Paste, and the card follows the grant)`);

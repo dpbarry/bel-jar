@@ -873,6 +873,44 @@
       renderTree();
       focusFolderToggle(id);
     }
+    function renderPreviewFile(child, depth, suiteByFile) {
+      var childExt = String(child.ext || "bel").toLowerCase();
+      var suiteMeta = suiteByFile[child.label];
+      var fileRow = document.createElement("div");
+      fileRow.className = "library-preview-tree-file" + (childExt === "cfg" ? " library-preview-tree-file--cfg" : "") + (childExt === "elf" ? " library-preview-tree-file--elf" : "") + suiteClassesForMeta(suiteMeta) + (suiteMeta && suiteMeta.suiteIndex > 0 && suiteMeta.role === "head" ? " library-preview-tree-file--suite-block-sep" : "");
+      if (child.id === selectedId) fileRow.classList.add("is-selected");
+      fileRow.setAttribute("role", "treeitem");
+      fileRow.setAttribute("aria-label", child.label);
+      fileRow.style.setProperty("--library-depth", String(depth));
+      fileRow.dataset.fileId = child.id;
+      fileRow.tabIndex = 0;
+      var fileLabel = document.createElement("span");
+      fileLabel.className = "library-preview-tree-label";
+      fileLabel.textContent = child.label;
+      fileRow.appendChild(fileLabel);
+      if (onCopyFile || onInsertFile) {
+        var fileActions = document.createElement("div");
+        fileActions.className = "library-actions";
+        if (onCopyFile) {
+          fileActions.appendChild(actionBtn(applyTip, "", "Copy to clipboard", ICON_COPY, function() {
+            onCopyFile(child);
+          }));
+        }
+        if (onInsertFile) {
+          fileActions.appendChild(actionBtn(applyTip, "", "Insert", ICON_INSERT, function(btn) {
+            onInsertFile(btn, child);
+          }));
+        }
+        fileRow.appendChild(fileActions);
+      }
+      if (child.description) applyTip(fileRow, child.description);
+      fileRow.addEventListener("click", function(e) {
+        if (e.target.closest(".library-actions")) return;
+        selectFile(child);
+      });
+      treePane.appendChild(fileRow);
+      treeRows.push(fileRow);
+    }
     function renderTreeFolder(folder, depth, pathLabel) {
       if (!folder || folder.type !== "folder") return;
       var hasNamedRoot = !!scopeFolder.name;
@@ -925,45 +963,7 @@
         renderTreeFolder(sub, depth, pathLabel ? pathLabel + "/" + sub.name : sub.name);
       }
       for (var i = 0; i < laid.files.length; i++) {
-        var child = laid.files[i];
-        var childExt = String(child.ext || "bel").toLowerCase();
-        var suiteMeta = laid.suiteByFile[child.label];
-        var fileRow = document.createElement("div");
-        fileRow.className = "library-preview-tree-file" + (childExt === "cfg" ? " library-preview-tree-file--cfg" : "") + (childExt === "elf" ? " library-preview-tree-file--elf" : "") + suiteClassesForMeta(suiteMeta) + (suiteMeta && suiteMeta.suiteIndex > 0 && suiteMeta.role === "head" ? " library-preview-tree-file--suite-block-sep" : "");
-        if (child.id === selectedId) fileRow.classList.add("is-selected");
-        fileRow.setAttribute("role", "treeitem");
-        fileRow.setAttribute("aria-label", child.label);
-        fileRow.style.setProperty("--library-depth", String(depth));
-        fileRow.dataset.fileId = child.id;
-        fileRow.tabIndex = 0;
-        var fileLabel = document.createElement("span");
-        fileLabel.className = "library-preview-tree-label";
-        fileLabel.textContent = child.label;
-        fileRow.appendChild(fileLabel);
-        if (onCopyFile || onInsertFile) {
-          var fileActions = document.createElement("div");
-          fileActions.className = "library-actions";
-          if (onCopyFile) {
-            fileActions.appendChild(actionBtn(applyTip, "", "Copy to clipboard", ICON_COPY, function() {
-              onCopyFile(child);
-            }));
-          }
-          if (onInsertFile) {
-            fileActions.appendChild(actionBtn(applyTip, "", "Insert", ICON_INSERT, function(btn) {
-              onInsertFile(btn, child);
-            }));
-          }
-          fileRow.appendChild(fileActions);
-        }
-        if (child.description) applyTip(fileRow, child.description);
-        fileRow.addEventListener("click", /* @__PURE__ */ (function(it) {
-          return function(e) {
-            if (e.target.closest(".library-actions")) return;
-            selectFile(it);
-          };
-        })(child));
-        treePane.appendChild(fileRow);
-        treeRows.push(fileRow);
+        renderPreviewFile(laid.files[i], depth, laid.suiteByFile);
       }
     }
     function ensureCfgTextsLoaded() {

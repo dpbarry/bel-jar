@@ -14,7 +14,7 @@
  "css/command-palette.css": {
   "colour": 6,
   "radius": 1,
-  "spacing": 10,
+  "spacing": 9,
   "uppercase": 2
  },
  "css/components/autocomplete.css": {
@@ -32,7 +32,7 @@
  "css/components/menu.css": {
   "colour": 0,
   "radius": 0,
-  "spacing": 13,
+  "spacing": 12,
   "uppercase": 2
  },
  "css/components/tooltip.css": {

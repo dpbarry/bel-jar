@@ -288,4 +288,22 @@ const keysOf = (storage) => [...storage.map.keys()].sort();
   expect(P.listFiles().length === 1 && P.listFiles()[0].name === 'main.bel', 'mutating a returned list changes nothing');
 }
 
-console.log(`OK projects (${n} checks: opaque ids, clean slate, no collision, isolation, pinned page, cross-tab caches, import, delete, restore, folders)`);
+// ── the files this device opened, newest first: the palette's order (2026-10-12) ──
+{
+  const storage = makeBrowserStorage();
+  const { P } = openTab(storage);
+  const main = P.listFiles()[0].id;
+  const [a, b, c] = [P.createFile('a.bel'), P.createFile('b.bel'), P.createFile('c.bel')];
+  for (const id of [a, b, c, a]) P.setActiveFileId(id);
+  expect(P.getRecentFileIds().join() === [a, c, b].join(), 'each file shown moves to the front, once');
+  P.deleteFile(c);
+  expect(P.getRecentFileIds().join() === [a, b].join(), 'a deleted file leaves the list');
+  const many = Array.from({ length: 60 }, (_, i) => P.createFile('m' + i + '.bel'));
+  for (const id of many) P.setActiveFileId(id);
+  const recent = P.getRecentFileIds();
+  expect(recent.length === 50 && recent[0] === many[59] && !recent.includes(main), `fifty kept, the newest first (${recent.length})`);
+  const again = openTab(storage).P;
+  expect(again.getRecentFileIds().join() === recent.join(), "and it outlives the page: it is in the project's session on this device");
+}
+
+console.log(`OK projects (${n} checks: opaque ids, clean slate, no collision, isolation, pinned page, cross-tab caches, import, delete, restore, folders, files opened newest first)`);

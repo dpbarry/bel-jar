@@ -70,8 +70,14 @@ const AVATAR_HEADERS = {
   'cross-origin-resource-policy': 'cross-origin',
 };
 
-export async function startFakeGitHub() {
-  let signedIn = 'dean';
+/**
+ * @param {{ people?: Record<string, object>, signedIn?: string }} [o]
+ *   people: more people GitHub knows (a backup's own account, to sign in as it);
+ *   signedIn: who is signed in at GitHub to begin with ('dean')
+ */
+export async function startFakeGitHub(o = {}) {
+  const people = Object.assign({}, PEOPLE, o.people || {});
+  let signedIn = o.signedIn || 'dean';
   const codes = new Map();
   const tokens = new Map();
   const seen = { exchanges: [], profiles: 0 };
@@ -123,7 +129,7 @@ export async function startFakeGitHub() {
         res.end(JSON.stringify({ message: 'Bad credentials' }));
         return;
       }
-      const { avatar, ...person } = PEOPLE[who];
+      const { avatar, ...person } = people[who];
       res.end(JSON.stringify(Object.assign(person, { avatar_url: avatar ? url + '/avatars/' + who + '-' + avatar + '.png' : null })));
     } else if (u.pathname.startsWith('/avatars/') && u.pathname.endsWith('-ok.png')) {
       res.writeHead(200, AVATAR_HEADERS);

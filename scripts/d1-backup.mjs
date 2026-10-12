@@ -6,6 +6,10 @@
 //   npm run backup:rehearse [file]     restored, then every migration it has not had
 //                                      applied to it, and no table may lose a row: a
 //                                      migration tried on the live data before it runs there
+//   npm run backup:put-texts -- --remote   recovery: the backup's texts back into the live
+//                                      bucket (nothing deleted; safe to run twice)
+//   npm run backup:rehearse-recovery   the whole recovery, rehearsed on a local Worker:
+//                                      scripts/rehearse-recovery.mjs
 //
 // D1 keeps its own history: Time Travel restores the database to any minute of
 // the last 7 days (30 on the paid plan), `npx wrangler d1 time-travel info
@@ -80,13 +84,30 @@ export function toPrune(files, keep = KEEP) {
  */
 export function textsInExport(sql) {
   const out = new Set();
-  for (const m of sql.matchAll(/^INSERT INTO "?texts"?\s*(?:\(([^)]*)\)\s*)?VALUES\((.*)\);?\s*$/gm)) {
-    const cols = m[1] ? m[1].split(',').map((c) => c.trim().replace(/^"|"$/g, '')) : ['account', 'hash', 'size', 'created_at'];
-    const vals = [...m[2].matchAll(/'((?:[^']|'')*)'|([^,]+)/g)].map((v) => (v[1] !== undefined ? v[1] : v[2].trim()));
-    const account = vals[cols.indexOf('account')];
-    const hash = vals[cols.indexOf('hash')];
+  for (const { account, hash } of rowsOf(sql, 'texts', ['account', 'hash', 'size', 'created_at'])) {
     // An account is an opaque id and a hash is hex: anything else is not a path to make.
-    if (/^[A-Za-z0-9_-]+$/.test(account || '') && isHash(hash)) out.add(account + '/' + hash);
+    if (/^[A-Za-z0-9_-]+$/.test(typeof account === 'string' ? account : '') && isHash(hash)) out.add(account + '/' + hash);
+  }
+  return out;
+}
+
+/**
+ * An export's rows of `table`, each an object by column name: a quoted value
+ * with its doubled quotes undone, NULL as null, a number as a number. A row
+ * without its columns named is read in `columns`' order.
+ */
+export function rowsOf(sql, table, columns = []) {
+  const out = [];
+  const re = new RegExp('^INSERT INTO "?' + table + '"?\\s*(?:\\(([^)]*)\\)\\s*)?VALUES\\((.*)\\);?\\s*$', 'gm');
+  for (const m of sql.matchAll(re)) {
+    const cols = m[1] ? m[1].split(',').map((c) => c.trim().replace(/^"|"$/g, '')) : columns;
+    const vals = [...m[2].matchAll(/'((?:[^']|'')*)'|([^,]+)/g)].map((v) => {
+      if (v[1] !== undefined) return v[1].replace(/''/g, "'");
+      const t = v[2].trim();
+      if (t === 'NULL') return null;
+      return /^-?\d+(\.\d+)?$/.test(t) ? Number(t) : t;
+    });
+    out.push(Object.fromEntries(cols.map((c, i) => [c, vals[i]])));
   }
   return out;
 }
@@ -105,7 +126,7 @@ export function readTexts(sql) {
 
 /** Where a text is kept, and where it lives in R2. */
 export const textFile = (dir, id) => path.join(dir, 'texts', ...id.split('/'));
-export const textObject = (id) => { const [account, hash] = id.split('/'); return BUCKET + '/' + textPrefix(account) + hash; };
+export const textObject = (id, bucket = BUCKET) => { const [account, hash] = id.split('/'); return bucket + '/' + textPrefix(account) + hash; };
 
 /** The texts this folder holds, `${account}/${hash}`. */
 export function textsHeld(dir = DIR) {
@@ -181,6 +202,40 @@ async function backUpTexts(sql) {
   console.log(`  texts: ${wanted.size} in the export, ${missing.length - failed.length} fetched, ${wanted.size - missing.length} already here, ${gone.length} let go`);
   // ⛔ Loud: a text the database lists and R2 cannot give is a file that is already lost.
   if (failed.length) throw new Error(`${failed.length} text${failed.length === 1 ? '' : 's'} could not be fetched or did not match ${failed.length === 1 ? 'its' : 'their'} name: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? ', …' : ''}`);
+}
+
+/**
+ * Recovery: every text an export lists, from this folder back into R2, as the
+ * Worker stores them (`where`: wrangler's `--remote`, or `--local` and the
+ * state to put them in). Nothing is deleted, and a text already there is put
+ * again as the same bytes under the same name, so it is safe to run twice. A
+ * text the folder lacks, or holds damaged, stops it before anything is written.
+ */
+export async function putTexts(sql, where, o = {}) {
+  const dir = o.dir || DIR;
+  const wanted = [...readTexts(sql)];
+  const bad = wanted.filter((id) => !textIntact(textFile(dir, id), id.split('/')[1]));
+  if (bad.length) throw new Error(`${bad.length} text${bad.length === 1 ? '' : 's'} the export lists ${bad.length === 1 ? 'is' : 'are'} missing or damaged here: nothing was put (${bad.slice(0, 5).join(', ')})`);
+  const failed = [];
+  let next = 0;
+  const put = (id) => new Promise((resolve) => {
+    const child = spawn(process.execPath, [WRANGLER, 'r2', 'object', 'put', textObject(id, o.bucket), '--file', textFile(dir, id),
+      '--content-type', 'text/plain; charset=utf-8', ...where], { cwd: o.cwd || ROOT, env: ENV, stdio: 'ignore' });
+    child.on('error', () => resolve(false));
+    child.on('close', (code) => resolve(code === 0));
+  });
+  const worker = async () => {
+    while (next < wanted.length) {
+      const id = wanted[next++];
+      if (!(await put(id)) && !(await put(id))) failed.push(id);
+    }
+  };
+  // A local R2 is one file wrangler locks: puts into it go one at a time (six at
+  // once lost four of twenty, 2026-10-10). The live bucket takes them side by side.
+  const at = where.includes('--local') ? 1 : FETCHING;
+  await Promise.all(Array.from({ length: Math.min(at, wanted.length) }, worker));
+  if (failed.length) throw new Error(`${failed.length} of ${wanted.length} texts could not be put: ${failed.slice(0, 5).join(', ')}`);
+  return wanted.length;
 }
 
 /** Every text an export lists is in the folder, and is what its name says. */
@@ -281,7 +336,16 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (what === 'export') await exportNow();
     else if (what === 'restore') restore(file);
     else if (what === 'rehearse') rehearse(file);
-    else throw new Error('usage: node scripts/d1-backup.mjs export | restore [file] | rehearse [file]');
+    else if (what === 'put-texts') {
+      // ⛔ The one command that writes to the live bucket: only when the person says so.
+      if (!process.argv.includes('--remote')) {
+        throw new Error('put-texts puts the backup’s texts into the live bucket: say --remote to mean it (npm run backup:put-texts -- --remote)');
+      }
+      const target = process.argv.slice(3).find((a) => a !== '--remote') || backups()[0];
+      if (!target) throw new Error('no backup to put texts from: run npm run backup:export first');
+      const n = await putTexts(fs.readFileSync(target, 'utf8'), ['--remote']);
+      console.log(`put ${n} texts from ${path.basename(target)} into ${BUCKET}`);
+    } else throw new Error('usage: node scripts/d1-backup.mjs export | restore [file] | rehearse [file] | put-texts --remote [file]');
   } catch (err) {
     console.error(String(err && err.message || err));
     process.exit(1);

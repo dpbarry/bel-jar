@@ -5848,9 +5848,11 @@ ${doc.documentElement.outerHTML}`;
       onEditor("fold.unfold-all", (e) => e.unfoldAll());
       CommandPalette.setProvider("files", () => {
         const currentId = getPersist() ? getPersist().getCurrentFileId() : null;
+        const recent = Persist.getRecentFileIds ? Persist.getRecentFileIds() : [];
         return Persist.listFiles().filter((f) => f.id !== currentId).map((f) => ({
           title: f.name.slice(f.name.lastIndexOf("/") + 1),
           detail: ProjectSource.dirOf(f.name) || "",
+          usedAt: recent.indexOf(f.id) < 0 ? 0 : recent.length - recent.indexOf(f.id),
           run: () => switchToFile(f.id)
         }));
       });

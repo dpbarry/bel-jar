@@ -7,36 +7,31 @@
 export const WATCHED_SETTINGS = ['keymapStyle', 'emacsYankSource', 'keybindings', 'clipboardReadDismissed'];
 
 export const COPY = {
-  emacsOffer: {
-    message: 'C-y pastes from the system clipboard, and Chrome will not allow that until this site may read it.',
-    note: 'Allow opens Chrome\'s prompt. Ignore leaves C-y as it is.',
-  },
-  rebindOffer: {
-    message: 'That is not Chrome\'s paste key, so Chrome will not allow it until this site may read it.',
-    note: 'Allow opens Chrome\'s prompt. Ignore leaves the key as it is.',
+  offer: {
+    message: 'Copy is currently bound to {chord}, which the browser will not recognize as valid unless you allow clipboard permissions.',
   },
   asking: {
-    message: 'Chrome is asking, at the top of the window.',
-    note: 'Allow reads the clipboard. Block refuses it. Closing the prompt changes nothing.',
+    note: 'The browser is asking at the top of the window.',
   },
-  emacsGranted: {
-    message: 'Allowed. C-y can paste from the clipboard.',
-  },
-  rebindGranted: {
-    message: 'Allowed. This key can paste from the clipboard.',
+  granted: {
+    note: 'Allowed; {chord} can paste from the clipboard.',
   },
   denied: {
-    message: 'Blocked. Chrome will not ask again.',
-    note: 'To allow it later, choose the lock icon in the address bar and turn clipboard on.',
+    note: 'Blocked; the browser won\'t ask again automatically.',
   },
   closed: {
-    note: 'The prompt was closed. Nothing changed.',
+    note: 'The prompt was closed.',
+  },
+  // Firefox and Safari have no clipboard grant. A nonstandard paste asks for a click every time.
+  menu: {
+    message: 'Your browser will only accept pastes from a nonstandard keybinding (currently {chord}) after a confirmation each time.',
   },
 };
 
 const ALLOW = { action: 'allow', label: 'Allow', variant: 'primary' };
 const IGNORE = { action: 'ignore', label: 'Ignore', variant: 'ghost' };
 const CLOSE = { action: 'ignore', label: 'Close', variant: 'ghost' };
+const BINDINGS = { action: 'bindings', label: 'Keybindings', variant: 'primary' };
 
 export function isNativePasteSpec(spec) {
   return spec === 'Mod+V' || spec === 'Shift+Insert';
@@ -86,13 +81,24 @@ export function rememberDismissal(list, id) {
   return cur.concat(id);
 }
 
+/** A browser with no clipboard grant gets its own dismissal, so the permission card can still show elsewhere. */
+export function noticeId(sit, kind) {
+  if (!sit || !sit.id) return '';
+  return kind === 'menu' ? sit.id + ':menu' : sit.id;
+}
+
 export function shouldOpen(permission, sit, dismissed) {
   if (!sit) return false;
   if (permission !== 'prompt' && permission !== 'denied') return false;
-  return !isDismissed(dismissed, sit.id);
+  return !isDismissed(dismissed, noticeId(sit, 'grant'));
+}
+
+export function shouldOpenMenu(sit, dismissed) {
+  return !!sit && !isDismissed(dismissed, noticeId(sit, 'menu'));
 }
 
 export function initialView(permission) {
+  if (permission === 'menu') return { phase: 'menu', noted: false };
   if (permission === 'denied') return { phase: 'denied', noted: false };
   if (permission === 'granted') return { phase: 'granted', noted: false };
   return { phase: 'offer', noted: false };
@@ -138,45 +144,59 @@ export function reduce(state, event) {
 function buttons(allow, ignore) {
   const out = [];
   if (ignore) out.push({ action: ignore.action, label: ignore.label, variant: ignore.variant, disabled: false });
-  if (allow) out.push({ action: ALLOW.action, label: ALLOW.label, variant: ALLOW.variant, disabled: !!allow.disabled });
+  if (allow) {
+    out.push({
+      action: allow.action || ALLOW.action,
+      label: allow.label || ALLOW.label,
+      variant: allow.variant || ALLOW.variant,
+      disabled: !!allow.disabled,
+    });
+  }
   return out;
 }
 
-/** What the card says for this view. `lead` is the rebind's chord, set in mono. */
+function withChord(template, chord) {
+  const mark = '{chord}';
+  const at = template.indexOf(mark);
+  if (at < 0) return { before: template, chord: '', after: '' };
+  return { before: template.slice(0, at), chord, after: template.slice(at + mark.length) };
+}
+
+/** What the card says. The binding sentence stays; a note appears only to report what just happened. */
 export function copyFor(state, sit) {
-  const kind = sit && sit.kind === 'rebind' ? 'rebind' : 'emacs';
   const chord = sit && sit.chord ? sit.chord : 'C-y';
-  const lead = kind === 'rebind' ? chord : '';
   const phase = state && state.phase;
-  if (phase === 'asking') {
+  if (phase === 'menu') {
+    const sentence = withChord(COPY.menu.message, chord);
     return {
-      lead,
-      message: COPY.asking.message,
-      note: COPY.asking.note,
-      buttons: buttons({ disabled: true }, IGNORE),
-    };
-  }
-  if (phase === 'granted') {
-    return {
-      lead,
-      message: kind === 'emacs' ? COPY.emacsGranted.message : COPY.rebindGranted.message,
+      before: sentence.before,
+      chord: sentence.chord,
+      after: sentence.after,
       note: '',
-      buttons: [],
+      buttons: buttons(BINDINGS, CLOSE),
     };
   }
-  if (phase === 'denied') {
-    return {
-      lead,
-      message: COPY.denied.message,
-      note: COPY.denied.note,
-      buttons: buttons(null, CLOSE),
-    };
+  const sentence = withChord(COPY.offer.message, chord);
+  let note = '';
+  let row = buttons(ALLOW, IGNORE);
+  if (phase === 'asking') {
+    note = COPY.asking.note;
+    row = buttons({ disabled: true }, IGNORE);
+  } else if (phase === 'granted') {
+    const said = withChord(COPY.granted.note, chord);
+    note = said.before + said.chord + said.after;
+    row = [];
+  } else if (phase === 'denied') {
+    note = COPY.denied.note;
+    row = buttons(null, CLOSE);
+  } else if (state && state.noted) {
+    note = COPY.closed.note;
   }
-  const offer = kind === 'emacs' ? COPY.emacsOffer : COPY.rebindOffer;
   return {
-    lead,
-    message: offer.message,
-    note: state && state.noted ? COPY.closed.note : offer.note,
-    buttons: buttons(ALLOW, IGNORE),
+    before: sentence.before,
+    chord: sentence.chord,
+    after: sentence.after,
+    note,
+    buttons: row,
   };
 }

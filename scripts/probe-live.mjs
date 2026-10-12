@@ -195,8 +195,15 @@ try {
   const back = await hit('/api/auth/github/callback?code=probe-not-a-code&state=' + encodeURIComponent(probeState || ''),
     { headers: { cookie: stateCookie ? stateCookie.split(';')[0] : '' } });
   const landed = back.headers.get('location') || '';
-  check(landed === '/?signin=failed&why=exchange&detail=bad_verification_code',
-    `GitHub accepts the server's secret: a made-up code is refused as a bad code, not bad credentials (${landed})`);
+  // GitHub throttles made-up codes from the Worker (429 on 2026-10-10 and 11, while a
+  // real sign-in on the 12th went through): then this check can say nothing about the
+  // secret, and it says so instead of passing or failing. A real sign-in is the test.
+  if (landed === '/?signin=failed&why=exchange&detail=status-429') {
+    console.log('  SKIP GitHub throttled the made-up code (429), so the secret is unverified here: sign in once for real to know');
+  } else {
+    check(landed === '/?signin=failed&why=exchange&detail=bad_verification_code',
+      `GitHub accepts the server's secret: a made-up code is refused as a bad code, not bad credentials (${landed})`);
+  }
   const heads = await hit('/api/sync/heads', { method: 'POST', headers: { 'content-type': 'application/json', origin: site }, body: '{"args":[]}' });
   check(heads.status === 401, `the sync API refuses a request without a session (${heads.status})`);
   const forged = await hit('/api/sync/heads', { method: 'POST', headers: { 'content-type': 'application/json', origin: site, 'x-beljar-account': 'u_anyone' }, body: '{"args":[]}' });

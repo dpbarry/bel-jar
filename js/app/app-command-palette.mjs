@@ -378,13 +378,17 @@ import { attachSharedCommands } from '../commands/shared-commands.mjs';
       // decoration; the folder is the thing that tells two same-named files apart.
       // Folder search still works because the palette scores the detail as well as
       // the title, so moving the path off the title costs nothing.
+      // `usedAt` is how recently this device opened the file (newest highest, never 0):
+      // before anything is typed, the palette lists the latest first.
       CommandPalette.setProvider('files', () => {
         const currentId = getPersist() ? getPersist().getCurrentFileId() : null;
+        const recent = Persist.getRecentFileIds ? Persist.getRecentFileIds() : [];
         return Persist.listFiles()
           .filter((f) => f.id !== currentId)
           .map((f) => ({
             title: f.name.slice(f.name.lastIndexOf('/') + 1),
             detail: ProjectSource.dirOf(f.name) || '',
+            usedAt: recent.indexOf(f.id) < 0 ? 0 : recent.length - recent.indexOf(f.id),
             run: () => switchToFile(f.id),
           }));
       });

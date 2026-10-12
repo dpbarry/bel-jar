@@ -728,8 +728,19 @@ the notifications (`signInFailure`; `tests/test-account.mjs` reads every step ou
   every listed text there and intact. First run 2026-10-06: 13 texts, then 0 to fetch the week
   after. Each fetch is a wrangler of its own (about 3 s, six at once): a class adding a few
   thousand texts a week is most of an hour; R2's S3 API with a read-only token is the way past
-  that. Putting texts back in a disaster is `wrangler r2 object put beljar-texts/t/<account>/<hash>
-  --remote --file …` for each, not scripted yet.
+  that.
+  ⛔ **Recovery, rehearsed** (2026-10-10). In a disaster: the database first, by D1 Time Travel
+  within its 30 days (`npx wrangler d1 time-travel restore beljar-sync --timestamp …`), or by
+  loading the newest export into an empty database (`npx wrangler d1 execute beljar-sync --remote
+  --file <export>`); then the texts, `npm run backup:put-texts -- --remote` (every text the export
+  lists, checked against its name first; nothing deleted, safe to run twice; the only command that
+  writes the live bucket, and only with `--remote`). `npm run backup:rehearse-recovery` runs the
+  same two steps against a fresh local Worker, then signs each account in through a stand-in GitHub
+  that knows it by the backup's identity, in a browser that has never seen it, and checks every
+  project came down, every file is the text its newest version names, and every version reads back
+  whole. First run 2026-10-10: 1 account, 7 projects, 24 versions, 20 texts, all back. It found two
+  things a script read alone would not have: the local config's bucket is `beljar-texts-dev`, not
+  the live name, and a local R2 takes one put at a time.
   `tests/test-d1-backup.mjs` holds the count, the four kept, the texts with them, and that the
   live database and texts are only ever read.
 - **What sync costs, measured** (plan v6 c7, `tests/test-sync-budget.mjs`, which prints these and

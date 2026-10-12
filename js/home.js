@@ -942,6 +942,8 @@
     // what this device has learned or been told
     { id: "dismissedHints", type: "json", default: [], normalize: stringList() },
     { id: "commandLineHistory", type: "json", default: [], normalize: stringList(50) },
+    // the commands run from the palette, newest first: its Recent section (command-palette.mjs)
+    { id: "paletteRecent", type: "json", default: [], normalize: stringList(20) },
     { id: "runModel", type: "json", default: null, normalize: runModel },
     { id: "jumpLog", default: false }
   ];
@@ -1061,6 +1063,7 @@
   var DEFAULT_NAME_BEFORE = "Untitled Project";
   var FIRST_FILE_NAME = "main.bel";
   var CACHE_LIMIT = 1024;
+  var RECENT_FILES = 50;
   function cleanName(name) {
     return String(name != null ? name : "").trim() || DEFAULT_PROJECT_NAME;
   }
@@ -1105,10 +1108,11 @@
     };
   }
   function normalizeSession(raw) {
-    const s = { open: null, active: null, views: {}, workspace: null, panel: null, explorerFolds: [] };
+    const s = { open: null, active: null, recent: [], views: {}, workspace: null, panel: null, explorerFolds: [] };
     if (!raw || typeof raw !== "object") return s;
     if (Array.isArray(raw.open)) s.open = stringList2(raw.open);
     if (typeof raw.active === "string" && raw.active) s.active = raw.active;
+    s.recent = stringList2(raw.recent).slice(0, RECENT_FILES);
     if (raw.views && typeof raw.views === "object" && !Array.isArray(raw.views)) {
       for (const fid of Object.keys(raw.views)) {
         const v = raw.views[fid];
@@ -1536,6 +1540,7 @@
       const live2 = new Set(peekTree(pid).files.map((f) => f.id));
       if (next.open) next.open = next.open.filter((id) => live2.has(id));
       if (next.active && !live2.has(next.active)) next.active = null;
+      next.recent = next.recent.filter((id) => live2.has(id));
       for (const fid of Object.keys(next.views)) {
         if (!live2.has(fid)) delete next.views[fid];
       }
@@ -1964,6 +1969,18 @@
     function setActiveFileId(id) {
       work2.updateSession(function(s) {
         s.active = id || null;
+        if (id) s.recent = [id].concat(s.recent.filter(function(x) {
+          return x !== id;
+        }));
+      });
+    }
+    function getRecentFileIds() {
+      var live2 = {};
+      work2.peekTree().files.forEach(function(f) {
+        live2[f.id] = true;
+      });
+      return work2.peekSession().recent.filter(function(id) {
+        return live2[id];
       });
     }
     function getOpenFileIds() {
@@ -2462,6 +2479,7 @@
       // session
       getActiveFileId,
       setActiveFileId,
+      getRecentFileIds,
       getOpenFileIds,
       setOpenFileIds,
       openFile,
@@ -5382,6 +5400,7 @@
     // this project's session on this device: tabs, workspace, side panel, explorer folds
     getActiveFileId: files.getActiveFileId,
     setActiveFileId: files.setActiveFileId,
+    getRecentFileIds: files.getRecentFileIds,
     getOpenFileIds: files.getOpenFileIds,
     setOpenFileIds: files.setOpenFileIds,
     openFile: files.openFile,
@@ -14345,6 +14364,57 @@
       return [];
     }
   }
+  var RECENT_COMMANDS = 5;
+  var BEFORE_TYPING = {
+    anywhere: [
+      { from: "files", section: "Files", order: "recent" },
+      { from: "symbols", label: "Symbols" }
+    ],
+    commands: [
+      { from: "commands", label: "Recent", only: "used", order: "recent", max: RECENT_COMMANDS },
+      { from: "commands", unshown: true }
+    ],
+    symbols: [
+      { from: "symbols" }
+    ]
+  };
+  function byRecent(items) {
+    return items.map((item, i) => ({ item, i })).sort((a, b) => (b.item.usedAt || 0) - (a.item.usedAt || 0) || a.i - b.i).map((x) => x.item);
+  }
+  function listBeforeTyping(mode, source) {
+    const plan = BEFORE_TYPING[mode];
+    if (!plan) return null;
+    const shown = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const part of plan) {
+      let items = source(part.from) || [];
+      if (part.unshown) items = items.filter((it) => !shown.has(it));
+      if (part.only === "used") items = items.filter((it) => it.usedAt > 0);
+      if (part.order === "recent") items = byRecent(items);
+      if (part.max) items = items.slice(0, part.max);
+      for (const it of items) {
+        shown.add(it);
+        out.push({ ...it, section: part.label || it.section || part.section || "", _match: null });
+      }
+    }
+    return out;
+  }
+  function recentCommands() {
+    const D = global10.Device;
+    try {
+      return D ? D.get("paletteRecent") || [] : [];
+    } catch {
+      return [];
+    }
+  }
+  function rememberCommand(id) {
+    const D = global10.Device;
+    if (!D || !id) return;
+    try {
+      D.set("paletteRecent", [id].concat(recentCommands().filter((x) => x !== id)));
+    } catch {
+    }
+  }
   var IS_MAC2 = typeof navigator !== "undefined" && /Mac/.test(navigator.platform || "");
   var ui = null;
   var isOpen = false;
@@ -14421,8 +14491,11 @@
     const key = `${sessionId}|${Commands.version()}`;
     if (commandItemsCache && commandItemsKey === key) return commandItemsCache;
     commandItemsKey = key;
+    const recent = recentCommands();
     commandItemsCache = activeCommands().map((c) => ({
       id: c.id,
+      command: true,
+      usedAt: recent.indexOf(c.id) < 0 ? 0 : recent.length - recent.indexOf(c.id),
       title: c.title,
       section: c.section || "Commands",
       shortcut: Commands.liveChord ? Commands.liveChord(c.id) || "" : "",
@@ -14479,6 +14552,10 @@
     }];
   }
   function gatherItems(parsed) {
+    if (!parsed.query) {
+      const listed = listBeforeTyping(parsed.mode, (from) => from === "commands" ? commandItems() : providerItems(from));
+      if (listed) return listed;
+    }
     if (parsed.mode === "symbols") {
       return rankItems(providerItems("symbols"), parsed.query, 80);
     }
@@ -14634,6 +14711,7 @@
   function runActive() {
     const item = flatItems[activeIndex];
     if (!item) return;
+    if (item.command) rememberCommand(item.id);
     close();
     try {
       item.run();
@@ -14770,7 +14848,9 @@
       parseLineQuery,
       substringPositions,
       HELP_CATALOG,
-      MODE_PREFIX
+      MODE_PREFIX,
+      BEFORE_TYPING,
+      listBeforeTyping
     },
     _registry: { activeCommands }
   };

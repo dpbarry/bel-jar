@@ -50,6 +50,8 @@ const DEFAULT_NAME_BEFORE = 'Untitled Project';
 export const FIRST_FILE_NAME = 'main.bel';
 
 const CACHE_LIMIT = 1024;
+/** How many files the session remembers having opened, newest first (the palette's order). */
+const RECENT_FILES = 50;
 
 function cleanName(name) {
   return String(name != null ? name : '').trim() || DEFAULT_PROJECT_NAME;
@@ -105,10 +107,11 @@ function copyTree(t) {
  * "closed every tab" opens nothing.
  */
 function normalizeSession(raw) {
-  const s = { open: null, active: null, views: {}, workspace: null, panel: null, explorerFolds: [] };
+  const s = { open: null, active: null, recent: [], views: {}, workspace: null, panel: null, explorerFolds: [] };
   if (!raw || typeof raw !== 'object') return s;
   if (Array.isArray(raw.open)) s.open = stringList(raw.open);
   if (typeof raw.active === 'string' && raw.active) s.active = raw.active;
+  s.recent = stringList(raw.recent).slice(0, RECENT_FILES);
   if (raw.views && typeof raw.views === 'object' && !Array.isArray(raw.views)) {
     for (const fid of Object.keys(raw.views)) {
       const v = raw.views[fid];
@@ -735,6 +738,7 @@ export function createWork(opts) {
     const live = new Set(peekTree(pid).files.map((f) => f.id));
     if (next.open) next.open = next.open.filter((id) => live.has(id));
     if (next.active && !live.has(next.active)) next.active = null;
+    next.recent = next.recent.filter((id) => live.has(id));
     for (const fid of Object.keys(next.views)) {
       if (!live.has(fid)) delete next.views[fid];
     }

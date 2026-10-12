@@ -148,4 +148,41 @@ CP.register({ id: 'no-run', title: 'Missing run' });
 CP.register(null);
 expect(!CP._registry.activeCommands().some((c) => c.id === 'no-run'), 'command without run() is rejected');
 
-console.log('OK command palette (fuzzy scorer, mode parsing, ranking, shortcut labels, registry)');
+// ── Before anything is typed (Dean, 2026-10-12) ────────────────────────────────
+// What you used last first, then the rest in the page's order; nothing cut off.
+{
+  const { BEFORE_TYPING, listBeforeTyping } = CP._pure;
+  expect(['anywhere', 'commands', 'symbols'].every((m) => Array.isArray(BEFORE_TYPING[m])),
+    'one table names what anywhere, commands and symbols list before typing');
+  expect(listBeforeTyping('library', () => []) === null, 'a mode the table does not name lists as it did');
+
+  const files = Array.from({ length: 120 }, (_, i) => ({ title: 'f' + i, usedAt: 0 }));
+  files[7].usedAt = 2;
+  files[90].usedAt = 3;
+  files[3].usedAt = 1;
+  const symbols = Array.from({ length: 80 }, (_, i) => ({ title: 's' + i, section: 'whatever' }));
+  const any = listBeforeTyping('anywhere', (from) => ({ files, symbols })[from]);
+  expect(any.length === 200, `nothing is cut off: every file and every symbol (${any.length} of 200)`);
+  expect(any.slice(0, 4).map((r) => r.title).join() === 'f90,f7,f3,f0', `the files opened last come first, newest first (${any.slice(0, 4).map((r) => r.title)})`);
+  expect(any.slice(3, 120).every((r, i, list) => i === 0 || Number(r.title.slice(1)) > Number(list[i - 1].title.slice(1))),
+    'the files never opened keep the order the page gave');
+  expect(any.slice(0, 120).every((r) => r.section === 'Files') && any.slice(120).every((r) => r.section === 'Symbols'),
+    "files under Files, the open file's symbols after them under Symbols, in file order");
+  const home = listBeforeTyping('anywhere', (from) => (from === 'files' ? [{ title: 'Thesis', section: 'Projects' }, { title: 'Notes', section: 'Projects' }] : []));
+  expect(home.map((r) => r.section + ':' + r.title).join() === 'Projects:Thesis,Projects:Notes',
+    "home's projects keep their own heading and the order home gives them (newest first already)");
+
+  const cmds = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((id, i) => ({ id, title: id.toUpperCase(), section: i < 4 ? 'File' : 'Edit', usedAt: 0 }));
+  ['h', 'b', 'f', 'a', 'g', 'c'].forEach((id, i, list) => { cmds.find((c) => c.id === id).usedAt = list.length - i; });
+  const listed = listBeforeTyping('commands', () => cmds);
+  const recent = listed.filter((r) => r.section === 'Recent');
+  expect(recent.map((r) => r.id).join() === 'h,b,f,a,g', `Recent: the five run from here last, newest first (${recent.map((r) => r.id)})`);
+  expect(listed.slice(0, 5).every((r) => r.section === 'Recent'), 'and they come first');
+  const rest = listed.slice(5);
+  expect(rest.map((r) => r.section + ':' + r.id).join() === 'File:c,File:d,Edit:e',
+    `then every other command, once, under its own section in catalogue order (${rest.map((r) => r.id)})`);
+  const none = listBeforeTyping('commands', () => cmds.map((c) => ({ ...c, usedAt: 0 })));
+  expect(none.length === 8 && !none.some((r) => r.section === 'Recent'), 'nothing run from here yet: no Recent, the catalogue as it is');
+}
+
+console.log('OK command palette (fuzzy scorer, mode parsing, ranking, shortcut labels, registry, what it lists before typing)');

@@ -247,8 +247,21 @@ export function create(deps) {
     return files[0].id;
   }
 
+  // The file shown is also the newest in `recent`: the files this device opened,
+  // newest first, which is the order the palette lists them in before anything is typed.
   function setActiveFileId(id) {
-    work.updateSession(function (s) { s.active = id || null; });
+    work.updateSession(function (s) {
+      s.active = id || null;
+      if (id) s.recent = [id].concat(s.recent.filter(function (x) { return x !== id; }));
+    });
+  }
+
+  // Only files the project still has: a delete rewrites the session only when the
+  // file had a view to drop, so the list is checked against the tree on the way out.
+  function getRecentFileIds() {
+    var live = {};
+    work.peekTree().files.forEach(function (f) { live[f.id] = true; });
+    return work.peekSession().recent.filter(function (id) { return live[id]; });
   }
 
   function getOpenFileIds() {
@@ -823,6 +836,7 @@ export function create(deps) {
     // session
     getActiveFileId: getActiveFileId,
     setActiveFileId: setActiveFileId,
+    getRecentFileIds: getRecentFileIds,
     getOpenFileIds: getOpenFileIds,
     setOpenFileIds: setOpenFileIds,
     openFile: openFile,

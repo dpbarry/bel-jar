@@ -122,3 +122,8 @@
   color: var(--muted-high);
   font-size: 0.8125rem;
 }
+
+/* The kit's own sample, inside a window it did not make: room around its words. */
+.kit-window-body {
+  padding: 0.75rem;
+}

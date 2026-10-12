@@ -1,14 +1,14 @@
 /**
  * The clipboard card. Editor page only: a paste that will call readText, and
- * no grant yet. Allow opens Chrome's prompt from the click itself. Ignore,
+ * no grant yet. Allow opens the browser's prompt from the click itself. Ignore,
  * the close button, Escape and the backdrop are the same dismissal.
  */
 import { createDialog, openDialog, requestDialogClose } from './dialog.mjs';
-import { el, markMono, actionButton, CARD_CLASS, WRAP_CLASS } from './prompt-dialog.mjs';
+import { el, actionButton, CARD_CLASS, WRAP_CLASS } from './prompt-dialog.mjs';
 import { pageOf } from '../frame/routes.mjs';
 import { readSetting, writeSetting } from '../persist/settings-schema.mjs';
 import {
-  WATCHED_SETTINGS, situation, shouldOpen, initialView, reduce, copyFor,
+  WATCHED_SETTINGS, situation, shouldOpen, shouldOpenMenu, noticeId, initialView, reduce, copyFor,
   isDismissed, rememberDismissal,
 } from './clipboard-read.mjs';
 
@@ -18,7 +18,6 @@ let ticket = 0;
 let readGen = 0;
 let dialogEl = null;
 let shell = null;
-let subjectEl = null;
 let messageEl = null;
 let noteEl = null;
 let actionsEl = null;
@@ -27,6 +26,7 @@ let current = null;
 let status = null;
 let leaving = false;
 let rememberOnClose = true;
+let openBindings = false;
 let holdTimer = null;
 
 function settings() {
@@ -123,10 +123,11 @@ function onDialogClose() {
   clearHold();
   detachStatus();
   const grantedClose = !rememberOnClose && view && view.phase === 'granted';
-  const id = rememberOnClose && current ? current.id : null;
+  const id = rememberOnClose && current ? current.notice : null;
+  const jump = openBindings;
+  openBindings = false;
   dialogEl = null;
   shell = null;
-  subjectEl = null;
   messageEl = null;
   noteEl = null;
   actionsEl = null;
@@ -135,7 +136,12 @@ function onDialogClose() {
   leaving = false;
   rememberOnClose = true;
   if (id) storeDismissal(id);
-  else if (!grantedClose) void consider();
+  if (jump) {
+    const ui = globalThis.SettingsUI;
+    if (ui && typeof ui.open === 'function') ui.open('keybindings');
+    return;
+  }
+  if (!grantedClose) void consider();
 }
 
 function focusPrimary() {
@@ -150,14 +156,9 @@ function paint(opts) {
   if (!shell || !view || !current) return;
   const card = copyFor(view, current);
   shell.dataset.phase = view.phase;
-  if (card.lead) {
-    subjectEl.hidden = false;
-    subjectEl.replaceChildren(markMono(card.lead));
-  } else {
-    subjectEl.hidden = true;
-    subjectEl.replaceChildren();
-  }
-  messageEl.textContent = card.message;
+  const key = el('span', 'jar-kb__key');
+  key.textContent = card.chord;
+  messageEl.replaceChildren(document.createTextNode(card.before), key, document.createTextNode(card.after));
   noteEl.hidden = !card.note;
   noteEl.textContent = card.note || '';
   actionsEl.hidden = card.buttons.length === 0;
@@ -218,7 +219,10 @@ function onAction(e) {
   if (!btn || btn.disabled) return;
   e.preventDefault();
   if (btn.dataset.action === 'allow') beginRead();
-  else if (btn.dataset.action === 'ignore') apply({ type: 'ignore' });
+  else if (btn.dataset.action === 'bindings') {
+    openBindings = true;
+    apply({ type: 'ignore' });
+  } else if (btn.dataset.action === 'ignore') apply({ type: 'ignore' });
 }
 
 function mount(permission) {
@@ -230,17 +234,16 @@ function mount(permission) {
   const live = el('div');
   live.setAttribute('aria-live', 'polite');
   live.setAttribute('aria-atomic', 'true');
-  subjectEl = el('p', 'jar-prompt-dialog__subject');
   messageEl = el('p', 'jar-prompt-dialog__message');
   noteEl = el('p', 'jar-prompt-dialog__note');
-  live.append(subjectEl, messageEl, noteEl);
+  live.append(messageEl, noteEl);
   actionsEl = el('div', 'jar-prompt-dialog__actions is-row');
   shell.append(live, actionsEl);
   shell.addEventListener('click', onAction);
   dialogEl = createDialog({
-    title: 'Clipboard',
+    title: 'Nonstandard Copy',
     content: shell,
-    className: WRAP_CLASS,
+    className: WRAP_CLASS + ' jar-clipboard-dialog',
     cardClass: CARD_CLASS,
     closeButton: true,
     removeOnClose: true,
@@ -252,14 +255,25 @@ function mount(permission) {
   requestAnimationFrame(() => focusPrimary());
 }
 
+function canReadClipboard() {
+  const clip = globalThis.navigator && globalThis.navigator.clipboard;
+  return !!(clip && typeof clip.readText === 'function');
+}
+
+function tracked(next, kind) {
+  return { id: next.id, kind: next.kind, chord: next.chord, notice: noticeId(next, kind) };
+}
+
 function adopt(next) {
   readGen += 1;
-  const state = status ? status.state : 'prompt';
-  if (!shouldOpen(state, next, readDismissed())) {
+  const menu = !status;
+  const state = menu ? 'menu' : status.state;
+  const dismissed = readDismissed();
+  if (menu ? !shouldOpenMenu(next, dismissed) : !shouldOpen(state, next, dismissed)) {
     finish(false);
     return;
   }
-  current = next;
+  current = tracked(next, menu ? 'menu' : 'grant');
   const prev = view ? view.phase : '';
   view = initialView(state);
   if (prev === 'granted' && view.phase !== 'granted') clearHold();
@@ -279,7 +293,7 @@ async function consider() {
     }
     if (dialogEl && current && current.id === next.id) {
       if (current.chord !== next.chord) {
-        current = next;
+        current = tracked(next, status ? 'grant' : 'menu');
         paint();
       }
       return;
@@ -291,17 +305,27 @@ async function consider() {
     if (isDismissed(readDismissed(), next.id)) return;
     const perm = await queryPermission();
     if (mine !== ticket || leaving) return;
-    if (!perm) return;
     const again = present();
-    if (!again || again.id !== next.id || isDismissed(readDismissed(), again.id)) return;
-    if (!shouldOpen(perm.state, again, readDismissed())) return;
+    if (!again || again.id !== next.id) return;
+    if (!perm) {
+      if (!canReadClipboard() || !shouldOpenMenu(again, readDismissed())) return;
+      if (dialogEl) {
+        adopt(again);
+        return;
+      }
+      current = tracked(again, 'menu');
+      mount('menu');
+      if (!dialogEl) current = null;
+      return;
+    }
+    if (isDismissed(readDismissed(), again.id) || !shouldOpen(perm.state, again, readDismissed())) return;
     if (dialogEl) {
       watch(perm);
       adopt(again);
       return;
     }
     watch(perm);
-    current = again;
+    current = tracked(again, 'grant');
     mount(perm.state);
     if (!dialogEl) current = null;
   } catch (_) { /* a permission query that rejects is a browser with nothing to ask */ }

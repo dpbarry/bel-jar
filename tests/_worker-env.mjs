@@ -44,8 +44,10 @@ export function freePort() {
 }
 
 /**
- * @param {{ vars?: Record<string, string>, site?: boolean }} [o]
- *   vars: --var overrides (DEV_ACCOUNT_HEADER, GITHUB_*); site: serve the static site too
+ * @param {{ vars?: Record<string, string>, site?: boolean, before?: (persist: string, config: string) => void }} [o]
+ *   vars: --var overrides (DEV_ACCOUNT_HEADER, GITHUB_*); site: serve the static site too;
+ *   before: fills the local D1 and R2 before the migrations run (a backup restored into
+ *   them: scripts/rehearse-recovery.mjs), so only what the restored data lacks is applied
  * @returns {Promise<{ url: string, logs(): string, stop(o?: { keep?: boolean }): void, persist: string }>}
  *   stop({ keep: true }) leaves the local D1 and R2 on disk, for a test to read
  *   them afterwards (getPlatformProxy over `persist`); it removes them itself.
@@ -53,6 +55,7 @@ export function freePort() {
 export async function startWorker(o = {}) {
   const persist = fs.mkdtempSync(path.join(os.tmpdir(), 'beljar-worker-'));
   const config = testConfig(persist, { site: !!o.site });
+  if (o.before) await o.before(persist, config);
   let logs = '';
   const migrate = spawnSync(process.execPath, [WRANGLER, 'd1', 'migrations', 'apply', 'DB', '--local', '--config', config, '--persist-to', persist],
     { env: ENV, encoding: 'utf8', timeout: 180000 });

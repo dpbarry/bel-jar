@@ -14,7 +14,8 @@
   top: 0;
   min-width: 10rem;
   max-width: min(18rem, calc(100vw - 1rem));
-  padding: var(--menu-pad) 0;
+  padding: 0;
+  overflow: clip;
   font-family: var(--sans);
   background: var(--menu-bg);
   border: 1px solid var(--menu-border);
@@ -69,7 +70,7 @@
   justify-content: flex-start;
   gap: 0.3rem;
   width: 100%;
-  padding: 0.34rem calc(0.7rem + var(--menu-pad)) 0.34rem calc(0.65rem + var(--menu-pad));
+  padding: 0.42rem calc(0.7rem + var(--menu-pad)) 0.42rem calc(0.65rem + var(--menu-pad));
   border: none;
   border-radius: 0;
   background: transparent;
@@ -159,13 +160,13 @@
 /* Non-interactive rows */
 .menu-separator {
   height: 1px;
-  margin: 0.3rem 0;
+  margin: 0;
   background: var(--menu-separator);
   pointer-events: none;
 }
 
 .menu-section {
-  padding: 0.5rem calc(0.6rem + var(--menu-pad)) 0.25rem;
+  padding: 0.28rem calc(0.6rem + var(--menu-pad)) 0.08rem;
   font-size: 0.62rem;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -175,9 +176,9 @@
   user-select: none;
 }
 
-/* First child shouldn't carry the section's extra top pad */
+/* A label at the top edge sits closer than one that follows a group. */
 .menu > .menu-section:first-child {
-  padding-top: 0.3rem;
+  padding-top: 0.22rem;
 }
 
 /* State at the top of a popover (js/ui/menu.mjs `status` rows): what is true,

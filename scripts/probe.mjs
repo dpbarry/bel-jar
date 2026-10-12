@@ -1002,6 +1002,52 @@ try {
   check(!!bannerNow && bannerAfter.length >= 1 && bannerAfter.every((t) => t === bannerNow),
     `a transcript kept from an earlier visit shows today's banner, not the words it was saved with (${JSON.stringify(bannerAfter)})`);
 
+  // ── Before anything is typed: what you used last first (Dean, 2026-10-12) ──
+  // Chosen by name from the palette, as a person would: the file opened before the
+  // one in view heads Ctrl+K, and a command run from the palette heads > under Recent,
+  // listed once, still there after a reload (command-palette.mjs BEFORE_TYPING).
+  {
+    const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+    const pick = async (mode, words) => {
+      await page.evaluate((m) => CommandPalette.open({ mode: m }), mode);
+      await pause(250);
+      await page.keyboard.type(words);
+      await pause(250);
+      await page.keyboard.press('Enter');
+      await pause(600);
+    };
+    const listed = () => page.evaluate(() => ({
+      sections: [...document.querySelectorAll('.jar-palette-section')].map((e) => e.textContent),
+      titles: [...document.querySelectorAll('.jar-palette-item-title')].map((e) => e.textContent),
+    }));
+    await page.evaluate(() => { Persist.createFile('recent-a.bel'); Persist.createFile('recent-b.bel'); });
+    await pick('anywhere', 'recent-a');
+    await pick('anywhere', 'recent-b');
+    const shown = await page.evaluate(() => (Persist.listFiles().find((f) => f.id === Persist.getActiveFileId()) || {}).name);
+    await page.evaluate(() => CommandPalette.open({ mode: 'anywhere' }));
+    await pause(300);
+    const any = await listed();
+    await page.evaluate(() => CommandPalette.close());
+    check(shown === 'recent-b.bel' && any.sections[0] === 'Files' && any.titles[0] === 'recent-a.bel',
+      `Ctrl+K lists the file opened before this one first (${shown}; ${any.titles.slice(0, 3).join(', ')})`);
+
+    await pick('commands', 'Count Holes');
+    await page.evaluate(() => CommandPalette.open({ mode: 'commands' }));
+    await pause(300);
+    const cmds = await listed();
+    await page.evaluate(() => CommandPalette.close());
+    check(cmds.sections[0] === 'Recent' && cmds.titles[0] === 'Count Holes' && cmds.titles.filter((t) => t === 'Count Holes').length === 1,
+      `a command run from the palette heads > under Recent, listed once (${cmds.sections.slice(0, 3).join(', ')}; ${cmds.titles[0]})`);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.Commands && window.CommandPalette && window.StatusStrip, { timeout: 60000 });
+    await pause(1200);
+    await page.evaluate(() => CommandPalette.open({ mode: 'commands' }));
+    await pause(300);
+    const kept = await listed();
+    await page.evaluate(() => CommandPalette.close());
+    check(kept.sections[0] === 'Recent' && kept.titles[0] === 'Count Holes', 'and it is still there after a reload: kept on this device');
+  }
+
   // ── Run: a file through BelugaClient, with the page's own Persist and Settings ──
   // Last, so a check in flight cannot colour the status strip checks above. Until
   // 2026-09-28 nothing ran a file with the real Persist on the page, and Run threw

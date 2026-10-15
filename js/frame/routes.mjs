@@ -61,7 +61,7 @@ function startsOnLast() {
 /**
  * Home. `open`: a project to go on to once this browser has it (`pendingOf`).
  * ⛔ While the start page is the last project, every link to home says so
- * (`?home`): the brand, signing out, a deleted project. Without it the way
+ * (`?home`): the home button, signing out, a deleted project. Without it the way
  * home would lead straight back to the editor.
  */
 export function homeUrl(opts) {

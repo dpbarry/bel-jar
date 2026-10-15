@@ -1009,7 +1009,7 @@ window. Early boot decides (`early-boot-core.mjs` `startTarget`), before first p
 the address: home is never shown, and Back does not return to a page that would send you forward
 again. Only a bare home address is a plain arrival, and only a fresh navigation (a reload or Back
 shows the page that was there); only to a project this browser can show. ⛔ While the setting is
-on, every link to home says so (`Routes.homeUrl()` gives `/?home`): the brand, signing out, a
+on, every link to home says so (`Routes.homeUrl()` gives `/?home`): the home button, signing out, a
 deleted project. Without it the way home would lead straight back to the editor.
 
 **The palette is on both pages**, from the one registry (`docs/COMMANDS.md`). Every command says

@@ -5,7 +5,7 @@ header {
   z-index: 10;
   height: var(--header-h);
   flex-shrink: 0;
-  padding: 0 calc(var(--pad-inline) - 0.0625rem) 0 0;
+  padding: 0 calc(var(--pad-inline) * 0.5);
   background: var(--chrome-bg-header);
   border-bottom: 1px solid var(--chrome-divider);
   display: grid;
@@ -36,7 +36,6 @@ header {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: var(--sidebar-w);
   height: 100%;
   margin: 0;
   padding: 0;

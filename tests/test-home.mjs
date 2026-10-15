@@ -10,6 +10,7 @@ import {
   orderProjects, reviewWord, whenEdited, homeMode, findsByTyping, listMove, pendingStep, listArriving, OPEN_WAIT_MS, ACCOUNT_WAIT_MS,
   signInHintDue, SIGN_IN_HINT_TEXT,
 } from '../js/home/home.mjs';
+import { letters, markup as letterMarkup, PEN, THIN } from '../scripts/home-letters.mjs';
 
 let n = 0;
 function expect(cond, msg) {
@@ -175,28 +176,45 @@ expect(findsByTyping('t') && findsByTyping('T') && findsByTyping('7') && findsBy
     expect(ids[ids.length - 1] === 'btn-account', `${file}: the person is at the far right of the strip (${ids.join(', ')})`);
   }
   const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
-  expect(/<h1 class="header-brand home-brand">[\s\S]*<span class="home-brand__name">BelJar<\/span>/.test(header),
-    'home\'s strip carries the name beside the mark');
+  expect(/<h1 class="home-brand">[\s\S]*<button type="button" class="header-brand" id="btn-brand" data-tooltip="Reload">[\s\S]*<span class="home-brand__name">BelJar<\/span>/.test(header),
+    'home\'s strip carries the name beside the mark, and both reload the page');
   expect(!/home-mark|home-wordmark/.test(html), 'the column has no wordmark of its own');
   const field = html.slice(html.indexOf('class="home-field"'), html.indexOf('class="home__column"'));
   expect(field.includes('aria-hidden="true"') && field.includes('home-glyph--x') && field.includes('home-glyph--lambda') && !field.includes('home-field__light'),
     'the ground is an x and a λ, hidden from assistive tech, with no wash');
-  // One pen (docs/UI.md §0): each letter is a hairline drawn first, then a swell
-  // that passes over it; the λ's swell is the x's, turned half a turn.
+  // Cut with one pen (docs/UI.md §0). scripts/home-letters.mjs builds the
+  // letters, and index.html carries exactly what it prints.
   const glyphs = [...field.matchAll(/<svg class="home-glyph home-glyph--(\w+)"[\s\S]*?<\/svg>/g)].map((m) => ({
     name: m[1],
-    parts: [...m[0].matchAll(/<path class="home-glyph__(\w+)" d="([^"]+)"([^>]*)>/g)].map((p) => ({ kind: p[1], d: p[2], rest: p[3] })),
+    markup: m[0],
+    parts: [...m[0].matchAll(/<path class="home-glyph__(\w+)" d="([^"]+)"\/>/g)].map((p) => ({ kind: p[1], d: p[2] })),
   }));
-  expect(glyphs.map((g) => g.name).join() === 'x,lambda' && glyphs.every((g) => g.parts.map((p) => p.kind).join() === 'hair,swell'),
-    `each letter is a hairline and then a swell, which passes over it (${glyphs.map((g) => g.name + ':' + g.parts.map((p) => p.kind).join('+')).join(', ')})`);
-  const [xSwell, lSwell] = glyphs.map((g) => g.parts.find((p) => p.kind === 'swell'));
-  expect(xSwell.d === lSwell.d && !/transform/.test(xSwell.rest) && /transform="rotate\(180 500 500\)"/.test(lSwell.rest),
-    'the λ\'s swell is the x\'s, turned half a turn');
-  const radii = [...xSwell.d.matchAll(/A(\d+(?:\.\d+)?) \1 /g)].map((m) => +m[1]);
-  expect(radii.length === 2 && radii[0] > radii[1],
-    `a swell is the space between two circles that touch at its point (${radii.join(', ')})`);
-  expect(glyphs.every((g) => g.parts.filter((p) => p.kind === 'hair').every((p) => /vector-effect="non-scaling-stroke"/.test(p.rest))),
-    'a hairline is one weight at every size');
+  const tight = (s) => s.replace(/>\s+</g, '><').trim();
+  expect(tight(glyphs.map((g) => g.markup).join('\n')) === tight(letterMarkup()),
+    'the field is what scripts/home-letters.mjs prints: change the numbers there, then paste its output');
+  const pen = letters();
+  const [x, lambda] = glyphs;
+  expect(glyphs.map((g) => g.name).join() === 'x,lambda' && x.parts.map((p) => p.kind).join() === 'arm,arm,stem' && !/transform/.test(x.markup),
+    `the x is two arms across a stem (${glyphs.map((g) => g.name + ':' + g.parts.map((p) => p.kind).join('+')).join(', ')})`);
+  expect(/<g transform="rotate\(180 500 500\)">/.test(lambda.markup)
+    && lambda.parts.map((p) => p.kind + p.d).join() === [x.parts[0], x.parts[2]].map((p) => p.kind + p.d).join(),
+    'the λ is the x turned half a turn, without the arm that would leave by its right');
+  // Two weights and no third: a stroke is the pen's width times the sine of
+  // the angle between them. The stem is square to the pen; an arm, and the cut
+  // that ends the stem, are THIN degrees off it.
+  const nums = (d) => d.match(/-?\d+(?:\.\d+)?/g).map(Number);
+  const across = (a, b, p) => Math.abs((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])) / Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const st = nums(pen.stem);
+  const stemWidth = across([st[0], st[1]], [st[2], st[3]], [st[20], st[21]]);
+  const cutWidth = Math.hypot(st[9] - st[11], st[10] - st[12]);
+  const am = nums(pen.up);
+  const armWidth = across([am[0], am[1]], [am[2], am[3]], [am[6], am[7]]);
+  const thinWidth = PEN.width * Math.sin((THIN * Math.PI) / 180);
+  expect(Math.abs(stemWidth - PEN.width) < 0.2, `the stem is the pen's whole width (${stemWidth.toFixed(1)} of ${PEN.width})`);
+  expect(Math.abs(armWidth - thinWidth) < 0.2 && Math.abs(cutWidth - thinWidth) < 0.2,
+    `an arm and the stem's cut are the thin weight (${armWidth.toFixed(1)}, ${cutWidth.toFixed(1)}; ${thinWidth.toFixed(1)})`);
+  expect(pen.reach[0] < 1000 && pen.reach[1] < 1000,
+    `the x leaves its box only by the page's two edges, its turn inside the others (${pen.reach.map(Math.round).join(', ')})`);
   expect(!homeSrc.includes('pointermove') && !homeSrc.includes('--hx'), 'the lambda stays where it is drawn');
   expect(!html.includes('id="home-signin"') && !html.includes('home-head'), 'the column has no sign-in line; the account button carries that');
   for (const id of ['home', 'home-actions', 'home-links', 'home-find', 'home-list', 'home-projects-section',
@@ -204,8 +222,11 @@ expect(findsByTyping('t') && findsByTyping('T') && findsByTyping('7') && findsBy
     expect(html.includes('id="' + id + '"'), `home's document has #${id}, which its script draws into`);
   }
   const edit = fs.readFileSync(path.join(ROOT, 'edit.html'), 'utf8');
-  expect(/id="btn-home"[^>]*href="index\.html"/.test(edit) || /href="index\.html"[^>]*id="btn-home"/.test(edit),
-    'the editor\'s brand is a link home that works before any script runs');
+  expect(/<button type="button" class="header-brand" id="btn-brand" data-tooltip="Reload" aria-label="Reload">/.test(edit),
+    'the editor\'s brand reloads the page; Home is the house button');
+  const frame = fs.readFileSync(path.join(ROOT, 'js', 'frame', 'frame.mjs'), 'utf8');
+  expect(/getElementById\('btn-brand'\)/.test(frame) && /Commands\.run\('app\.reload'\)/.test(frame) && !/btn-home/.test(frame),
+    'the frame reloads from the brand, and no longer sends it home');
   expect(!/btn-github|btn-reload/.test(edit), 'and its header no longer carries the GitHub icon or a reload button');
 }
 

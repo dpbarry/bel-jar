@@ -8,7 +8,7 @@ building or changing a surface.
 
 **Home** (`/`) is the projects and the account. **The editor** (`/edit?p=ID`) is one project. A
 thing belongs to the page where a person looks for it: which projects there are, and who is signed
-in, on home; everything about the open project in the editor. The editor's brand goes home.
+in, on home; everything about the open project in the editor. The brand reloads the page, on home and in the editor.
 
 - The account button is on both pages, always (Dean, 2026-10-06): a placeholder picture shipped in
   the page until the server answers, and a menu that says where the account stands at that moment
@@ -43,8 +43,8 @@ The mechanics (addresses, pinning, signing out across tabs) are [PERSIST §5.11]
 
 One column, at the left of a measure (`css/home.css`, `js/home/home.mjs`), read from the top. The
 strip above it is the editor's, with the mark and **BelJar** at the left and the person at the far right.
-Behind the column, on a wide page, an x in the top left and a λ in the bottom right, blooming off
-the page through their corners.
+Behind the column, on a wide page, an x in the top left and a λ in the bottom right, cut into the
+ground and running off the page through their corners.
 
 | Part | What it holds |
 |------|---------------|
@@ -54,18 +54,26 @@ the page through their corners.
 | **Projects** | Every project, the last one opened first: its **name** and **when** it was last touched. A marker only when files wait to be reviewed (§2). **Search** (Ctrl+K, the same chord on every editing style — home does not run Vim or Emacs) at the heading's right. The heading stands on the hairline: a rule, not a box |
 | The foot | Beluga, Email me, GitHub, Privacy |
 
-- ⛔ **One pen, two weights.** Home is drawn the way mathematical italic is: a stroke down to the
-  right is a swell, one up to the right a hairline. Every line that holds something (a pane's edge,
-  the rule under Projects) is the one hairline (`--home-rule`); the x and the λ are each a hairline
-  and a swell, in one accent ink (`--home-ink`; the hairline a touch stronger, as a thin line reads
-  lighter). No glow, no gradient, no shadow, no entrance: the x and the λ are the identity, and
-  the column carries no wordmark.
-  - A swell is drawn with compasses: the space between two circles that touch at its point, so it
-    starts as nothing there and widens as it runs off the page. Its point aims at the column.
-  - The λ's swell is the x's turned half a turn (`index.html` holds the construction; the test
-    holds the half turn), so the two answer each other across the page.
-  - A hairline passes under a swell, cut a hair short on each side by the swell's outline in the
-    ground colour. Masks would need ids, and the kit page strips them.
+- ⛔ **Cut, not inked.** Every line that holds something (a pane's edge, the rule under Projects)
+  is the one hairline (`--home-rule`). The x and the λ are cut into the ground, in grey: a floor a
+  step off the ground (`--home-cut`), and the cut's walls a hair wide, the upper one in shade and
+  the lower one catching a light from straight above (`--home-cut-shade`, `--home-cut-lit`). The
+  panes stand half a step up; the letters go a step down. No accent, no glow, no gradient, no
+  entrance: the x and the λ are the identity, and the column carries no wordmark.
+  - Both are drawn by one broad pen, as mathematical italic is: a stroke is the pen's width times
+    the sine of the angle between them, so one down to the right is the whole pen and one up to the
+    right the thin weight. Two weights and no third: the stem square to the pen, and the arms and
+    the cut that ends the stem 22° off it. Every edge is a stroke's path moved half a pen along the
+    nib, so the paths are lines and arcs, and terminals are cut square.
+  - The λ is the x turned half a turn, without the arm that would leave by its right: the x's turn,
+    cut square and pointing at the column, is the hook at the λ's head. So the two answer each
+    other across the page.
+  - `scripts/home-letters.mjs` builds the paths from the pen, the crossing, the run to the turn
+    and its radius, and prints the field; `index.html` carries exactly that (the test holds it,
+    and the two weights, and that the turn stays inside its box).
+  - The walls are two CSS drop-shadows over each box, in CSS pixels, so they stay a hair wide at
+    every size and where strokes cross they are one cut. Masks or gradients would need ids, and the
+    kit page strips them.
   - They are the page's corners, not the list's: pinned to what can be seen while a long list
     scrolls. One size for both, from the margin beside the column (never within 2.5rem of it) and
     the height. Under 11rem they are not letters, so they are not drawn: narrower than 62rem or

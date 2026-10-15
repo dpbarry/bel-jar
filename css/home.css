@@ -6,10 +6,10 @@
  * the same edge, and every right-hand date ends at the tiles' right edge.
  * Nothing is boxed but the three things you can start.
  *
- * The page is drawn in two weights, as with one pen: the hairline, and the
- * swell. Every line that holds something (a pane's edge, the rule under
- * Projects) is the one hairline, `--home-rule`; the x and the λ behind the
- * column are hairlines crossing swells. No glow, no gradient, no shadow.
+ * The column is drawn with one hairline: every line that holds something (a
+ * pane's edge, the rule under Projects) is `--home-rule`. Behind it, an x and
+ * a λ are cut into the ground in grey, their walls a hair wide. No accent, no
+ * glow, no gradient: the panes stand half a step up, the letters a step down.
  *
  * A row says a project's name and when it was last touched, and nothing else
  * unless something needs you (docs/UI.md §2). */
@@ -18,31 +18,31 @@
   overflow: hidden;
 }
 
-/* The mark in the strip is where you are: the name beside it, not a link, and no hover.
-   The icon stays where the editor's brand box put it; the name follows it. */
+/* The mark and the name reload the page. The icon stays where the editor's
+   brand box put it; the name follows it. */
+.home-page .home-brand {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  margin: 0;
+  min-width: 0;
+}
 .home-page .header-brand {
   width: auto;
   justify-content: flex-start;
-  gap: 0.4rem;
+  gap: 0.25rem;
   margin: 0;
-  padding-left: calc((var(--sidebar-w) - var(--header-logo-size)) / 2);
   color: var(--header-menu-fg-active);
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1;
-  cursor: default;
   user-select: none;
 }
 .home-brand__name {
   position: relative;
   top: 1px;
-}
-@media (hover: hover) and (pointer: fine) {
-  .home-page .header-brand:hover .header-logo {
-    color: var(--accent-high);
-  }
 }
 
 /* The cloud has no name beside it here: it sits in its button like any icon. */
@@ -87,15 +87,26 @@
 }
 
 /* Both letters at one size, set by the margin beside the column (less the
-   gutter, so a point never reaches it) and by the height (so the two never
+   gutter, so a letter never reaches it) and by the height (so the two never
    share a corner). Each box sits in its corner; the strokes leave the page
-   through the two edges that meet there. */
+   through the two edges that meet there.
+
+   Cut into the ground: a grey floor, and the cut's walls drawn beside it in
+   CSS pixels, so they stay a hair wide at every size. The light is straight
+   above, so the upper wall is in shade and the lower one catches it, and a
+   stroke either way across the page shows both. One filter over the whole
+   box, so where two strokes cross they are one cut. */
 .home-glyph {
   --home-glyph: min(calc((100cqw - 35rem) / 2 - 2.5rem), 56cqh, 38rem);
   position: absolute;
   display: block;
   width: var(--home-glyph);
   height: var(--home-glyph);
+  filter: drop-shadow(0 -1.25px 0 var(--home-cut-shade)) drop-shadow(0 1.25px 0 var(--home-cut-lit));
+}
+
+.home-glyph path {
+  fill: var(--home-cut);
 }
 
 .home-glyph--x {
@@ -106,20 +117,6 @@
 .home-glyph--lambda {
   right: 0;
   bottom: 0;
-}
-
-/* The outline is the ground: where a hairline passes under, it is cut a hair
-   short on each side. In the box's units, so the gap grows with the letter. */
-.home-glyph__swell {
-  fill: var(--home-ink);
-  stroke: var(--bg);
-  stroke-width: 16;
-  paint-order: stroke;
-}
-
-.home-glyph__hair {
-  stroke: var(--home-ink-hair);
-  stroke-width: 1px;
 }
 
 /* Big enough to be letters, or not there: under 11rem they were crumbs. */

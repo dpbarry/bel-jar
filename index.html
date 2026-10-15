@@ -51,7 +51,8 @@
 
   <header>
     <div class="header-start">
-      <h1 class="header-brand home-brand">
+      <h1 class="home-brand">
+        <button type="button" class="header-brand" id="btn-brand" data-tooltip="Reload">
         <svg class="header-logo" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M 25 65 Q 37.5 50, 50 60 T 75 55 V 80 H 25 Z" fill="currentColor" fill-opacity="0.2" stroke="none" />
           <path d="M 25 72 Q 40 60, 55 68 T 75 62 V 80 H 25 Z" fill="currentColor" fill-opacity="0.15" stroke="none" />
@@ -63,6 +64,7 @@
           <circle cx="58" cy="44" r="3.5" stroke-width="2.5" />
         </svg>
         <span class="home-brand__name">BelJar</span>
+        </button>
       </h1>
     </div>
     <div class="header-context" aria-hidden="true"></div>
@@ -109,24 +111,30 @@
        fills each part is drawn by js/home/home.mjs. With no project the list
        stays, and says so where the first row would be. -->
   <main class="home" id="home" data-mode="arriving">
-    <!-- An x in the top left and a λ in the bottom right, drawn with one pen
-         (docs/UI.md §0): a stroke down to the right is a swell, one up to the
-         right a hairline, as in mathematical italic. A swell is the space
-         between two circles that touch at its point, radii 2824 and 2087 (each
-         box is 1000 across, its 0 0 the page's corner): nothing at (800, 800),
-         and wider the further it runs off the page. The λ's swell is the x's,
-         turned half a turn. The x's hairline crosses its swell's middle at -45°;
-         the λ's leg leaves its swell's lower edge, 48% along, at 118°. A hairline
-         is drawn first and passes under its swell, whose outline in the ground
-         colour cuts it. -->
+    <!-- An x in the top left and a λ in the bottom right, cut into the ground
+         (docs/UI.md §0). Both are drawn by one broad pen, as mathematical italic
+         is: a stroke is as wide as the pen times the sine of the angle between
+         them, so one down to the right is the pen's whole width and one up to
+         the right its thin weight. The pen is 104 across, its nib rising at 32°
+         (each box is 1000 across, its 0 0 the page's corner). The x's stem comes
+         down from above the page square to the pen, through the crossing at
+         (330, 420), and 290 on turns up on a circle of radius 200 until it is
+         22° off the pen, where it is cut square: the thin weight. Its arms are
+         22° off the pen the other way, and leave by the top and the left. The λ
+         is the x turned half a turn, without the arm that would leave by its
+         right: the turn is the hook at its head. scripts/home-letters.mjs builds
+         these paths from those numbers, and tests/test-home.mjs holds them to it. -->
     <div class="home-field" aria-hidden="true">
       <svg class="home-glyph home-glyph--x" viewBox="0 0 1000 1000" fill="none">
-        <path class="home-glyph__hair" d="M-640.2 1449.7L1339.7 -530.2" vector-effect="non-scaling-stroke"/>
-        <path class="home-glyph__swell" d="M800 800A2824 2824 0 0 1 -293 -360.6L-159.3 -450.6A2087 2087 0 0 0 800 800Z"/>
+        <path class="home-glyph__arm" d="M374.1 392.4L728.3 -95.1L640.1 -40L285.9 447.6Z"/>
+        <path class="home-glyph__arm" d="M374.1 392.4L-40 962.4L-128.2 1017.5L285.9 447.6Z"/>
+        <path class="home-glyph__stem" d="M69.4 -95.1L527.8 638.4A200 200 0 0 0 683.6 731.9L690.4 770.3A200 200 0 0 1 439.6 693.5L-18.8 -40Z"/>
       </svg>
       <svg class="home-glyph home-glyph--lambda" viewBox="0 0 1000 1000" fill="none">
-        <path class="home-glyph__hair" d="M628 531.7L-29.2 1767.9" vector-effect="non-scaling-stroke"/>
-        <path class="home-glyph__swell" d="M800 800A2824 2824 0 0 1 -293 -360.6L-159.3 -450.6A2087 2087 0 0 0 800 800Z" transform="rotate(180 500 500)"/>
+        <g transform="rotate(180 500 500)">
+          <path class="home-glyph__arm" d="M374.1 392.4L728.3 -95.1L640.1 -40L285.9 447.6Z"/>
+          <path class="home-glyph__stem" d="M69.4 -95.1L527.8 638.4A200 200 0 0 0 683.6 731.9L690.4 770.3A200 200 0 0 1 439.6 693.5L-18.8 -40Z"/>
+        </g>
       </svg>
     </div>
     <div class="home__column">

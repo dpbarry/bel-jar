@@ -228,20 +228,15 @@
   --notif-card-border: light-dark(hsla(220, 12%, 40%, 0.13), hsla(220, 12%, 82%, 0.11));
   --notif-recess-bg: light-dark(hsla(220, 14%, 88%, 0.7), hsla(222, 18%, 5%, 0.34));
 
-  /* Home (css/home.css) is drawn in two weights, and these are its inks.
-     The swell and the hairline of the x and the λ are one accent; the hairline
-     is a little stronger, because a line one pixel wide reads lighter than the
-     same colour laid thick. Every structural line (a pane's edge, the rule
-     under Projects) is one hairline, `--home-rule`. A pane is the same object in
-     both themes: half a step off the ground, inside that hairline. */
-  --home-ink: light-dark(
-    color-mix(in oklab, var(--accent-high) 70%, var(--bg)),
-    color-mix(in oklab, var(--accent-mid) 62%, var(--bg))
-  );
-  --home-ink-hair: light-dark(
-    color-mix(in oklab, var(--accent-high) 80%, var(--bg)),
-    color-mix(in oklab, var(--accent-mid) 88%, var(--bg))
-  );
+  /* Home (css/home.css): the x and the λ are cut into the ground, in grey.
+     The cut's floor is a step off the ground; its upper wall is in shade and
+     its lower wall catches a light from above, each a hair wide. Every
+     structural line (a pane's edge, the rule under Projects) is one hairline,
+     `--home-rule`. A pane is the same object in both themes: half a step off
+     the ground, inside that hairline. */
+  --home-cut: light-dark(hsl(220, 13%, 92.5%), hsl(222, 8%, 9.5%));
+  --home-cut-shade: light-dark(hsla(222, 25%, 25%, 0.3), hsla(0, 0%, 0%, 0.95));
+  --home-cut-lit: light-dark(hsl(0, 0%, 100%), hsla(220, 12%, 78%, 0.28));
   --home-rule: light-dark(hsla(220, 24%, 22%, 0.11), hsla(216, 20%, 80%, 0.09));
   --home-pane: light-dark(hsl(0, 0%, 100%), hsl(223, 15%, 6.6%));
   --home-pane-hover: light-dark(hsl(220, 22%, 97%), hsl(222, 14%, 9%));

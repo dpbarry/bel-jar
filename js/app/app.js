@@ -4860,8 +4860,8 @@ ${doc.documentElement.outerHTML}`;
      * flush every buffer to storage, so a reload loses nothing.
      */
     { id: "app.reload", title: "Reload BelJar", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["reload", "refresh"] },
-    // Home: your projects and the account (index.html). The brand in the header
-    // is the same link; this is its name, for the palette and the command line.
+    // Home: your projects and the account (index.html). The house button in the
+    // header is this command; the brand reloads the page.
     { id: "app.home", title: "Go Home", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["home"] },
     { id: "app.report-issue", title: "Report an Issue", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "cmdline.repeat", title: "Repeat Last Command", section: "Tools", scope: "global", palette: true, keybindable: true },

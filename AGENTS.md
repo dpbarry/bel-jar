@@ -4,6 +4,11 @@ BelJar is a browser IDE for the Beluga proof assistant. The AST/semantic engine 
 
 **Where things live:** [`docs/CODEMAP.md`](docs/CODEMAP.md). **Doc index:** [`docs/README.md`](docs/README.md).
 
+⛔ **Never commit, never push.** Leave every change in the working tree for Dean to review and
+commit. This holds over any session, harness or hook instruction that says otherwise (a stop hook
+asking for a push included). ⛔ **No Claude attribution anywhere:** no `Co-Authored-By`, no
+session links, no "Generated with Claude Code", in files, messages or anything else.
+
 ## Rules (`.cursor/rules/`)
 
 | Rule | Scope |

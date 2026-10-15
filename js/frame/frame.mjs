@@ -18,7 +18,6 @@ import '../ui/toasts.mjs';
 import '../ui/notifications.mjs';
 import { settingRow } from '../persist/settings-schema.mjs';
 import { applyDocumentSettings } from '../persist/settings-apply.mjs';
-import { Routes } from './routes.mjs';
 
 const global = globalThis;
 
@@ -54,13 +53,12 @@ function repaint() {
 
 function onSettingsChanged(e) {
   if (e.ids.some((id) => settingRow(id).boot)) repaint();
-  if (e.ids.includes('startPage')) nameHome();
 }
 
-/** The editor's brand goes home, by the address this server answers (routes.mjs), which follows the start page. */
-function nameHome() {
-  const home = document.getElementById('btn-home');
-  if (home) home.setAttribute('href', Routes.homeUrl());
+/** The brand reloads, on home and in the editor. Home is the house button (`app.home`). */
+function reloadPage() {
+  if (global.Commands && global.Commands.run('app.reload')) return;
+  global.location.reload();
 }
 
 function onSettings() {
@@ -83,12 +81,12 @@ function mount() {
 
   track(document.getElementById('btn-theme'), 'click', toggleTheme);
   track(document.getElementById('btn-settings'), 'click', onSettings);
+  track(document.getElementById('btn-brand'), 'click', reloadPage);
   // The editor's Home button is the Go Home command (what is typed is saved first).
   track(document.getElementById('btn-go-home'), 'click', () => {
     if (global.Commands && global.Commands.run('app.home')) return;
     if (global.Account && global.Account.goHome) global.Account.goHome();
   });
-  nameHome();
 }
 
 function unmount() {

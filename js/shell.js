@@ -7142,8 +7142,8 @@
      * flush every buffer to storage, so a reload loses nothing.
      */
     { id: "app.reload", title: "Reload BelJar", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["reload", "refresh"] },
-    // Home: your projects and the account (index.html). The brand in the header
-    // is the same link; this is its name, for the palette and the command line.
+    // Home: your projects and the account (index.html). The house button in the
+    // header is this command; the brand reloads the page.
     { id: "app.home", title: "Go Home", section: "Tools", scope: "global", palette: true, keybindable: true, ex: ["home"] },
     { id: "app.report-issue", title: "Report an Issue", section: "Tools", scope: "global", palette: true, keybindable: true },
     { id: "cmdline.repeat", title: "Repeat Last Command", section: "Tools", scope: "global", palette: true, keybindable: true },
@@ -22487,11 +22487,10 @@
   }
   function onSettingsChanged(e) {
     if (e.ids.some((id) => settingRow(id).boot)) repaint();
-    if (e.ids.includes("startPage")) nameHome();
   }
-  function nameHome() {
-    const home = document.getElementById("btn-home");
-    if (home) home.setAttribute("href", Routes.homeUrl());
+  function reloadPage() {
+    if (global34.Commands && global34.Commands.run("app.reload")) return;
+    global34.location.reload();
   }
   function onSettings() {
     if (global34.SettingsUI && typeof global34.SettingsUI.open === "function") {
@@ -22509,11 +22508,11 @@
     }
     track2(document.getElementById("btn-theme"), "click", toggleTheme);
     track2(document.getElementById("btn-settings"), "click", onSettings);
+    track2(document.getElementById("btn-brand"), "click", reloadPage);
     track2(document.getElementById("btn-go-home"), "click", () => {
       if (global34.Commands && global34.Commands.run("app.home")) return;
       if (global34.Account && global34.Account.goHome) global34.Account.goHome();
     });
-    nameHome();
   }
   function unmount() {
     if (!mounted2) return;

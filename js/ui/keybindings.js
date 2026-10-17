@@ -64,6 +64,7 @@
     { id: "editorOccurrenceHighlight", section: "editor", default: ON },
     { id: "editorBracketMatch", section: "editor", default: ON },
     { id: "editorAutoCloseBrackets", section: "editor", default: ON },
+    { id: "editorPadBrackets", section: "editor", default: ON },
     { id: "editorSelectionMatches", section: "editor", default: ON },
     { id: "hoverScope", section: "editor", default: "all", values: ["all", "user-only", "none"] },
     { id: "hoverSticky", section: "editor", default: OFF },
@@ -96,9 +97,13 @@
     { id: "doubleTapCommand", section: "keybindings", default: "tools.palette", type: "string" },
     { id: "doubleTapSpeed", section: "keybindings", default: "normal", values: ["normal", "fast", "relaxed"] },
     // ── Beluga ──────────────────────────────────────────────────────────────
-    // Which build this device downloads: a phone and a workstation differ.
-    { id: "belugaMode", section: "beluga", default: "stable", values: ["stable", "fast"], sync: false },
-    { id: "belugaFallbackStable", section: "beluga", default: ON },
+    // Which build this device downloads: a phone and a workstation differ. The values
+    // and the default are BelugaClient's table of builds (js/beluga/beluga-client.js
+    // `BUILDS`, `DEFAULT_BUILD`); a value that does not work where it is read runs as
+    // the default, or Stable where Wasm cannot run (tests/test-beluga-builds.mjs). A
+    // stored "fast" (retired 2026-10-16) is no longer a value, so it reads as the default.
+    // belugaFallbackStable ("Retry with Stable if Fast fails") went with it.
+    { id: "belugaMode", section: "beluga", default: "wasm-cps", values: ["stable", "wasm", "wasm-cps"], sync: false },
     { id: "belugaCancelOnEdit", section: "beluga", default: ON },
     { id: "checkAggressiveness", section: "beluga", default: "balanced", values: ["responsive", "balanced", "thorough"] },
     { id: "suiteCheck", section: "beluga", default: "suite", values: ["suite", "active"] },
@@ -304,6 +309,11 @@
       title: "Auto-close brackets",
       aliases: ["autoclose"],
       setting: "editorAutoCloseBrackets"
+    },
+    {
+      slug: "pad-brackets",
+      title: "Pad square brackets",
+      setting: "editorPadBrackets"
     },
     {
       slug: "reindent-paste",

@@ -6,6 +6,7 @@ import {
   indentString,
   syntaxTree,
 } from '@codemirror/language';
+import { editedLineNumbers, layoutUserEvent, obligatoryLayoutEdit } from './obligatory-layout.mjs';
 
 // A phrase is open while its last token is still one of these. `of` and `fun`
 // are bar-list headers; the rest continue, and do not grow a bar.
@@ -356,6 +357,63 @@ function hasChild(node, name) {
   return false;
 }
 
+// The phrase after `kw` (the last one, when the keyword repeats). Missing means
+// the phrase is still open: `let … in` has not terminated the arm.
+function phraseAfter(node, kw) {
+  let mark = null;
+  let expr = null;
+  for (let c = node.firstChild; c; c = c.nextSibling) {
+    if (c.name === kw) { mark = c; expr = null; continue; }
+    if (mark && c.name === 'Expression' && !c.type.isError) expr = c;
+  }
+  return expr;
+}
+
+function phraseClosed(node) {
+  if (!node || node.type.isError) return false;
+  switch (node.name) {
+    case 'LetExpression':
+    case 'LetDeclaration':
+      return phraseClosed(phraseAfter(node, 'InKeyword'));
+    case 'IfExpression':
+      return phraseClosed(phraseAfter(node, 'ElseKeyword'));
+    case 'FnExpression':
+    case 'MLamExpression':
+      return phraseClosed(phraseAfter(node, 'FatArrow'));
+    case 'CaseExpression': {
+      const body = (() => {
+        let b = null;
+        for (let c = node.firstChild; c; c = c.nextSibling) if (c.name === 'CaseBody') b = c;
+        return b;
+      })();
+      if (!body) return false;
+      let last = null;
+      for (let c = body.firstChild; c; c = c.nextSibling) if (c.name === 'CaseBranch') last = c;
+      return !!last && armClosed(last);
+    }
+    case 'CofunctionExpression': {
+      let last = null;
+      for (let c = node.firstChild; c; c = c.nextSibling) if (c.name === 'CofunctionBranch') last = c;
+      return !!last && armClosed(last);
+    }
+    case 'Expression':
+    case 'AppExpression': {
+      let last = null;
+      for (let c = node.firstChild; c; c = c.nextSibling) {
+        if (c.type.isError) return false;
+        if (c.to > c.from) last = c;
+      }
+      return !!last && phraseClosed(last);
+    }
+    default:
+      return true;
+  }
+}
+
+function armClosed(branch) {
+  return phraseClosed(phraseAfter(branch, 'FatArrow'));
+}
+
 function pipePrefix(state, bar) {
   let at = bar.from;
   const parent = bar.parent;
@@ -376,6 +434,9 @@ function finishedBarEdit(state, line) {
   if (!bar || bar.to < sig) return null;
   if (state.doc.lineAt(Math.max(bar.from, bar.to - 1)).number !== line.number) return null;
   if (braceDelimited(state, bar)) return null;
+  // The parser closes a CaseBranch at `let … in` / `if … then`. That line has
+  // not terminated the arm, so it does not grow a bar.
+  if ((bar.name === 'CaseBranch' || bar.name === 'CofunctionBranch') && !armClosed(bar)) return null;
   const insert = `\n${pipePrefix(state, bar)}| `;
   let from = line.to;
   const text = line.text;
@@ -513,25 +574,50 @@ export function inducedTokenEdit(state) {
   return replaceIndent(state, line, cols);
 }
 
-/** Typing filter. `input.complete` is not a trigger, so accepting a case ghost does not reindent. */
+/** Typing, paste, and autocomplete. `input.complete` is not a trigger. */
 export function inducedLayout() {
   return EditorState.transactionFilter.of((tr) => {
-    if (!tr.docChanged || !tr.isUserEvent('input.type')) return tr;
-    const head = tr.newSelection.main.head;
-    if (head > tr.newDoc.lineAt(head).from + 200) return tr;
-    if (!mightSnap(tr.newDoc.lineAt(head).text)) return tr;
-    const next = tr.startState.update({
+    if (!tr.docChanged || !layoutUserEvent(tr)) return tr;
+    const typing = tr.isUserEvent('input.type');
+    let state = tr.startState.update({
       changes: tr.changes,
       selection: tr.newSelection,
       filter: false,
     }).state;
-    const edit = inducedTokenEdit(next);
-    if (!edit) return tr;
-    return [tr, {
-      changes: { from: edit.from, to: edit.to, insert: edit.insert },
-      selection: { anchor: edit.anchor },
-      sequential: true,
-    }];
+    const touched = editedLineNumbers(state.doc, tr.changes);
+    const follow = [];
+    if (typing) {
+      const head = state.selection.main.head;
+      const line = state.doc.lineAt(head);
+      if (head <= line.from + 200 && mightSnap(line.text)) {
+        const edit = inducedTokenEdit(state);
+        if (edit) {
+          const fromLine = state.doc.lineAt(edit.from).number;
+          const toLine = state.doc.lineAt(Math.max(edit.from, edit.to - 1)).number;
+          for (let n = fromLine; n <= toLine; n++) touched.add(n);
+          const inserted = edit.insert.split('\n').length - 1;
+          for (let k = 1; k <= inserted; k++) touched.add(toLine + k);
+          follow.push({
+            changes: { from: edit.from, to: edit.to, insert: edit.insert },
+            selection: { anchor: edit.anchor },
+          });
+          state = state.update({
+            changes: { from: edit.from, to: edit.to, insert: edit.insert },
+            selection: { anchor: edit.anchor },
+            filter: false,
+          }).state;
+        }
+      }
+    }
+    const layout = obligatoryLayoutEdit(state, touched);
+    if (layout) {
+      follow.push({
+        changes: { from: layout.from, to: layout.to, insert: layout.insert },
+        selection: layout.selection,
+      });
+    }
+    if (!follow.length) return tr;
+    return [tr, ...follow.map((spec) => ({ ...spec, sequential: true }))];
   });
 }
 

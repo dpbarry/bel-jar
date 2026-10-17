@@ -201,11 +201,16 @@ function errorProseClusterEnd(decls, src, start) {
   return j + 1;
 }
 
+export function resolvePadBrackets(opts = {}) {
+  return opts.padBrackets ?? readSetting('editorPadBrackets') ?? true;
+}
+
 export function formatString(src, tree, opts = {}) {
   src = normalizeNewlines(src);
   const width = opts.printWidth ?? 80;
   const minSignificantRatio = opts.minSignificantRatio ?? 0.5;
-  const { pp } = makePrinter(src, { printWidth: width });
+  const padBrackets = resolvePadBrackets(opts);
+  const { pp } = makePrinter(src, { printWidth: width, padBrackets });
 
   const root = tree.topNode;
   const decls = [];

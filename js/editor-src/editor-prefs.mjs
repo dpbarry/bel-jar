@@ -1,7 +1,7 @@
-import { EditorView, lineNumbers, highlightActiveLineGutter, highlightActiveLine, highlightWhitespace, highlightTrailingWhitespace, drawSelection } from '@codemirror/view';
-import { EditorState } from '@codemirror/state';
+import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightActiveLine, highlightWhitespace, highlightTrailingWhitespace, drawSelection } from '@codemirror/view';
+import { EditorState, Prec } from '@codemirror/state';
 import { bracketMatching, indentRange, indentUnit } from '@codemirror/language';
-import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
+import { smartBrackets, smartBracketKeymap } from './ide/smart-brackets.mjs';
 import { relativeLineNumbers } from './ide/relative-line-numbers.mjs';
 import { highlightSelectionMatches } from '@codemirror/search';
 import { Transaction } from '@codemirror/state';
@@ -34,11 +34,11 @@ const CURSOR_BLINK_MS = {
 /**
  * Just the editing style.
  *
- * ⛔ `readEditorPrefs()` is 33 separate `localStorage` reads. That is the right
- * shape for mount and for a settings change, and the wrong shape for anything
- * that runs per keystroke — the status-strip feed asked it for ONE field on
- * every transaction, so every character typed and every cursor move paid for
- * thirty-two answers nobody read.
+ * ⛔ `readEditorPrefs()` is one `localStorage` read per preference. That is the
+ * right shape for mount and for a settings change, and the wrong shape for
+ * anything that runs per keystroke — the status-strip feed asked it for ONE
+ * field on every transaction, so every character typed and every cursor move
+ * paid for every other answer nobody read.
  */
 export function readKeymapStylePref() {
   return readSetting('keymapStyle');
@@ -70,6 +70,7 @@ export function readEditorPrefs() {
     occurrenceHighlight: readSetting('editorOccurrenceHighlight'),
     bracketMatch: readSetting('editorBracketMatch'),
     autoCloseBrackets: readSetting('editorAutoCloseBrackets'),
+    padBrackets: readSetting('editorPadBrackets'),
     selectionMatches: readSetting('editorSelectionMatches'),
     quietWhileTyping: readSetting('quietWhileTyping'),
     formatOnSave: readSetting('formatOnSave'),
@@ -194,7 +195,7 @@ export function buildToggleableExtensions(prefs, deps) {
     exts.push(highlightActiveLine());
   }
   if (prefs.bracketMatch) exts.push(bracketMatching());
-  if (prefs.autoCloseBrackets) exts.push(closeBrackets());
+  if (prefs.autoCloseBrackets) exts.push(...smartBrackets(prefs.padBrackets));
   if (prefs.foldGutter) {
     exts.push(editorCodeFolding());
     exts.push(editorFoldGutter());
@@ -230,5 +231,13 @@ export function buildToggleableExtensions(prefs, deps) {
 }
 
 export function buildBracketKeymap(prefs) {
-  return prefs.autoCloseBrackets ? closeBracketsKeymap : [];
+  return prefs.autoCloseBrackets ? smartBracketKeymap() : [];
+}
+
+// Prec.highest, and configured ahead of the style packages, so an empty pair
+// is deleted before Vim, Emacs, or the default Backspace. The command returns
+// false in Vim command mode and when the braces have non-whitespace between them.
+export function bracketKeymapExtension(prefs) {
+  const keys = buildBracketKeymap(prefs);
+  return keys.length ? Prec.highest(keymap.of(keys)) : [];
 }

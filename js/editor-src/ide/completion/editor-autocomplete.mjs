@@ -45,6 +45,24 @@ function caretAfterFirstHole(insert) {
   return i < 0 ? s.length : i + 1;
 }
 
+/** The transaction an autocomplete row applies. A totality measure selects its `?`. */
+export function acceptDispatch(item, from, to) {
+  const insert = String(item.insert != null ? item.insert : item.label);
+  const holeAt = insert.indexOf('?');
+  const selectHole = !!(item.selectHole && holeAt >= 0);
+  const caret = item.source === 'snippet' || item.source === 'snippet-keyword'
+    ? caretAfterFirstHole(insert)
+    : insert.length;
+  return {
+    changes: { from, to, insert },
+    selection: selectHole
+      ? { anchor: from + holeAt, head: from + holeAt + 1 }
+      : { anchor: from + caret },
+    userEvent: 'input.accept',
+    scrollIntoView: true,
+  };
+}
+
 function fillItem(li, item, token) {
   const label = document.createElement('span');
   label.className = 'editor-ac-label';
@@ -259,17 +277,9 @@ function createEditorAcPlugin(engine, opts) {
     accept(idx = this.activeIndex) {
       if (idx < 0 || idx >= this.items.length) return false;
       const item = this.items[idx];
-      const insert = item.insert != null ? item.insert : item.label;
       const { from, to } = { from: this.replaceFrom, to: this.replaceTo };
-      // Only scaffold templates park on the first ?/_ — idents like my_rec must not.
-      const caret = item.source === 'snippet'
-        ? caretAfterFirstHole(insert)
-        : String(insert).length;
       if (!autocompleteContinue()) this.suppressRefresh = true;
-      this.view.dispatch({
-        changes: { from, to, insert },
-        selection: { anchor: from + caret },
-      });
+      this.view.dispatch(acceptDispatch(item, from, to));
       this.hide();
       this.view.focus();
       return true;

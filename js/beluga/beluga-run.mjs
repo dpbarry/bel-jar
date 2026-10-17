@@ -34,7 +34,7 @@ var belugaBusy = false;
   function isBelugaBusy() { return belugaBusy; }
 
   function canStop() {
-    return belugaMode !== 'fast' && typeof BelugaClient !== 'undefined' && !!BelugaClient.cancelLoad;
+    return typeof BelugaClient !== 'undefined' && !!BelugaClient.cancelLoad;
   }
 
   function isStoppable() { return belugaBusy && canStop(); }
@@ -45,16 +45,18 @@ var belugaBusy = false;
     return true;
   }
 
+  // BelugaClient's table of builds turns the chosen build into the one that runs
+  // here (every build runs in workers; "fast", retired, runs as the default).
   function modeToConfig(mode) {
-    return mode === 'fast'
-      ? { thread: 'main', build: 'fast' }
-      : { thread: 'worker', build: 'stable' };
+    if (typeof BelugaClient !== 'undefined' && BelugaClient.configFor) return BelugaClient.configFor(mode);
+    return { build: 'stable' };
   }
 
   function getBelugaMode() { return belugaMode; }
 
+  // A Run is always in a worker now, so the page can always show its progress.
   function shouldShowRunProgress() {
-    return belugaMode !== 'fast';
+    return true;
   }
 
   function setBelugaMode(m) {
@@ -68,15 +70,6 @@ var belugaBusy = false;
   }
 
   function belugaProgressHook(msg) {
-    if (msg && msg.phase === 'build-fallback') {
-      if (!Settings.get('belugaFallbackStable')) return;
-      Toasts.warn(
-        'Fast build hit the stack limit. Retrying with Stable; switch to Stable in Settings to avoid this.',
-        { duration: 0, closable: true },
-      );
-      if (belugaBusy) RunProgress.start({ op: 'load' });
-      return;
-    }
     if (RunProgress.isRunning()) {
       RunProgress.onBelugaProgress(msg);
     }

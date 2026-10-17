@@ -1,0 +1,8459 @@
+{
+ "chrome": "Chrome/155.0.8059.40",
+ "date": "2026-10-17T19:33:15.070Z",
+ "builds": {
+  "wasm-cps": {
+   "files": [
+    "beluga_web_wasm_cps.bc.wasm.js",
+    "beluga_web_wasm_cps.bc.wasm.assets\\code-ee2d1fa56b5b036e4be8.wasm"
+   ],
+   "bootCold": [
+    {
+     "key": "1",
+     "workerStartToReadyMs": 75.76000002026558,
+     "loadMs": 75.19000002741814,
+     "fetchMs": 13.550000011920929,
+     "resources": [
+      {
+       "name": "beluga_web_wasm_cps.bc.wasm.js",
+       "transferSize": 12677,
+       "encodedBodySize": 12377,
+       "ms": 8.6
+      },
+      {
+       "name": "code-ee2d1fa56b5b036e4be8.wasm",
+       "transferSize": 2301316,
+       "encodedBodySize": 2301016,
+       "ms": 12
+      }
+     ],
+     "pageNewWorkerToReadyMs": 87.88499999046326
+    },
+    {
+     "key": "2",
+     "workerStartToReadyMs": 82.4249999821186,
+     "loadMs": 81.66999998688698,
+     "fetchMs": 14.194999992847443,
+     "resources": [
+      {
+       "name": "beluga_web_wasm_cps.bc.wasm.js",
+       "transferSize": 12677,
+       "encodedBodySize": 12377,
+       "ms": 9.5
+      },
+      {
+       "name": "code-ee2d1fa56b5b036e4be8.wasm",
+       "transferSize": 2301316,
+       "encodedBodySize": 2301016,
+       "ms": 13.6
+      }
+     ],
+     "pageNewWorkerToReadyMs": 92.44999998807907
+    },
+    {
+     "key": "3",
+     "workerStartToReadyMs": 75.62999999523163,
+     "loadMs": 75.16499999165535,
+     "fetchMs": 12.155000001192093,
+     "resources": [
+      {
+       "name": "beluga_web_wasm_cps.bc.wasm.js",
+       "transferSize": 12677,
+       "encodedBodySize": 12377,
+       "ms": 7.8
+      },
+      {
+       "name": "code-ee2d1fa56b5b036e4be8.wasm",
+       "transferSize": 2301316,
+       "encodedBodySize": 2301016,
+       "ms": 11.8
+      }
+     ],
+     "pageNewWorkerToReadyMs": 86.80500000715256
+    },
+    {
+     "key": "4",
+     "workerStartToReadyMs": 73.74500000476837,
+     "loadMs": 73.29499998688698,
+     "fetchMs": 12.194999992847443,
+     "resources": [
+      {
+       "name": "beluga_web_wasm_cps.bc.wasm.js",
+       "transferSize": 12677,
+       "encodedBodySize": 12377,
+       "ms": 7.9
+      },
+      {
+       "name": "code-ee2d1fa56b5b036e4be8.wasm",
+       "transferSize": 2301316,
+       "encodedBodySize": 2301016,
+       "ms": 10.7
+      }
+     ],
+     "pageNewWorkerToReadyMs": 83.0949999988079
+    },
+    {
+     "key": "5",
+     "workerStartToReadyMs": 72.74499997496605,
+     "loadMs": 72.2800000011921,
+     "fetchMs": 11.525000005960464,
+     "resources": [
+      {
+       "name": "beluga_web_wasm_cps.bc.wasm.js",
+       "transferSize": 12677,
+       "encodedBodySize": 12377,
+       "ms": 7.3
+      },
+      {
+       "name": "code-ee2d1fa56b5b036e4be8.wasm",
+       "transferSize": 2301316,
+       "encodedBodySize": 2301016,
+       "ms": 11.1
+      }
+     ],
+     "pageNewWorkerToReadyMs": 81.7950000166893
+    }
+   ],
+   "bootWarm": [
+    {
+     "key": "7",
+     "workerStartToReadyMs": 52.9549999833107,
+     "loadMs": 52.61500000953674,
+     "fetchMs": 4.230000019073486,
+     "resources": [
+      {
+       "name": "beluga_web_wasm_cps.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12377,
+       "ms": 1.2
+      },
+      {
+       "name": "code-ee2d1fa56b5b036e4be8.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 2301016,
+       "ms": 5.6
+      }
+     ],
+     "pageNewWorkerToReadyMs": 59.63000002503395
+    },
+    {
+     "key": "8",
+     "workerStartToReadyMs": 50.96500000357628,
+     "loadMs": 50.604999989271164,
+     "fetchMs": 4.4749999940395355,
+     "resources": [
+      {
+       "name": "beluga_web_wasm_cps.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12377,
+       "ms": 1.3
+      },
+      {
+       "name": "code-ee2d1fa56b5b036e4be8.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 2301016,
+       "ms": 5.6
+      }
+     ],
+     "pageNewWorkerToReadyMs": 57.37000000476837
+    },
+    {
+     "key": "9",
+     "workerStartToReadyMs": 49.275000005960464,
+     "loadMs": 48.96500000357628,
+     "fetchMs": 4.159999996423721,
+     "resources": [
+      {
+       "name": "beluga_web_wasm_cps.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12377,
+       "ms": 1.2
+      },
+      {
+       "name": "code-ee2d1fa56b5b036e4be8.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 2301016,
+       "ms": 5.5
+      }
+     ],
+     "pageNewWorkerToReadyMs": 56.21500000357628
+    },
+    {
+     "key": "10",
+     "workerStartToReadyMs": 47.92500001192093,
+     "loadMs": 47.62000000476837,
+     "fetchMs": 4.219999998807907,
+     "resources": [
+      {
+       "name": "beluga_web_wasm_cps.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12377,
+       "ms": 1.2
+      },
+      {
+       "name": "code-ee2d1fa56b5b036e4be8.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 2301016,
+       "ms": 5.2
+      }
+     ],
+     "pageNewWorkerToReadyMs": 54.150000005960464
+    },
+    {
+     "key": "11",
+     "workerStartToReadyMs": 50.060000002384186,
+     "loadMs": 49.770000010728836,
+     "fetchMs": 4.105000019073486,
+     "resources": [
+      {
+       "name": "beluga_web_wasm_cps.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12377,
+       "ms": 1.2
+      },
+      {
+       "name": "code-ee2d1fa56b5b036e4be8.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 2301016,
+       "ms": 5.4
+      }
+     ],
+     "pageNewWorkerToReadyMs": 56.11499997973442
+    },
+    {
+     "key": "12",
+     "workerStartToReadyMs": 50.35999998450279,
+     "loadMs": 49.99000000953674,
+     "fetchMs": 4.490000009536743,
+     "resources": [
+      {
+       "name": "beluga_web_wasm_cps.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12377,
+       "ms": 1.3
+      },
+      {
+       "name": "code-ee2d1fa56b5b036e4be8.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 2301016,
+       "ms": 5.9
+      }
+     ],
+     "pageNewWorkerToReadyMs": 56.894999980926514
+    },
+    {
+     "key": "13",
+     "workerStartToReadyMs": 87.47999998927116,
+     "loadMs": 86.99000000953674,
+     "fetchMs": 6.630000025033951,
+     "resources": [
+      {
+       "name": "beluga_web_wasm_cps.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12377,
+       "ms": 1.7
+      },
+      {
+       "name": "code-ee2d1fa56b5b036e4be8.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 2301016,
+       "ms": 8.7
+      }
+     ],
+     "pageNewWorkerToReadyMs": 97.875
+    }
+   ],
+   "passes": {
+    "rows": [
+     {
+      "name": "builtins/nd-first-order.bel",
+      "bytes": 962,
+      "ms": [
+       25.72,
+       4.78
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "builtins/nd-propositional.bel",
+      "bytes": 659,
+      "ms": [
+       6.63,
+       3.38
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "case-studies/classical-processes [cp.cfg]",
+      "bytes": 41139,
+      "ms": [
+       1077.53,
+       776.4
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "case-studies/harmony-lemma-formalization [all.cfg]",
+      "bytes": 64511,
+      "ms": [
+       1109.93,
+       907.21
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/arith/arith.bel",
+      "bytes": 1085,
+      "ms": [
+       10.76,
+       11.25
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/back/tc.bel",
+      "bytes": 1946,
+      "ms": [
+       8.03,
+       8.5
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/bigstep-deterministic [sources.cfg]",
+      "bytes": 5222,
+      "ms": [
+       68.75,
+       62.73
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/bigstep-deterministic/alternate.bel",
+      "bytes": 1986,
+      "ms": [
+       8.15,
+       6.9
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "3a7a984681e0",
+       "3a7a984681e0"
+      ]
+     },
+     {
+      "name": "examples/cfg [test.cfg]",
+      "bytes": 1181,
+      "ms": [
+       8.31,
+       7.2
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/church-rosser [test.cfg]",
+      "bytes": 16224,
+      "ms": [
+       146.6,
+       133.64
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/equiv-crec.bel",
+      "bytes": 4916,
+      "ms": [
+       17.54,
+       28.74
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "05ac0b940421",
+       "05ac0b940421"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/ord-cr-crec.bel",
+      "bytes": 485,
+      "ms": [
+       1.45,
+       1.57
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "099049bd2e3e",
+       "099049bd2e3e"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/ord-lemmas-crec.bel",
+      "bytes": 1555,
+      "ms": [
+       5.47,
+       5.09
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "2e080f14cf32",
+       "2e080f14cf32"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-cr-crec-1.bel",
+      "bytes": 7679,
+      "ms": [
+       22.77,
+       27.49
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "5b04d302318f",
+       "5b04d302318f"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-cr-crec-cover.bel",
+      "bytes": 6192,
+      "ms": [
+       18.4,
+       19.41
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "5b04d302318f",
+       "5b04d302318f"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-cr-crec.bel",
+      "bytes": 9392,
+      "ms": [
+       20.91,
+       19.44
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "5b04d302318f",
+       "5b04d302318f"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-lemmas-crec.bel",
+      "bytes": 999,
+      "ms": [
+       3.37,
+       3.49
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "fb667e3cf9f5",
+       "fb667e3cf9f5"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-red.bel",
+      "bytes": 1057,
+      "ms": [
+       1.52,
+       1.48
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "593796ee4784",
+       "593796ee4784"
+      ]
+     },
+     {
+      "name": "examples/codatatypes/bisimulation [sources.cfg]",
+      "bytes": 14014,
+      "ms": [
+       96.99,
+       89.25
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/codatatypes/howes-method/howe-total.bel",
+      "bytes": 24379,
+      "ms": [
+       375,
+       379.99
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/codatatypes/howes-method/howe.bel",
+      "bytes": 23880,
+      "ms": [
+       368.95,
+       330.94
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/codatatypes/tofte-hoas.bel",
+      "bytes": 1367,
+      "ms": [
+       10.66,
+       10.61
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/cls [test.cfg]",
+      "bytes": 13691,
+      "ms": [
+       112.62,
+       110.81
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/cls/complete-1.bel",
+      "bytes": 2354,
+      "ms": [
+       3.56,
+       3.73
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "daa3171df1b9",
+       "daa3171df1b9"
+      ]
+     },
+     {
+      "name": "examples/compile/cpm [test.cfg]",
+      "bytes": 11688,
+      "ms": [
+       109.76,
+       101.4
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/cps [sources.cfg]",
+      "bytes": 2751,
+      "ms": [
+       13.66,
+       11.01
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/cxm [test.cfg]",
+      "bytes": 4016,
+      "ms": [
+       15.92,
+       14.97
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/debruijn [test.cfg]",
+      "bytes": 7300,
+      "ms": [
+       35.01,
+       32.14
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/debruijn1 [test.cfg]",
+      "bytes": 4745,
+      "ms": [
+       30.19,
+       28.36
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-crec.bel",
+      "bytes": 1232,
+      "ms": [
+       14.1,
+       13.87
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-explicit.bel",
+      "bytes": 804,
+      "ms": [
+       6.32,
+       7
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-simple-crec.bel",
+      "bytes": 863,
+      "ms": [
+       4.97,
+       4.73
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-simple-explicit.bel",
+      "bytes": 472,
+      "ms": [
+       3.74,
+       3.23
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-simple.bel",
+      "bytes": 960,
+      "ms": [
+       8.58,
+       8.36
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy.bel",
+      "bytes": 1534,
+      "ms": [
+       10.38,
+       10.49
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-2.bel",
+      "bytes": 2036,
+      "ms": [
+       9.38,
+       9.27
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-crec.bel",
+      "bytes": 1527,
+      "ms": [
+       8.74,
+       8.49
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-explicit.bel",
+      "bytes": 1496,
+      "ms": [
+       9.43,
+       8.57
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-simple-crec.bel",
+      "bytes": 1341,
+      "ms": [
+       6.49,
+       6.26
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-simple.bel",
+      "bytes": 1375,
+      "ms": [
+       4.46,
+       4.36
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-str.bel",
+      "bytes": 1459,
+      "ms": [
+       8.85,
+       8.19
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar.bel",
+      "bytes": 2164,
+      "ms": [
+       5.56,
+       4.14
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "b114e295d19c",
+       "55bab8d085ec"
+      ]
+     },
+     {
+      "name": "examples/cpp13/cc.bel",
+      "bytes": 8862,
+      "ms": [
+       74.16,
+       72.62
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cpp13/cchoist.bel",
+      "bytes": 12915,
+      "ms": [
+       176.09,
+       160.19
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cpp13/cps.bel",
+      "bytes": 3059,
+      "ms": [
+       25.29,
+       26.85
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cpp13/sfcps.bel",
+      "bytes": 3670,
+      "ms": [
+       30.32,
+       28.23
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cut-elim [test.cfg]",
+      "bytes": 10195,
+      "ms": [
+       114.4,
+       108.19
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cut-elim/cut-admit-cover.bel",
+      "bytes": 6039,
+      "ms": [
+       47.68,
+       34.9
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cut-elim/int-elim.bel",
+      "bytes": 1551,
+      "ms": [
+       4.06,
+       3.6
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "1be447220227",
+       "1be447220227"
+      ]
+     },
+     {
+      "name": "examples/equal/alg-equal-ctxrel.bel",
+      "bytes": 14318,
+      "ms": [
+       143.69,
+       104.36
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/alg-equal-datatypes-adeq.bel",
+      "bytes": 6051,
+      "ms": [
+       49.94,
+       43.74
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/alg-equal-datatypes.bel",
+      "bytes": 2335,
+      "ms": [
+       23.37,
+       24.12
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-1.bel",
+      "bytes": 3159,
+      "ms": [
+       30.95,
+       26.66
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-2.bel",
+      "bytes": 3162,
+      "ms": [
+       31.21,
+       26.84
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-crec.bel",
+      "bytes": 2671,
+      "ms": [
+       28.39,
+       25.16
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-full-crec.bel",
+      "bytes": 3064,
+      "ms": [
+       29.81,
+       26.28
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-tuple.bel",
+      "bytes": 3089,
+      "ms": [
+       22.25,
+       20.91
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof.bel",
+      "bytes": 2355,
+      "ms": [
+       16.98,
+       16.13
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/fol [test.cfg]",
+      "bytes": 2793,
+      "ms": [
+       1.64,
+       1.34
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "6310fdadca54",
+       "6310fdadca54"
+      ]
+     },
+     {
+      "name": "examples/fol/fol-handbook.bel",
+      "bytes": 3998,
+      "ms": [
+       39.57,
+       39.79
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/free-vars/fvnat-crec.bel",
+      "bytes": 1420,
+      "ms": [
+       11.59,
+       11.64
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/free-vars/fvnat-explicit.bel",
+      "bytes": 1165,
+      "ms": [
+       7.76,
+       7.99
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/free-vars/fvnat.bel",
+      "bytes": 1571,
+      "ms": [
+       11.53,
+       10.88
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cconv-cheney.bel",
+      "bytes": 2717,
+      "ms": [
+       14.25,
+       14.1
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/conv-untyped.bel",
+      "bytes": 1010,
+      "ms": [
+       6.69,
+       7.01
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps-crec.bel",
+      "bytes": 1432,
+      "ms": [
+       8.71,
+       8.57
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps-popl-tutorial1.bel",
+      "bytes": 3183,
+      "ms": [
+       13.06,
+       12.31
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps-popl-tutorial2-crec.bel",
+      "bytes": 2572,
+      "ms": [
+       12.8,
+       12.43
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps-popl-tutorial2.bel",
+      "bytes": 2565,
+      "ms": [
+       11.77,
+       11.66
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps.bel",
+      "bytes": 1483,
+      "ms": [
+       5.86,
+       5.42
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/debruijn-1.bel",
+      "bytes": 2216,
+      "ms": [
+       19.01,
+       17.11
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/debruijn-1a.bel",
+      "bytes": 3840,
+      "ms": [
+       15.29,
+       15
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/debruijn-uniform.bel",
+      "bytes": 1908,
+      "ms": [
+       11.97,
+       12.18
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/debruijn.bel",
+      "bytes": 1144,
+      "ms": [
+       6.06,
+       6.21
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/term.bel",
+      "bytes": 4522,
+      "ms": [
+       7.29,
+       7.78
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/ucconv-total.bel",
+      "bytes": 4915,
+      "ms": [
+       34.83,
+       33.31
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/higher-order/jpath.bel",
+      "bytes": 3424,
+      "ms": [
+       35,
+       33.76
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/improve/eta.bel",
+      "bytes": 226,
+      "ms": [
+       1.38,
+       1.4
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/improve/recon.bel",
+      "bytes": 474,
+      "ms": [
+       2.75,
+       2.64
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/lincx_mechanization [lincx.cfg]",
+      "bytes": 55966,
+      "ms": [
+       565.2,
+       552.45
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "fbc0640c4fe6",
+       "854d17d4150a"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Close_Terms.bel",
+      "bytes": 5064,
+      "ms": [
+       5.75,
+       5.24
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/From_HOAS_to_DeBruijn.bel",
+      "bytes": 4063,
+      "ms": [
+       16.33,
+       16.34
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Norm.bel",
+      "bytes": 2038,
+      "ms": [
+       5.35,
+       5.54
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Parallel_Reduction.bel",
+      "bytes": 6434,
+      "ms": [
+       19.31,
+       19.49
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Polymorphic_Algorithmic_Equality.bel",
+      "bytes": 15204,
+      "ms": [
+       78.98,
+       77.19
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Type_Uniqueness.bel",
+      "bytes": 7839,
+      "ms": [
+       9.59,
+       9.74
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Untyped_Algorithmic_Equality_-_Context_Relation.bel",
+      "bytes": 20131,
+      "ms": [
+       178.01,
+       170.4
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Untyped_Algorithmic_Equality_-_Context_Subsumption.bel",
+      "bytes": 11378,
+      "ms": [
+       28.19,
+       27.66
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/1Intermediate/Poplmark.bel",
+      "bytes": 11241,
+      "ms": [
+       59.07,
+       52.56
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/2Advanced/Normalization_by_Evaluation.bel",
+      "bytes": 4466,
+      "ms": [
+       26.05,
+       27.63
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/2Advanced/Weak_Normalization.bel",
+      "bytes": 5603,
+      "ms": [
+       23.25,
+       24.79
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/algeq-simplified.bel",
+      "bytes": 15848,
+      "ms": [
+       184.62,
+       172.16
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/algeq-simplified1.bel",
+      "bytes": 15935,
+      "ms": [
+       184.68,
+       181.71
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/algeq-typing.bel",
+      "bytes": 20245,
+      "ms": [
+       288.84,
+       258.41
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "74bc0a53ed65",
+       "26f86b41992c"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-closed-ideal.bel",
+      "bytes": 3132,
+      "ms": [
+       30.54,
+       28.02
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-total-mix-lf-inductive.bel",
+      "bytes": 6679,
+      "ms": [
+       31.72,
+       30.58
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-total-products-explicit-typing.bel",
+      "bytes": 5233,
+      "ms": [
+       45.39,
+       46.47
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-total-products.bel",
+      "bytes": 9293,
+      "ms": [
+       66.12,
+       63.91
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-total.bel",
+      "bytes": 6630,
+      "ms": [
+       31.23,
+       30.04
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-under-binders-beta-only.bel",
+      "bytes": 9852,
+      "ms": [
+       93.16,
+       86.38
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-under-binders-simplified.bel",
+      "bytes": 10439,
+      "ms": [
+       86.49,
+       83.23
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-under-binders.bel",
+      "bytes": 11222,
+      "ms": [
+       89.46,
+       91.33
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm.bel",
+      "bytes": 5909,
+      "ms": [
+       23.46,
+       23.44
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/iscan.bel",
+      "bytes": 1547,
+      "ms": [
+       4.53,
+       4.32
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "10e512c7ba8e",
+       "10e512c7ba8e"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/uni-complete-crec.bel",
+      "bytes": 1968,
+      "ms": [
+       6.04,
+       6.09
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "10e512c7ba8e",
+       "10e512c7ba8e"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/uni-complete.bel",
+      "bytes": 1652,
+      "ms": [
+       6.29,
+       6.16
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "10e512c7ba8e",
+       "10e512c7ba8e"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/uni-sound-crec.bel",
+      "bytes": 1337,
+      "ms": [
+       4.76,
+       4.54
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "dee067379056",
+       "dee067379056"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/uni-sound.bel",
+      "bytes": 1338,
+      "ms": [
+       5.28,
+       5.38
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "dee067379056",
+       "dee067379056"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/clos-eval.bel",
+      "bytes": 1767,
+      "ms": [
+       11.38,
+       10.76
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/eval-sub-1-explicit.bel",
+      "bytes": 876,
+      "ms": [
+       4.75,
+       5.38
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/eval-sub-1.bel",
+      "bytes": 670,
+      "ms": [
+       3.74,
+       4.12
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/eval-sub-explicit.bel",
+      "bytes": 1130,
+      "ms": [
+       5.69,
+       7.19
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/eval-sub.bel",
+      "bytes": 982,
+      "ms": [
+       6.82,
+       6.57
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/tps.bel",
+      "bytes": 2517,
+      "ms": [
+       28.85,
+       26.86
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/vsound-explicit.bel",
+      "bytes": 1207,
+      "ms": [
+       7.59,
+       8.73
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/vsound.bel",
+      "bytes": 633,
+      "ms": [
+       3.01,
+       3.66
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/path/bred-nf.bel",
+      "bytes": 10834,
+      "ms": [
+       111.3,
+       137.23
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/path/path-typed.bel",
+      "bytes": 3875,
+      "ms": [
+       27.91,
+       35.95
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/path/path.bel",
+      "bytes": 3163,
+      "ms": [
+       22.47,
+       27.79
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/polylam/normal.bel",
+      "bytes": 2612,
+      "ms": [
+       12.12,
+       13.88
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/clos-eval.bel",
+      "bytes": 1286,
+      "ms": [
+       6.29,
+       7.47
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/closconv.bel",
+      "bytes": 1777,
+      "ms": [
+       13.5,
+       13.87
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/copy.bel",
+      "bytes": 785,
+      "ms": [
+       6.46,
+       6.73
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/lists.bel",
+      "bytes": 295,
+      "ms": [
+       1.97,
+       2.04
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/nbe-sub.bel",
+      "bytes": 3339,
+      "ms": [
+       30.34,
+       34.34
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/nbe.bel",
+      "bytes": 3874,
+      "ms": [
+       40.03,
+       35.92
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/normeval-abbrev.bel",
+      "bytes": 4950,
+      "ms": [
+       54.57,
+       47.9
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/normeval-subst.bel",
+      "bytes": 3400,
+      "ms": [
+       25.9,
+       25.01
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/normeval-total.bel",
+      "bytes": 5550,
+      "ms": [
+       48.14,
+       65.66
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/normeval.bel",
+      "bytes": 5416,
+      "ms": [
+       43.95,
+       64.99
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/poplmark-reloaded [sources.cfg]",
+      "bytes": 25152,
+      "ms": [
+       302.01,
+       410.09
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/poplmark-reloaded+ [sources.cfg]",
+      "bytes": 50747,
+      "ms": [
+       899.4,
+       936.86
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/poplmark/pearl.bel",
+      "bytes": 9841,
+      "ms": [
+       58.91,
+       59.25
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/poplmark/poplmark.bel",
+      "bytes": 8589,
+      "ms": [
+       13.18,
+       12.78
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/small-step/lam.bel",
+      "bytes": 3112,
+      "ms": [
+       25.54,
+       22.4
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/small-step/subject-red.bel",
+      "bytes": 3037,
+      "ms": [
+       34.31,
+       31.67
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/small-step/system-f-iso.bel",
+      "bytes": 9222,
+      "ms": [
+       56.06,
+       57.94
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/small-step/system-f.bel",
+      "bytes": 4139,
+      "ms": [
+       33.32,
+       38.24
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch14-b.bel",
+      "bytes": 2327,
+      "ms": [
+       21.17,
+       21.64
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch14.bel",
+      "bytes": 4301,
+      "ms": [
+       31.37,
+       31.53
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch3 [sources.cfg]",
+      "bytes": 20959,
+      "ms": [
+       127.82,
+       125.59
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch3+arith [sources.cfg]",
+      "bytes": 49571,
+      "ms": [
+       303.15,
+       288.22
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch3+arith+leq [sources.cfg]",
+      "bytes": 31709,
+      "ms": [
+       205.42,
+       210.27
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch3/eval.bel",
+      "bytes": 3170,
+      "ms": [
+       5.29,
+       5.09
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "c764c1f95738",
+       "c764c1f95738"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch6/evaluator.bel",
+      "bytes": 583,
+      "ms": [
+       3.11,
+       3.2
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch6/small-step.bel",
+      "bytes": 1879,
+      "ms": [
+       14.55,
+       15.81
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch6/tps.bel",
+      "bytes": 1420,
+      "ms": [
+       10.02,
+       10.78
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/cconv-cheney.bel",
+      "bytes": 2655,
+      "ms": [
+       12.9,
+       13.7
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/cps-popl-tutorial1-crec.bel",
+      "bytes": 2993,
+      "ms": [
+       10.19,
+       10.19
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/cps-popl-tutorial2-crec.bel",
+      "bytes": 2624,
+      "ms": [
+       12.71,
+       11.49
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/debruijn.bel",
+      "bytes": 1989,
+      "ms": [
+       14.29,
+       13.62
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/term-typed.bel",
+      "bytes": 728,
+      "ms": [
+       4.72,
+       4.47
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/tpeval-explicit.bel",
+      "bytes": 2092,
+      "ms": [
+       11.82,
+       11.9
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/tpeval-val.bel",
+      "bytes": 1872,
+      "ms": [
+       12.92,
+       13.14
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/tpeval.bel",
+      "bytes": 1636,
+      "ms": [
+       8.22,
+       9.19
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "89d4d9ac461e",
+       "91255ec74cbd"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/tpeval2.bel",
+      "bytes": 1103,
+      "ms": [
+       7.27,
+       6.91
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/valsound.bel",
+      "bytes": 669,
+      "ms": [
+       6.61,
+       6.53
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/unique/unique-crec.bel",
+      "bytes": 3893,
+      "ms": [
+       36.24,
+       35.88
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/unique/unique-eval.bel",
+      "bytes": 918,
+      "ms": [
+       8.3,
+       8.19
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/unique/unique-standard.bel",
+      "bytes": 1457,
+      "ms": [
+       12.66,
+       12.19
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/unique/unique.bel",
+      "bytes": 3963,
+      "ms": [
+       15.7,
+       14.33
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     }
+    ]
+   }
+  },
+  "wasm": {
+   "files": [
+    "beluga_web_wasm.bc.wasm.js",
+    "beluga_web_wasm.bc.wasm.assets\\code-a0e7373bae1520a4b814.wasm"
+   ],
+   "bootCold": [
+    {
+     "key": "15",
+     "workerStartToReadyMs": 62.85999998450279,
+     "loadMs": 62.30999997258186,
+     "fetchMs": 11.949999988079071,
+     "resources": [
+      {
+       "name": "beluga_web_wasm.bc.wasm.js",
+       "transferSize": 12696,
+       "encodedBodySize": 12396,
+       "ms": 8
+      },
+      {
+       "name": "code-a0e7373bae1520a4b814.wasm",
+       "transferSize": 1828249,
+       "encodedBodySize": 1827949,
+       "ms": 7.8
+      }
+     ],
+     "pageNewWorkerToReadyMs": 73.23999997973442
+    },
+    {
+     "key": "16",
+     "workerStartToReadyMs": 62.354999989271164,
+     "loadMs": 61.91499999165535,
+     "fetchMs": 11.99499997496605,
+     "resources": [
+      {
+       "name": "beluga_web_wasm.bc.wasm.js",
+       "transferSize": 12696,
+       "encodedBodySize": 12396,
+       "ms": 7.7
+      },
+      {
+       "name": "code-a0e7373bae1520a4b814.wasm",
+       "transferSize": 1828249,
+       "encodedBodySize": 1827949,
+       "ms": 7.1
+      }
+     ],
+     "pageNewWorkerToReadyMs": 71.80500000715256
+    },
+    {
+     "key": "17",
+     "workerStartToReadyMs": 61.814999997615814,
+     "loadMs": 61.32499998807907,
+     "fetchMs": 11.699999988079071,
+     "resources": [
+      {
+       "name": "beluga_web_wasm.bc.wasm.js",
+       "transferSize": 12696,
+       "encodedBodySize": 12396,
+       "ms": 7.2
+      },
+      {
+       "name": "code-a0e7373bae1520a4b814.wasm",
+       "transferSize": 1828249,
+       "encodedBodySize": 1827949,
+       "ms": 6.9
+      }
+     ],
+     "pageNewWorkerToReadyMs": 71.85999998450279
+    },
+    {
+     "key": "18",
+     "workerStartToReadyMs": 62.01500001549721,
+     "loadMs": 61.60000002384186,
+     "fetchMs": 11.310000002384186,
+     "resources": [
+      {
+       "name": "beluga_web_wasm.bc.wasm.js",
+       "transferSize": 12696,
+       "encodedBodySize": 12396,
+       "ms": 7.1
+      },
+      {
+       "name": "code-a0e7373bae1520a4b814.wasm",
+       "transferSize": 1828249,
+       "encodedBodySize": 1827949,
+       "ms": 6.7
+      }
+     ],
+     "pageNewWorkerToReadyMs": 72.34000000357628
+    },
+    {
+     "key": "19",
+     "workerStartToReadyMs": 78.90999999642372,
+     "loadMs": 77.71500000357628,
+     "fetchMs": 14.294999986886978,
+     "resources": [
+      {
+       "name": "beluga_web_wasm.bc.wasm.js",
+       "transferSize": 12696,
+       "encodedBodySize": 12396,
+       "ms": 9.1
+      },
+      {
+       "name": "code-a0e7373bae1520a4b814.wasm",
+       "transferSize": 1828249,
+       "encodedBodySize": 1827949,
+       "ms": 7.6
+      }
+     ],
+     "pageNewWorkerToReadyMs": 89.75
+    }
+   ],
+   "bootWarm": [
+    {
+     "key": "21",
+     "workerStartToReadyMs": 44.979999989271164,
+     "loadMs": 44.62999999523163,
+     "fetchMs": 4.639999985694885,
+     "resources": [
+      {
+       "name": "beluga_web_wasm.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12396,
+       "ms": 1.3
+      },
+      {
+       "name": "code-a0e7373bae1520a4b814.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 1827949,
+       "ms": 3.2
+      }
+     ],
+     "pageNewWorkerToReadyMs": 52.439999997615814
+    },
+    {
+     "key": "22",
+     "workerStartToReadyMs": 45.46500000357628,
+     "loadMs": 45.099999994039536,
+     "fetchMs": 4.899999976158142,
+     "resources": [
+      {
+       "name": "beluga_web_wasm.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12396,
+       "ms": 1.4
+      },
+      {
+       "name": "code-a0e7373bae1520a4b814.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 1827949,
+       "ms": 3.2
+      }
+     ],
+     "pageNewWorkerToReadyMs": 52.849999994039536
+    },
+    {
+     "key": "23",
+     "workerStartToReadyMs": 43.95500001311302,
+     "loadMs": 43.645000010728836,
+     "fetchMs": 4.510000020265579,
+     "resources": [
+      {
+       "name": "beluga_web_wasm.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12396,
+       "ms": 1.3
+      },
+      {
+       "name": "code-a0e7373bae1520a4b814.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 1827949,
+       "ms": 2.8
+      }
+     ],
+     "pageNewWorkerToReadyMs": 50.860000014305115
+    },
+    {
+     "key": "24",
+     "workerStartToReadyMs": 42.88499999046326,
+     "loadMs": 42.58500000834465,
+     "fetchMs": 3.9850000143051147,
+     "resources": [
+      {
+       "name": "beluga_web_wasm.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12396,
+       "ms": 1.2
+      },
+      {
+       "name": "code-a0e7373bae1520a4b814.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 1827949,
+       "ms": 2.6
+      }
+     ],
+     "pageNewWorkerToReadyMs": 49.11500000953674
+    },
+    {
+     "key": "25",
+     "workerStartToReadyMs": 38.03999999165535,
+     "loadMs": 37.74500000476837,
+     "fetchMs": 4.074999988079071,
+     "resources": [
+      {
+       "name": "beluga_web_wasm.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12396,
+       "ms": 1.1
+      },
+      {
+       "name": "code-a0e7373bae1520a4b814.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 1827949,
+       "ms": 2.7
+      }
+     ],
+     "pageNewWorkerToReadyMs": 44.23999997973442
+    },
+    {
+     "key": "26",
+     "workerStartToReadyMs": 36.15999999642372,
+     "loadMs": 35.88499999046326,
+     "fetchMs": 3.469999998807907,
+     "resources": [
+      {
+       "name": "beluga_web_wasm.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12396,
+       "ms": 1
+      },
+      {
+       "name": "code-a0e7373bae1520a4b814.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 1827949,
+       "ms": 2.2
+      }
+     ],
+     "pageNewWorkerToReadyMs": 41.53499999642372
+    },
+    {
+     "key": "27",
+     "workerStartToReadyMs": 36.55500000715256,
+     "loadMs": 36.28000000119209,
+     "fetchMs": 3.7399999797344208,
+     "resources": [
+      {
+       "name": "beluga_web_wasm.bc.wasm.js",
+       "transferSize": 0,
+       "encodedBodySize": 12396,
+       "ms": 1.1
+      },
+      {
+       "name": "code-a0e7373bae1520a4b814.wasm",
+       "transferSize": 0,
+       "encodedBodySize": 1827949,
+       "ms": 2.3
+      }
+     ],
+     "pageNewWorkerToReadyMs": 42.2049999833107
+    }
+   ],
+   "passes": {
+    "rows": [
+     {
+      "name": "builtins/nd-first-order.bel",
+      "bytes": 962,
+      "ms": [
+       23.17,
+       9.1
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "builtins/nd-propositional.bel",
+      "bytes": 659,
+      "ms": [
+       7.84,
+       4.81
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "case-studies/classical-processes [cp.cfg]",
+      "bytes": 41139,
+      "ms": [
+       2632.48,
+       2155.46
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "case-studies/harmony-lemma-formalization [all.cfg]",
+      "bytes": 64511,
+      "ms": [
+       1634.17,
+       1563.15
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/arith/arith.bel",
+      "bytes": 1085,
+      "ms": [
+       11.09,
+       9.81
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/back/tc.bel",
+      "bytes": 1946,
+      "ms": [
+       11.06,
+       10.81
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/bigstep-deterministic [sources.cfg]",
+      "bytes": 5222,
+      "ms": [
+       86.05,
+       86.69
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/bigstep-deterministic/alternate.bel",
+      "bytes": 1986,
+      "ms": [
+       7.81,
+       6.17
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "3a7a984681e0",
+       "3a7a984681e0"
+      ]
+     },
+     {
+      "name": "examples/cfg [test.cfg]",
+      "bytes": 1181,
+      "ms": [
+       7.81,
+       7.11
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/church-rosser [test.cfg]",
+      "bytes": 16224,
+      "ms": [
+       279.65,
+       185.78
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/equiv-crec.bel",
+      "bytes": 4916,
+      "ms": [
+       15.3,
+       13.44
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "05ac0b940421",
+       "05ac0b940421"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/ord-cr-crec.bel",
+      "bytes": 485,
+      "ms": [
+       1.55,
+       1.7
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "099049bd2e3e",
+       "099049bd2e3e"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/ord-lemmas-crec.bel",
+      "bytes": 1555,
+      "ms": [
+       4.8,
+       5.69
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "2e080f14cf32",
+       "2e080f14cf32"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-cr-crec-1.bel",
+      "bytes": 7679,
+      "ms": [
+       25.3,
+       20.95
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "5b04d302318f",
+       "5b04d302318f"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-cr-crec-cover.bel",
+      "bytes": 6192,
+      "ms": [
+       18.94,
+       16.72
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "5b04d302318f",
+       "5b04d302318f"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-cr-crec.bel",
+      "bytes": 9392,
+      "ms": [
+       23.58,
+       16.66
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "5b04d302318f",
+       "5b04d302318f"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-lemmas-crec.bel",
+      "bytes": 999,
+      "ms": [
+       3.31,
+       3.2
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "fb667e3cf9f5",
+       "fb667e3cf9f5"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-red.bel",
+      "bytes": 1057,
+      "ms": [
+       1.73,
+       1.5
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "593796ee4784",
+       "593796ee4784"
+      ]
+     },
+     {
+      "name": "examples/codatatypes/bisimulation [sources.cfg]",
+      "bytes": 14014,
+      "ms": [
+       131.06,
+       106.88
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/codatatypes/howes-method/howe-total.bel",
+      "bytes": 24379,
+      "ms": [
+       397.76,
+       375.99
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/codatatypes/howes-method/howe.bel",
+      "bytes": 23880,
+      "ms": [
+       348.28,
+       327.28
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/codatatypes/tofte-hoas.bel",
+      "bytes": 1367,
+      "ms": [
+       12,
+       12.91
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/cls [test.cfg]",
+      "bytes": 13691,
+      "ms": [
+       139.67,
+       131.68
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/cls/complete-1.bel",
+      "bytes": 2354,
+      "ms": [
+       3.13,
+       7.18
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "daa3171df1b9",
+       "daa3171df1b9"
+      ]
+     },
+     {
+      "name": "examples/compile/cpm [test.cfg]",
+      "bytes": 11688,
+      "ms": [
+       119.97,
+       121.77
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/cps [sources.cfg]",
+      "bytes": 2751,
+      "ms": [
+       16.71,
+       17.03
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/cxm [test.cfg]",
+      "bytes": 4016,
+      "ms": [
+       22.42,
+       24.83
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/debruijn [test.cfg]",
+      "bytes": 7300,
+      "ms": [
+       47.55,
+       44.59
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/debruijn1 [test.cfg]",
+      "bytes": 4745,
+      "ms": [
+       31.99,
+       31.44
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-crec.bel",
+      "bytes": 1232,
+      "ms": [
+       13.37,
+       14.13
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-explicit.bel",
+      "bytes": 804,
+      "ms": [
+       6.31,
+       7.89
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-simple-crec.bel",
+      "bytes": 863,
+      "ms": [
+       5.84,
+       7.32
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-simple-explicit.bel",
+      "bytes": 472,
+      "ms": [
+       3.99,
+       4.4
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-simple.bel",
+      "bytes": 960,
+      "ms": [
+       12.78,
+       10.16
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy.bel",
+      "bytes": 1534,
+      "ms": [
+       13,
+       13.51
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-2.bel",
+      "bytes": 2036,
+      "ms": [
+       12.07,
+       11.35
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-crec.bel",
+      "bytes": 1527,
+      "ms": [
+       10.53,
+       12.03
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-explicit.bel",
+      "bytes": 1496,
+      "ms": [
+       9.94,
+       9.82
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-simple-crec.bel",
+      "bytes": 1341,
+      "ms": [
+       7.7,
+       8.64
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-simple.bel",
+      "bytes": 1375,
+      "ms": [
+       5.01,
+       5.32
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-str.bel",
+      "bytes": 1459,
+      "ms": [
+       10.02,
+       9.76
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar.bel",
+      "bytes": 2164,
+      "ms": [
+       5.18,
+       4.7
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "b114e295d19c",
+       "55bab8d085ec"
+      ]
+     },
+     {
+      "name": "examples/cpp13/cc.bel",
+      "bytes": 8862,
+      "ms": [
+       98.41,
+       105.65
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cpp13/cchoist.bel",
+      "bytes": 12915,
+      "ms": [
+       181.54,
+       186.94
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cpp13/cps.bel",
+      "bytes": 3059,
+      "ms": [
+       30.93,
+       33.5
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cpp13/sfcps.bel",
+      "bytes": 3670,
+      "ms": [
+       37.71,
+       37.99
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cut-elim [test.cfg]",
+      "bytes": 10195,
+      "ms": [
+       153.66,
+       150.34
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cut-elim/cut-admit-cover.bel",
+      "bytes": 6039,
+      "ms": [
+       47.07,
+       42.31
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cut-elim/int-elim.bel",
+      "bytes": 1551,
+      "ms": [
+       3.35,
+       3.31
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "1be447220227",
+       "1be447220227"
+      ]
+     },
+     {
+      "name": "examples/equal/alg-equal-ctxrel.bel",
+      "bytes": 14318,
+      "ms": [
+       134.62,
+       130.65
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/alg-equal-datatypes-adeq.bel",
+      "bytes": 6051,
+      "ms": [
+       62.45,
+       56.73
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/alg-equal-datatypes.bel",
+      "bytes": 2335,
+      "ms": [
+       25.36,
+       27.87
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-1.bel",
+      "bytes": 3159,
+      "ms": [
+       35.72,
+       34.99
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-2.bel",
+      "bytes": 3162,
+      "ms": [
+       37.2,
+       36
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-crec.bel",
+      "bytes": 2671,
+      "ms": [
+       36.96,
+       36.78
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-full-crec.bel",
+      "bytes": 3064,
+      "ms": [
+       34.19,
+       36.91
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-tuple.bel",
+      "bytes": 3089,
+      "ms": [
+       24.47,
+       24.81
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof.bel",
+      "bytes": 2355,
+      "ms": [
+       20.31,
+       20.37
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/fol [test.cfg]",
+      "bytes": 2793,
+      "ms": [
+       1.36,
+       1.25
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "6310fdadca54",
+       "6310fdadca54"
+      ]
+     },
+     {
+      "name": "examples/fol/fol-handbook.bel",
+      "bytes": 3998,
+      "ms": [
+       47.97,
+       47.54
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/free-vars/fvnat-crec.bel",
+      "bytes": 1420,
+      "ms": [
+       13.54,
+       13.6
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/free-vars/fvnat-explicit.bel",
+      "bytes": 1165,
+      "ms": [
+       8.13,
+       8.34
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/free-vars/fvnat.bel",
+      "bytes": 1571,
+      "ms": [
+       15.89,
+       13.93
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cconv-cheney.bel",
+      "bytes": 2717,
+      "ms": [
+       14.84,
+       16.83
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/conv-untyped.bel",
+      "bytes": 1010,
+      "ms": [
+       9.27,
+       8.33
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps-crec.bel",
+      "bytes": 1432,
+      "ms": [
+       10.92,
+       12.51
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps-popl-tutorial1.bel",
+      "bytes": 3183,
+      "ms": [
+       43.19,
+       15.35
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps-popl-tutorial2-crec.bel",
+      "bytes": 2572,
+      "ms": [
+       32.1,
+       15.53
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps-popl-tutorial2.bel",
+      "bytes": 2565,
+      "ms": [
+       26,
+       14.33
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps.bel",
+      "bytes": 1483,
+      "ms": [
+       13.31,
+       7.25
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/debruijn-1.bel",
+      "bytes": 2216,
+      "ms": [
+       31.82,
+       21.38
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/debruijn-1a.bel",
+      "bytes": 3840,
+      "ms": [
+       22.52,
+       17.25
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/debruijn-uniform.bel",
+      "bytes": 1908,
+      "ms": [
+       14.51,
+       12.97
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/debruijn.bel",
+      "bytes": 1144,
+      "ms": [
+       8.24,
+       7.66
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/term.bel",
+      "bytes": 4522,
+      "ms": [
+       8.38,
+       8.19
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/ucconv-total.bel",
+      "bytes": 4915,
+      "ms": [
+       49.06,
+       44.9
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/higher-order/jpath.bel",
+      "bytes": 3424,
+      "ms": [
+       42.58,
+       39.99
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/improve/eta.bel",
+      "bytes": 226,
+      "ms": [
+       1.44,
+       1.59
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/improve/recon.bel",
+      "bytes": 474,
+      "ms": [
+       3.38,
+       3.2
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/lincx_mechanization [lincx.cfg]",
+      "bytes": 55966,
+      "ms": [
+       1146.89,
+       1008.56
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "fbc0640c4fe6",
+       "854d17d4150a"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Close_Terms.bel",
+      "bytes": 5064,
+      "ms": [
+       6.03,
+       5.22
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/From_HOAS_to_DeBruijn.bel",
+      "bytes": 4063,
+      "ms": [
+       19.52,
+       17.41
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Norm.bel",
+      "bytes": 2038,
+      "ms": [
+       6.54,
+       6.19
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Parallel_Reduction.bel",
+      "bytes": 6434,
+      "ms": [
+       28.73,
+       23.43
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Polymorphic_Algorithmic_Equality.bel",
+      "bytes": 15204,
+      "ms": [
+       111.94,
+       101.64
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Type_Uniqueness.bel",
+      "bytes": 7839,
+      "ms": [
+       11.63,
+       12.82
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Untyped_Algorithmic_Equality_-_Context_Relation.bel",
+      "bytes": 20131,
+      "ms": [
+       303.24,
+       214.65
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Untyped_Algorithmic_Equality_-_Context_Subsumption.bel",
+      "bytes": 11378,
+      "ms": [
+       37.69,
+       33.89
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/1Intermediate/Poplmark.bel",
+      "bytes": 11241,
+      "ms": [
+       70.25,
+       68.3
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/2Advanced/Normalization_by_Evaluation.bel",
+      "bytes": 4466,
+      "ms": [
+       32.62,
+       31.84
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/2Advanced/Weak_Normalization.bel",
+      "bytes": 5603,
+      "ms": [
+       30.3,
+       29.31
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/algeq-simplified.bel",
+      "bytes": 15848,
+      "ms": [
+       280.9,
+       255.25
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/algeq-simplified1.bel",
+      "bytes": 15935,
+      "ms": [
+       297.6,
+       246.2
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/algeq-typing.bel",
+      "bytes": 20245,
+      "ms": [
+       391.29,
+       374.17
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "74bc0a53ed65",
+       "26f86b41992c"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-closed-ideal.bel",
+      "bytes": 3132,
+      "ms": [
+       70.46,
+       30.73
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-total-mix-lf-inductive.bel",
+      "bytes": 6679,
+      "ms": [
+       40.25,
+       36.12
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-total-products-explicit-typing.bel",
+      "bytes": 5233,
+      "ms": [
+       60.79,
+       58.02
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-total-products.bel",
+      "bytes": 9293,
+      "ms": [
+       76.26,
+       72.44
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-total.bel",
+      "bytes": 6630,
+      "ms": [
+       36.67,
+       33.85
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-under-binders-beta-only.bel",
+      "bytes": 9852,
+      "ms": [
+       111.6,
+       108.44
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-under-binders-simplified.bel",
+      "bytes": 10439,
+      "ms": [
+       105.41,
+       99.45
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-under-binders.bel",
+      "bytes": 11222,
+      "ms": [
+       103.07,
+       104.48
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm.bel",
+      "bytes": 5909,
+      "ms": [
+       26.77,
+       27.52
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/iscan.bel",
+      "bytes": 1547,
+      "ms": [
+       4.17,
+       4.23
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "10e512c7ba8e",
+       "10e512c7ba8e"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/uni-complete-crec.bel",
+      "bytes": 1968,
+      "ms": [
+       4.99,
+       5.08
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "10e512c7ba8e",
+       "10e512c7ba8e"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/uni-complete.bel",
+      "bytes": 1652,
+      "ms": [
+       6.74,
+       5.99
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "10e512c7ba8e",
+       "10e512c7ba8e"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/uni-sound-crec.bel",
+      "bytes": 1337,
+      "ms": [
+       4.52,
+       4.89
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "dee067379056",
+       "dee067379056"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/uni-sound.bel",
+      "bytes": 1338,
+      "ms": [
+       4.94,
+       4.62
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "dee067379056",
+       "dee067379056"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/clos-eval.bel",
+      "bytes": 1767,
+      "ms": [
+       14.97,
+       13.52
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/eval-sub-1-explicit.bel",
+      "bytes": 876,
+      "ms": [
+       5.13,
+       4.85
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/eval-sub-1.bel",
+      "bytes": 670,
+      "ms": [
+       4.13,
+       4.44
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/eval-sub-explicit.bel",
+      "bytes": 1130,
+      "ms": [
+       6.25,
+       5.69
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/eval-sub.bel",
+      "bytes": 982,
+      "ms": [
+       6.53,
+       6.45
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/tps.bel",
+      "bytes": 2517,
+      "ms": [
+       46.48,
+       47.34
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/vsound-explicit.bel",
+      "bytes": 1207,
+      "ms": [
+       7.54,
+       7.38
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/vsound.bel",
+      "bytes": 633,
+      "ms": [
+       4.25,
+       4.3
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/path/bred-nf.bel",
+      "bytes": 10834,
+      "ms": [
+       172.34,
+       163.09
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/path/path-typed.bel",
+      "bytes": 3875,
+      "ms": [
+       48.36,
+       44.45
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/path/path.bel",
+      "bytes": 3163,
+      "ms": [
+       35.35,
+       30.25
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/polylam/normal.bel",
+      "bytes": 2612,
+      "ms": [
+       18.32,
+       15.2
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/clos-eval.bel",
+      "bytes": 1286,
+      "ms": [
+       8.8,
+       7.41
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/closconv.bel",
+      "bytes": 1777,
+      "ms": [
+       15.61,
+       14.16
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/copy.bel",
+      "bytes": 785,
+      "ms": [
+       6.36,
+       5.9
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/lists.bel",
+      "bytes": 295,
+      "ms": [
+       2.12,
+       1.78
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/nbe-sub.bel",
+      "bytes": 3339,
+      "ms": [
+       36.54,
+       34.65
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/nbe.bel",
+      "bytes": 3874,
+      "ms": [
+       39.74,
+       34.28
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/normeval-abbrev.bel",
+      "bytes": 4950,
+      "ms": [
+       52.56,
+       45.01
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/normeval-subst.bel",
+      "bytes": 3400,
+      "ms": [
+       30.66,
+       35.87
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/normeval-total.bel",
+      "bytes": 5550,
+      "ms": [
+       69.06,
+       74.63
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/normeval.bel",
+      "bytes": 5416,
+      "ms": [
+       58.31,
+       61.41
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/poplmark-reloaded [sources.cfg]",
+      "bytes": 25152,
+      "ms": [
+       398.73,
+       392.21
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/poplmark-reloaded+ [sources.cfg]",
+      "bytes": 50747,
+      "ms": [
+       1244.58,
+       1204.97
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/poplmark/pearl.bel",
+      "bytes": 9841,
+      "ms": [
+       82.39,
+       79.94
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/poplmark/poplmark.bel",
+      "bytes": 8589,
+      "ms": [
+       16.56,
+       15.34
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/small-step/lam.bel",
+      "bytes": 3112,
+      "ms": [
+       29.17,
+       28.25
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/small-step/subject-red.bel",
+      "bytes": 3037,
+      "ms": [
+       44,
+       44.14
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/small-step/system-f-iso.bel",
+      "bytes": 9222,
+      "ms": [
+       128.19,
+       105.06
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/small-step/system-f.bel",
+      "bytes": 4139,
+      "ms": [
+       64.82,
+       59.07
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch14-b.bel",
+      "bytes": 2327,
+      "ms": [
+       35.84,
+       38.27
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch14.bel",
+      "bytes": 4301,
+      "ms": [
+       38.44,
+       39.86
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch3 [sources.cfg]",
+      "bytes": 20959,
+      "ms": [
+       202.4,
+       251.75
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch3+arith [sources.cfg]",
+      "bytes": 49571,
+      "ms": [
+       659.75,
+       631.75
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch3+arith+leq [sources.cfg]",
+      "bytes": 31709,
+      "ms": [
+       378.88,
+       413.97
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch3/eval.bel",
+      "bytes": 3170,
+      "ms": [
+       5.31,
+       5.43
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "c764c1f95738",
+       "c764c1f95738"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch6/evaluator.bel",
+      "bytes": 583,
+      "ms": [
+       3.23,
+       3.3
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch6/small-step.bel",
+      "bytes": 1879,
+      "ms": [
+       18.79,
+       22.58
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch6/tps.bel",
+      "bytes": 1420,
+      "ms": [
+       13.81,
+       12.82
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/cconv-cheney.bel",
+      "bytes": 2655,
+      "ms": [
+       18.29,
+       16.85
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/cps-popl-tutorial1-crec.bel",
+      "bytes": 2993,
+      "ms": [
+       12.49,
+       12.57
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/cps-popl-tutorial2-crec.bel",
+      "bytes": 2624,
+      "ms": [
+       14.43,
+       15.01
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/debruijn.bel",
+      "bytes": 1989,
+      "ms": [
+       18.7,
+       20.1
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/term-typed.bel",
+      "bytes": 728,
+      "ms": [
+       5.21,
+       5.14
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/tpeval-explicit.bel",
+      "bytes": 2092,
+      "ms": [
+       10.53,
+       11.41
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/tpeval-val.bel",
+      "bytes": 1872,
+      "ms": [
+       14.49,
+       14.62
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/tpeval.bel",
+      "bytes": 1636,
+      "ms": [
+       9.44,
+       7.77
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "89d4d9ac461e",
+       "91255ec74cbd"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/tpeval2.bel",
+      "bytes": 1103,
+      "ms": [
+       9.27,
+       7.32
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/valsound.bel",
+      "bytes": 669,
+      "ms": [
+       8.32,
+       8.13
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/unique/unique-crec.bel",
+      "bytes": 3893,
+      "ms": [
+       49.19,
+       53.09
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/unique/unique-eval.bel",
+      "bytes": 918,
+      "ms": [
+       10.05,
+       9.77
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/unique/unique-standard.bel",
+      "bytes": 1457,
+      "ms": [
+       15.16,
+       15.35
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/unique/unique.bel",
+      "bytes": 3963,
+      "ms": [
+       19.88,
+       19.75
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     }
+    ]
+   }
+  },
+  "stable": {
+   "files": [
+    "beluga_web.bc.js"
+   ],
+   "bootCold": [
+    {
+     "key": "29",
+     "workerStartToReadyMs": 112.19499999284744,
+     "loadMs": 111.66999998688698,
+     "fetchMs": 18.569999992847443,
+     "resources": [
+      {
+       "name": "beluga_web.bc.js",
+       "transferSize": 2596334,
+       "encodedBodySize": 2596034,
+       "ms": 12.8
+      }
+     ],
+     "pageNewWorkerToReadyMs": 122.57499998807907
+    },
+    {
+     "key": "30",
+     "workerStartToReadyMs": 116.92999997735023,
+     "loadMs": 116.48499998450279,
+     "fetchMs": 19.099999994039536,
+     "resources": [
+      {
+       "name": "beluga_web.bc.js",
+       "transferSize": 2596334,
+       "encodedBodySize": 2596034,
+       "ms": 12.4
+      }
+     ],
+     "pageNewWorkerToReadyMs": 127.06000000238419
+    },
+    {
+     "key": "31",
+     "workerStartToReadyMs": 126.76500001549721,
+     "loadMs": 126.23500001430511,
+     "fetchMs": 28.930000007152557,
+     "resources": [
+      {
+       "name": "beluga_web.bc.js",
+       "transferSize": 2596334,
+       "encodedBodySize": 2596034,
+       "ms": 22.4
+      }
+     ],
+     "pageNewWorkerToReadyMs": 135.62000000476837
+    },
+    {
+     "key": "32",
+     "workerStartToReadyMs": 151.54499998688698,
+     "loadMs": 150.98500001430511,
+     "fetchMs": 23.100000023841858,
+     "resources": [
+      {
+       "name": "beluga_web.bc.js",
+       "transferSize": 2596334,
+       "encodedBodySize": 2596034,
+       "ms": 14.6
+      }
+     ],
+     "pageNewWorkerToReadyMs": 165.34999999403954
+    },
+    {
+     "key": "33",
+     "workerStartToReadyMs": 138.51000002026558,
+     "loadMs": 138.03499999642372,
+     "fetchMs": 20.609999984502792,
+     "resources": [
+      {
+       "name": "beluga_web.bc.js",
+       "transferSize": 2596334,
+       "encodedBodySize": 2596034,
+       "ms": 13
+      }
+     ],
+     "pageNewWorkerToReadyMs": 149.09999999403954
+    }
+   ],
+   "bootWarm": [
+    {
+     "key": "35",
+     "workerStartToReadyMs": 90.19999998807907,
+     "loadMs": 89.85499998927116,
+     "fetchMs": 8.069999992847443,
+     "resources": [
+      {
+       "name": "beluga_web.bc.js",
+       "transferSize": 0,
+       "encodedBodySize": 2596034,
+       "ms": 3.8
+      }
+     ],
+     "pageNewWorkerToReadyMs": 97.05500000715256
+    },
+    {
+     "key": "36",
+     "workerStartToReadyMs": 80.13499999046326,
+     "loadMs": 79.82499998807907,
+     "fetchMs": 7.3299999833106995,
+     "resources": [
+      {
+       "name": "beluga_web.bc.js",
+       "transferSize": 0,
+       "encodedBodySize": 2596034,
+       "ms": 3.4
+      }
+     ],
+     "pageNewWorkerToReadyMs": 86.30499997735023
+    },
+    {
+     "key": "37",
+     "workerStartToReadyMs": 81.05500000715256,
+     "loadMs": 80.75,
+     "fetchMs": 7.0250000059604645,
+     "resources": [
+      {
+       "name": "beluga_web.bc.js",
+       "transferSize": 0,
+       "encodedBodySize": 2596034,
+       "ms": 3.2
+      }
+     ],
+     "pageNewWorkerToReadyMs": 87.53999999165535
+    },
+    {
+     "key": "38",
+     "workerStartToReadyMs": 86.85499998927116,
+     "loadMs": 86.55500000715256,
+     "fetchMs": 8.13000002503395,
+     "resources": [
+      {
+       "name": "beluga_web.bc.js",
+       "transferSize": 0,
+       "encodedBodySize": 2596034,
+       "ms": 3.7
+      }
+     ],
+     "pageNewWorkerToReadyMs": 93.13999998569489
+    },
+    {
+     "key": "39",
+     "workerStartToReadyMs": 82.0949999988079,
+     "loadMs": 81.77000001072884,
+     "fetchMs": 7.870000004768372,
+     "resources": [
+      {
+       "name": "beluga_web.bc.js",
+       "transferSize": 0,
+       "encodedBodySize": 2596034,
+       "ms": 3.3
+      }
+     ],
+     "pageNewWorkerToReadyMs": 89.3299999833107
+    },
+    {
+     "key": "40",
+     "workerStartToReadyMs": 82.78999999165535,
+     "loadMs": 82.50999999046326,
+     "fetchMs": 7.509999990463257,
+     "resources": [
+      {
+       "name": "beluga_web.bc.js",
+       "transferSize": 0,
+       "encodedBodySize": 2596034,
+       "ms": 3.4
+      }
+     ],
+     "pageNewWorkerToReadyMs": 88.87000000476837
+    },
+    {
+     "key": "41",
+     "workerStartToReadyMs": 86.68000000715256,
+     "loadMs": 86.37000000476837,
+     "fetchMs": 7.969999998807907,
+     "resources": [
+      {
+       "name": "beluga_web.bc.js",
+       "transferSize": 0,
+       "encodedBodySize": 2596034,
+       "ms": 3.4
+      }
+     ],
+     "pageNewWorkerToReadyMs": 93.09999999403954
+    }
+   ],
+   "passes": {
+    "rows": [
+     {
+      "name": "builtins/nd-first-order.bel",
+      "bytes": 962,
+      "ms": [
+       64.45,
+       26.73
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "builtins/nd-propositional.bel",
+      "bytes": 659,
+      "ms": [
+       23.86,
+       16
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "case-studies/classical-processes [cp.cfg]",
+      "bytes": 41139,
+      "ms": [
+       3697.94,
+       3265.09
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "case-studies/harmony-lemma-formalization [all.cfg]",
+      "bytes": 64511,
+      "ms": [
+       3838.56,
+       4662.2
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/arith/arith.bel",
+      "bytes": 1085,
+      "ms": [
+       52.03,
+       45.77
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/back/tc.bel",
+      "bytes": 1946,
+      "ms": [
+       45.93,
+       43.32
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/bigstep-deterministic [sources.cfg]",
+      "bytes": 5222,
+      "ms": [
+       282.34,
+       299.13
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/bigstep-deterministic/alternate.bel",
+      "bytes": 1986,
+      "ms": [
+       41.84,
+       44.05
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "3a7a984681e0",
+       "3a7a984681e0"
+      ]
+     },
+     {
+      "name": "examples/cfg [test.cfg]",
+      "bytes": 1181,
+      "ms": [
+       35.41,
+       36.41
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/church-rosser [test.cfg]",
+      "bytes": 16224,
+      "ms": [
+       644.56,
+       690.1
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/equiv-crec.bel",
+      "bytes": 4916,
+      "ms": [
+       135.49,
+       409.52
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "05ac0b940421",
+       "05ac0b940421"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/ord-cr-crec.bel",
+      "bytes": 485,
+      "ms": [
+       8.75,
+       7.5
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "099049bd2e3e",
+       "099049bd2e3e"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/ord-lemmas-crec.bel",
+      "bytes": 1555,
+      "ms": [
+       26.39,
+       29.48
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "2e080f14cf32",
+       "2e080f14cf32"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-cr-crec-1.bel",
+      "bytes": 7679,
+      "ms": [
+       125.19,
+       155.79
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "5b04d302318f",
+       "5b04d302318f"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-cr-crec-cover.bel",
+      "bytes": 6192,
+      "ms": [
+       107.52,
+       147.06
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "5b04d302318f",
+       "5b04d302318f"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-cr-crec.bel",
+      "bytes": 9392,
+      "ms": [
+       110.81,
+       151.32
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "5b04d302318f",
+       "5b04d302318f"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-lemmas-crec.bel",
+      "bytes": 999,
+      "ms": [
+       17.13,
+       22.17
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "fb667e3cf9f5",
+       "fb667e3cf9f5"
+      ]
+     },
+     {
+      "name": "examples/church-rosser/par-red.bel",
+      "bytes": 1057,
+      "ms": [
+       7.95,
+       11.31
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "593796ee4784",
+       "593796ee4784"
+      ]
+     },
+     {
+      "name": "examples/codatatypes/bisimulation [sources.cfg]",
+      "bytes": 14014,
+      "ms": [
+       465.44,
+       582.56
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/codatatypes/howes-method/howe-total.bel",
+      "bytes": 24379,
+      "ms": [
+       1553.24,
+       1534.18
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/codatatypes/howes-method/howe.bel",
+      "bytes": 23880,
+      "ms": [
+       1476.69,
+       1584.66
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/codatatypes/tofte-hoas.bel",
+      "bytes": 1367,
+      "ms": [
+       57.11,
+       56.42
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/cls [test.cfg]",
+      "bytes": 13691,
+      "ms": [
+       531.92,
+       471.09
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/cls/complete-1.bel",
+      "bytes": 2354,
+      "ms": [
+       92.52,
+       19.08
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "daa3171df1b9",
+       "daa3171df1b9"
+      ]
+     },
+     {
+      "name": "examples/compile/cpm [test.cfg]",
+      "bytes": 11688,
+      "ms": [
+       475.36,
+       418.42
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/cps [sources.cfg]",
+      "bytes": 2751,
+      "ms": [
+       49.45,
+       55
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/cxm [test.cfg]",
+      "bytes": 4016,
+      "ms": [
+       64.77,
+       67.49
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/debruijn [test.cfg]",
+      "bytes": 7300,
+      "ms": [
+       135.59,
+       143.38
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/compile/debruijn1 [test.cfg]",
+      "bytes": 4745,
+      "ms": [
+       118.94,
+       122.66
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-crec.bel",
+      "bytes": 1232,
+      "ms": [
+       54.36,
+       52.23
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-explicit.bel",
+      "bytes": 804,
+      "ms": [
+       31.27,
+       28.91
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-simple-crec.bel",
+      "bytes": 863,
+      "ms": [
+       20.64,
+       22
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-simple-explicit.bel",
+      "bytes": 472,
+      "ms": [
+       15.16,
+       14
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy-simple.bel",
+      "bytes": 960,
+      "ms": [
+       34.37,
+       36.44
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/copy/copy.bel",
+      "bytes": 1534,
+      "ms": [
+       45.87,
+       46.94
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-2.bel",
+      "bytes": 2036,
+      "ms": [
+       39.78,
+       39.75
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-crec.bel",
+      "bytes": 1527,
+      "ms": [
+       37.1,
+       38.06
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-explicit.bel",
+      "bytes": 1496,
+      "ms": [
+       44.79,
+       43.35
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-simple-crec.bel",
+      "bytes": 1341,
+      "ms": [
+       33.36,
+       29.15
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-simple.bel",
+      "bytes": 1375,
+      "ms": [
+       22.51,
+       21.57
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar-str.bel",
+      "bytes": 1459,
+      "ms": [
+       46.54,
+       38.92
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/count-var/cntvar.bel",
+      "bytes": 2164,
+      "ms": [
+       23.59,
+       18.62
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "b114e295d19c",
+       "55bab8d085ec"
+      ]
+     },
+     {
+      "name": "examples/cpp13/cc.bel",
+      "bytes": 8862,
+      "ms": [
+       297.75,
+       287.01
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cpp13/cchoist.bel",
+      "bytes": 12915,
+      "ms": [
+       681.45,
+       672.91
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cpp13/cps.bel",
+      "bytes": 3059,
+      "ms": [
+       119.14,
+       101.09
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cpp13/sfcps.bel",
+      "bytes": 3670,
+      "ms": [
+       132.93,
+       122.99
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cut-elim [test.cfg]",
+      "bytes": 10195,
+      "ms": [
+       451.96,
+       442.92
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cut-elim/cut-admit-cover.bel",
+      "bytes": 6039,
+      "ms": [
+       149.72,
+       180.12
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/cut-elim/int-elim.bel",
+      "bytes": 1551,
+      "ms": [
+       18.46,
+       309.6
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "1be447220227",
+       "1be447220227"
+      ]
+     },
+     {
+      "name": "examples/equal/alg-equal-ctxrel.bel",
+      "bytes": 14318,
+      "ms": [
+       448.09,
+       520.69
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/alg-equal-datatypes-adeq.bel",
+      "bytes": 6051,
+      "ms": [
+       190.74,
+       229.91
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/alg-equal-datatypes.bel",
+      "bytes": 2335,
+      "ms": [
+       229.5,
+       124.48
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-1.bel",
+      "bytes": 3159,
+      "ms": [
+       126.88,
+       131.44
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-2.bel",
+      "bytes": 3162,
+      "ms": [
+       128.87,
+       149.07
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-crec.bel",
+      "bytes": 2671,
+      "ms": [
+       117.05,
+       144.69
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-full-crec.bel",
+      "bytes": 3064,
+      "ms": [
+       118.44,
+       138.59
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof-tuple.bel",
+      "bytes": 3089,
+      "ms": [
+       79.65,
+       96.71
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/equal/eq-proof.bel",
+      "bytes": 2355,
+      "ms": [
+       66.92,
+       80.29
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/fol [test.cfg]",
+      "bytes": 2793,
+      "ms": [
+       5.8,
+       8.62
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "6310fdadca54",
+       "6310fdadca54"
+      ]
+     },
+     {
+      "name": "examples/fol/fol-handbook.bel",
+      "bytes": 3998,
+      "ms": [
+       151.83,
+       188.65
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/free-vars/fvnat-crec.bel",
+      "bytes": 1420,
+      "ms": [
+       47.32,
+       53.64
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/free-vars/fvnat-explicit.bel",
+      "bytes": 1165,
+      "ms": [
+       36.53,
+       42.58
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/free-vars/fvnat.bel",
+      "bytes": 1571,
+      "ms": [
+       53.98,
+       56.57
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cconv-cheney.bel",
+      "bytes": 2717,
+      "ms": [
+       62.01,
+       77.65
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/conv-untyped.bel",
+      "bytes": 1010,
+      "ms": [
+       28.15,
+       37.49
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps-crec.bel",
+      "bytes": 1432,
+      "ms": [
+       35.32,
+       43.59
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps-popl-tutorial1.bel",
+      "bytes": 3183,
+      "ms": [
+       48.88,
+       63.42
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps-popl-tutorial2-crec.bel",
+      "bytes": 2572,
+      "ms": [
+       48.98,
+       60.78
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps-popl-tutorial2.bel",
+      "bytes": 2565,
+      "ms": [
+       42.97,
+       57.09
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/cps.bel",
+      "bytes": 1483,
+      "ms": [
+       22.56,
+       26.89
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/debruijn-1.bel",
+      "bytes": 2216,
+      "ms": [
+       73.44,
+       84.13
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/debruijn-1a.bel",
+      "bytes": 3840,
+      "ms": [
+       58.05,
+       78.65
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/debruijn-uniform.bel",
+      "bytes": 1908,
+      "ms": [
+       51.78,
+       61.64
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/debruijn.bel",
+      "bytes": 1144,
+      "ms": [
+       27.29,
+       31.41
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/term.bel",
+      "bytes": 4522,
+      "ms": [
+       28.93,
+       39.52
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/freshML/ucconv-total.bel",
+      "bytes": 4915,
+      "ms": [
+       141.02,
+       173.68
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/higher-order/jpath.bel",
+      "bytes": 3424,
+      "ms": [
+       128.63,
+       164.65
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/improve/eta.bel",
+      "bytes": 226,
+      "ms": [
+       112.78,
+       7.4
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/improve/recon.bel",
+      "bytes": 474,
+      "ms": [
+       16.14,
+       16.22
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/lincx_mechanization [lincx.cfg]",
+      "bytes": 55966,
+      "ms": [
+       2395.49,
+       3058.77
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "fbc0640c4fe6",
+       "854d17d4150a"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Close_Terms.bel",
+      "bytes": 5064,
+      "ms": [
+       27.64,
+       54.96
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/From_HOAS_to_DeBruijn.bel",
+      "bytes": 4063,
+      "ms": [
+       80.42,
+       122.53
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Norm.bel",
+      "bytes": 2038,
+      "ms": [
+       23.6,
+       34.03
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Parallel_Reduction.bel",
+      "bytes": 6434,
+      "ms": [
+       86.25,
+       115.03
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Polymorphic_Algorithmic_Equality.bel",
+      "bytes": 15204,
+      "ms": [
+       332.82,
+       405.75
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Type_Uniqueness.bel",
+      "bytes": 7839,
+      "ms": [
+       38.82,
+       42.69
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Untyped_Algorithmic_Equality_-_Context_Relation.bel",
+      "bytes": 20131,
+      "ms": [
+       839.81,
+       947.51
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/0Beginner/Untyped_Algorithmic_Equality_-_Context_Subsumption.bel",
+      "bytes": 11378,
+      "ms": [
+       136.69,
+       157.56
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/1Intermediate/Poplmark.bel",
+      "bytes": 11241,
+      "ms": [
+       241.05,
+       272.46
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/2Advanced/Normalization_by_Evaluation.bel",
+      "bytes": 4466,
+      "ms": [
+       278.21,
+       135.81
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/literate_beluga/2Advanced/Weak_Normalization.bel",
+      "bytes": 5603,
+      "ms": [
+       117.85,
+       122.38
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/algeq-simplified.bel",
+      "bytes": 15848,
+      "ms": [
+       839.02,
+       922.28
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/algeq-simplified1.bel",
+      "bytes": 15935,
+      "ms": [
+       805.1,
+       1354.29
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/algeq-typing.bel",
+      "bytes": 20245,
+      "ms": [
+       1511.78,
+       1340.49
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "74bc0a53ed65",
+       "26f86b41992c"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-closed-ideal.bel",
+      "bytes": 3132,
+      "ms": [
+       139.36,
+       138.55
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-total-mix-lf-inductive.bel",
+      "bytes": 6679,
+      "ms": [
+       154.02,
+       149.81
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-total-products-explicit-typing.bel",
+      "bytes": 5233,
+      "ms": [
+       236.57,
+       245.27
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-total-products.bel",
+      "bytes": 9293,
+      "ms": [
+       310.42,
+       256.29
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-total.bel",
+      "bytes": 6630,
+      "ms": [
+       337.19,
+       132.04
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-under-binders-beta-only.bel",
+      "bytes": 9852,
+      "ms": [
+       438.74,
+       377.24
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-under-binders-simplified.bel",
+      "bytes": 10439,
+      "ms": [
+       375.27,
+       328.07
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm-under-binders.bel",
+      "bytes": 11222,
+      "ms": [
+       413.79,
+       355.66
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/logrel/weak-norm.bel",
+      "bytes": 5909,
+      "ms": [
+       117.22,
+       97.73
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/iscan.bel",
+      "bytes": 1547,
+      "ms": [
+       29.55,
+       27.53
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "10e512c7ba8e",
+       "10e512c7ba8e"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/uni-complete-crec.bel",
+      "bytes": 1968,
+      "ms": [
+       33.99,
+       33.66
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "10e512c7ba8e",
+       "10e512c7ba8e"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/uni-complete.bel",
+      "bytes": 1652,
+      "ms": [
+       41.5,
+       37.26
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "10e512c7ba8e",
+       "10e512c7ba8e"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/uni-sound-crec.bel",
+      "bytes": 1337,
+      "ms": [
+       28.86,
+       25.96
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "dee067379056",
+       "dee067379056"
+      ]
+     },
+     {
+      "name": "examples/lp-horn/uni-sound.bel",
+      "bytes": 1338,
+      "ms": [
+       30.27,
+       30.46
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "dee067379056",
+       "dee067379056"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/clos-eval.bel",
+      "bytes": 1767,
+      "ms": [
+       50.32,
+       45.7
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/eval-sub-1-explicit.bel",
+      "bytes": 876,
+      "ms": [
+       26.14,
+       24.06
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/eval-sub-1.bel",
+      "bytes": 670,
+      "ms": [
+       19.25,
+       18.14
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/eval-sub-explicit.bel",
+      "bytes": 1130,
+      "ms": [
+       31.44,
+       31.22
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/eval-sub.bel",
+      "bytes": 982,
+      "ms": [
+       30.27,
+       26.83
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/tps.bel",
+      "bytes": 2517,
+      "ms": [
+       107.78,
+       98.37
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/vsound-explicit.bel",
+      "bytes": 1207,
+      "ms": [
+       36.59,
+       30.25
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/mini-ml/vsound.bel",
+      "bytes": 633,
+      "ms": [
+       14.72,
+       12.87
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/path/bred-nf.bel",
+      "bytes": 10834,
+      "ms": [
+       461.52,
+       440.21
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/path/path-typed.bel",
+      "bytes": 3875,
+      "ms": [
+       337.47,
+       505.59
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/path/path.bel",
+      "bytes": 3163,
+      "ms": [
+       147.65,
+       105.56
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/polylam/normal.bel",
+      "bytes": 2612,
+      "ms": [
+       91.63,
+       57.62
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/clos-eval.bel",
+      "bytes": 1286,
+      "ms": [
+       69.59,
+       34.78
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/closconv.bel",
+      "bytes": 1777,
+      "ms": [
+       116.64,
+       57.96
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/copy.bel",
+      "bytes": 785,
+      "ms": [
+       36.71,
+       27.34
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/lists.bel",
+      "bytes": 295,
+      "ms": [
+       8.41,
+       9.46
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/nbe-sub.bel",
+      "bytes": 3339,
+      "ms": [
+       138.48,
+       132.7
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/nbe.bel",
+      "bytes": 3874,
+      "ms": [
+       142.59,
+       148.1
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/normeval-abbrev.bel",
+      "bytes": 4950,
+      "ms": [
+       224.62,
+       196.9
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/normeval-subst.bel",
+      "bytes": 3400,
+      "ms": [
+       144.97,
+       121.4
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/normeval-total.bel",
+      "bytes": 5550,
+      "ms": [
+       224.25,
+       239.67
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/popl12/normeval.bel",
+      "bytes": 5416,
+      "ms": [
+       202.7,
+       208.47
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/poplmark-reloaded [sources.cfg]",
+      "bytes": 25152,
+      "ms": [
+       1441.2,
+       1284.42
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/poplmark-reloaded+ [sources.cfg]",
+      "bytes": 50747,
+      "ms": [
+       3551.85,
+       3943.52
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/poplmark/pearl.bel",
+      "bytes": 9841,
+      "ms": [
+       268.14,
+       272.82
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/poplmark/poplmark.bel",
+      "bytes": 8589,
+      "ms": [
+       60.85,
+       61.92
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/small-step/lam.bel",
+      "bytes": 3112,
+      "ms": [
+       92.01,
+       90.21
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/small-step/subject-red.bel",
+      "bytes": 3037,
+      "ms": [
+       120.9,
+       126.63
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/small-step/system-f-iso.bel",
+      "bytes": 9222,
+      "ms": [
+       225.98,
+       225.95
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/small-step/system-f.bel",
+      "bytes": 4139,
+      "ms": [
+       147.82,
+       140.23
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch14-b.bel",
+      "bytes": 2327,
+      "ms": [
+       83.84,
+       86.17
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch14.bel",
+      "bytes": 4301,
+      "ms": [
+       128.64,
+       129.72
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch3 [sources.cfg]",
+      "bytes": 20959,
+      "ms": [
+       749.91,
+       549.36
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch3+arith [sources.cfg]",
+      "bytes": 49571,
+      "ms": [
+       1304.72,
+       1279.48
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch3+arith+leq [sources.cfg]",
+      "bytes": 31709,
+      "ms": [
+       872.13,
+       1393.05
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch3/eval.bel",
+      "bytes": 3170,
+      "ms": [
+       30.02,
+       38.94
+      ],
+      "ok": [
+       false,
+       false
+      ],
+      "hash": [
+       "c764c1f95738",
+       "c764c1f95738"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch6/evaluator.bel",
+      "bytes": 583,
+      "ms": [
+       14.91,
+       12.9
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch6/small-step.bel",
+      "bytes": 1879,
+      "ms": [
+       58.36,
+       61.15
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/tapl/ch6/tps.bel",
+      "bytes": 1420,
+      "ms": [
+       38,
+       44.86
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/cconv-cheney.bel",
+      "bytes": 2655,
+      "ms": [
+       57.63,
+       61.93
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/cps-popl-tutorial1-crec.bel",
+      "bytes": 2993,
+      "ms": [
+       38.82,
+       44.77
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/cps-popl-tutorial2-crec.bel",
+      "bytes": 2624,
+      "ms": [
+       47.25,
+       50.16
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/debruijn.bel",
+      "bytes": 1989,
+      "ms": [
+       58.38,
+       65.03
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-compilation/term-typed.bel",
+      "bytes": 728,
+      "ms": [
+       18.97,
+       20.07
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/tpeval-explicit.bel",
+      "bytes": 2092,
+      "ms": [
+       56.44,
+       60.97
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/tpeval-val.bel",
+      "bytes": 1872,
+      "ms": [
+       57.1,
+       60.89
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/tpeval.bel",
+      "bytes": 1636,
+      "ms": [
+       259.96,
+       35.12
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "89d4d9ac461e",
+       "91255ec74cbd"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/tpeval2.bel",
+      "bytes": 1103,
+      "ms": [
+       41.47,
+       36.37
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/typed-eval/valsound.bel",
+      "bytes": 669,
+      "ms": [
+       31.41,
+       25.19
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/unique/unique-crec.bel",
+      "bytes": 3893,
+      "ms": [
+       198.79,
+       155.97
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/unique/unique-eval.bel",
+      "bytes": 918,
+      "ms": [
+       43.08,
+       33.41
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/unique/unique-standard.bel",
+      "bytes": 1457,
+      "ms": [
+       62.56,
+       49.33
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     },
+     {
+      "name": "examples/unique/unique.bel",
+      "bytes": 3963,
+      "ms": [
+       77.52,
+       61.5
+      ],
+      "ok": [
+       true,
+       true
+      ],
+      "hash": [
+       "3f891f24ffe3",
+       "3f891f24ffe3"
+      ]
+     }
+    ]
+   }
+  }
+ }
+}

@@ -36,13 +36,18 @@ npm run probe:keymap      # deep: Vim/Emacs, the command line, every binding pre
 npm run probe:harpoon     # deep: the manual proving surface (~10s)
 npm run probe:holes       # deep: the Harpoon holes panel (~8s)
 npm run probe:cases       # deep: case completion, ghosts arriving unasked, accept in every style, decline (in `probe`)
+npm run probe:builds      # Settings > Beluga > Build version: each build chosen in the row, the editor checking on it (in `probe`)
 npm run probe:kit         # the kit page (dev/kit.html): every component, one screenshot per theme (not in `probe`)
 npm run probe:migration   # the next stored format, rehearsed: old tab, new tab, no flash (in `probe`)
 npm run probe:notices     # the bell: a run finished elsewhere, a suite changing colour (in `probe`; docs/UI.md §3)
 npm run backup:export     # the live database and the texts of files, read only, to ~/beljar-backups (weekly); backup:restore, backup:rehearse
 npm run backup:rehearse-recovery  # the whole recovery on a local Worker: database + texts back, each account signs in, every version whole (before term)
 npm run usage             # how big the live store has grown, beside its limits
+npm run upload:runtime    # AFTER A REBUILD, BEFORE THE DEPLOY: the Beluga runtime to R2, read back through the CDN (--dry-run)
 npm run probe:live        # AFTER A DEPLOY: the live site, R2, both Beluga workers (network; not in `probe`)
+npm run diff:runtime      # do the runtime builds (JS, Wasm) answer byte-for-byte alike? the library, sessions, glyphs (~35min)
+npm run bench:runtime     # the runtime builds timed in Node: boot, cold, warm, depth, size (docs/wasm-runtime.md; ~1h)
+npm run bench:runtime:chrome  # the same in Chrome workers, plus pools and memory (~45min)
 npm run dev               # EVERYTHING locally at http://127.0.0.1:8787: sign-in, sync, Beluga checks (PERSIST §5.7; secrets in server/.dev.vars; local D1 in ~/.beljar-dev). A static server (Live Server) has no /api: online features are off there by design
 ```
 
@@ -83,8 +88,10 @@ site's files, plus `server/worker.mjs` for `/api/*` on D1 `beljar-sync` and R2 `
 ⛔ A new migration in `server/migrations/` is applied with
 `npx wrangler d1 migrations apply DB --remote` BEFORE the push that needs it. The Beluga runtime
 is served from R2, `https://beljar-cdn.deanbarry.com/` (bucket `beljar-runtime`, CORS for the site
-origins), because the fast build is over the 25 MiB per-file cap. `index.html` sets
-`BELJAR_RUNTIME_BASE` on deployed hosts; local dev and the probes stay same-origin.
+origins), never by the Worker. `edit.html` sets `BELJAR_RUNTIME_BASE` on deployed hosts; local dev
+and the probes stay same-origin. **The runtime** (docs/wasm-runtime.md): Wasm CPS by default where
+the browser runs Wasm, the JS build (release profile) where it cannot; Settings > Beluga > Build
+version chooses. One table, `js/beluga/beluga-client.js` `BUILDS`, names every build's file.
 Migrations applied remotely: 0001 and 0002 (2026-09-28), 0003 sessions and deletions (2026-10-04),
 0004 tables stored by key and 0005 the account's count (2026-10-05, each after
 `npm run backup:rehearse` kept every row of a fresh export).
@@ -98,10 +105,11 @@ only when new and checked against their hash) and `npm run backup:restore` (the 
 scratch local D1, every table's rows and every text checked against the file). ⛔ R2 has no Time
 Travel: the weekly copy is the only one of the texts outside it. ⛔ `privacy.html` says what is kept and for how long:
 `tests/test-privacy-page.mjs` holds it to the migrations and the code; change both together.
-After `_rebuild/rebuild.ps1`: **upload both blobs to R2 first, then deploy**, then
-`npm run probe:live`. The runtime URL carries the build stamp (`?v=`, written by
+After `_rebuild/rebuild.ps1`: **`npm run upload:runtime` first (R2), then deploy**, then
+`npm run probe:live` (`_rebuild/RECIPE.md`, Deploying). The upload reads every file back through the
+CDN before it says go. The runtime URL carries the build stamp (`?v=`, written by
 `_rebuild/stamp-runtime.ps1`), so deploying first lets the edge cache the old bytes under the new
-URL until its TTL.
+URL until its TTL, and the new page asks for Wasm files R2 does not have yet.
 ⛔ The runtime URL has ONE owner, `BelugaClient.runtimeScriptUrl`, and anything else that loads the
 runtime asks it (`tests/test-runtime-url.mjs`). A private copy in `harpoon-client.js` kept pointing
 at the app origin after the move to R2, and its worker 404'd there.

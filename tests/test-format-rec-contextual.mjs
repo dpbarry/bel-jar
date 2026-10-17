@@ -28,6 +28,6 @@ assert.ok(
 );
 
 const bodyLines = out.split('\n').slice(1);
-assert.ok(bodyLines[0].startsWith('  [⊢'), 'multiline proof body is re-indented');
+assert.ok(bodyLines[0].startsWith('  [ ⊢'), 'multiline proof body is re-indented');
 
 console.log('OK format rec contextual type');

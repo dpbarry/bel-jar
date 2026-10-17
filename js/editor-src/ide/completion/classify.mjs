@@ -8,7 +8,7 @@ import {
 } from '../../semantic/symbol-store.mjs';
 import { NAMESPACE } from '../../semantic/ids.mjs';
 import { expectedGoalType } from './type-expect.mjs';
-import { structureSlotAt } from './snippets.mjs';
+import { recRhsGap, structureSlotAt } from './snippets.mjs';
 
 // `Head.partial` — Observation in expressions, or error-recovery `.` in types.
 function moduleAccessShape(doc, pos, token) {
@@ -362,12 +362,18 @@ export function classifyCompletionSite(state, pos, engine) {
   }
 
   const token = matchCompletionToken(doc, pos);
-  const structure = structureSlotAt(tree, doc, pos, token.text);
+  let structure = structureSlotAt(tree, doc, pos, token.text);
+  const gap = recRhsGap(tree, doc, pos);
+  const gapBlocked = structure === 'case-arm' || structure === 'top-decl'
+    || structure === 'ctor-line' || structure === 'infix-assoc'
+    || structure === 'lf-kind' || structure === 'comp-kind'
+    || structure === 'schema-body';
+  if (gap && !gapBlocked) structure = 'expr-head';
 
   // Structure-only slots win over binder decline: typing `LF` / `rec` / `--in`
   // or an infix assoc prefix must not look like a fresh binder name.
   if (structure === 'case-arm' || structure === 'top-decl'
-      || structure === 'ctor-line' || structure === 'ctx-entry'
+      || structure === 'ctor-line'
       || structure === 'infix-assoc') {
     return {
       kind: 'structure',
@@ -460,6 +466,14 @@ export function classifyCompletionSite(state, pos, engine) {
   if (expectedType) {
     site.expectedType = expectedType;
     site.maxJust = 3;
+  }
+  if (gap && !gapBlocked) {
+    site.recRhs = true;
+    if (gap.query) {
+      site.from = gap.from;
+      site.to = gap.to;
+      site.query = gap.query;
+    }
   }
   return site;
 }

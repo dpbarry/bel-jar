@@ -1,0 +1,101 @@
+stable-release size raw 2596034
+stable-release boot median 79 ms
+stable-release cold examples/arith/arith.bel: 263, 427, 294 ms
+stable-release cold examples/codatatypes/howes-method/howe-total.bel: 4481, 5041, 6478 ms
+stable-release cold examples/poplmark-reloaded+ [sources.cfg]: 12866, 11762, 12804 ms
+stable-release corpus: first pass 136.1 s, warm 133.7 s
+  depth stable-release term n=16: ok 65ms
+  depth stable-release term n=32: ok 116ms
+  depth stable-release term n=64: ok 164ms
+  depth stable-release term n=128: ok 356ms
+  depth stable-release term n=256: ok 786ms
+  depth stable-release term n=512: ok 2437ms
+  depth stable-release term n=1024: ok 7450ms
+  depth stable-release term n=2048: ok 28655ms
+  depth stable-release term n=4096: timeout
+  depth stable-release arrows n=16: ok 34ms
+  depth stable-release arrows n=32: ok 46ms
+  depth stable-release arrows n=64: ok 88ms
+  depth stable-release arrows n=128: ok 144ms
+  depth stable-release arrows n=256: ok 205ms
+  depth stable-release arrows n=512: ok 329ms
+  depth stable-release arrows n=1024: ok 763ms
+  depth stable-release arrows n=2048: ok 1964ms
+  depth stable-release arrows n=4096: ok 6967ms
+  depth stable-release arrows n=8192: overflow-reported 2830ms
+  depth stable-release arrows n=6144: ok 15339ms
+  depth stable-release arrows n=7168: overflow-reported 2315ms
+  depth stable-release arrows n=6656: overflow-reported 2188ms
+  depth stable-release arrows n=6400: overflow-reported 2015ms
+  depth stable-release arrows n=6272: ok 15318ms
+  depth stable-release lets n=16: ok 88ms
+  depth stable-release lets n=32: ok 181ms
+  depth stable-release lets n=64: ok 498ms
+  depth stable-release lets n=128: ok 958ms
+  depth stable-release lets n=256: ok 4916ms
+  depth stable-release lets n=512: ok 32745ms
+  depth stable-release lets n=1024: timeout
+  depth stable-release decls n=16: ok 161ms
+  depth stable-release decls n=32: ok 248ms
+  depth stable-release decls n=64: ok 478ms
+  depth stable-release decls n=128: ok 712ms
+  depth stable-release decls n=256: ok 1248ms
+  depth stable-release decls n=512: ok 2395ms
+  depth stable-release decls n=1024: ok 4432ms
+  depth stable-release decls n=2048: ok 9175ms
+  depth stable-release decls n=4096: ok 18973ms
+  depth stable-release decls n=8192: ok 40034ms
+  depth stable-release decls n=16384: overflow-reported 74366ms
+  depth stable-release decls n=12288: overflow-reported 49816ms
+  depth stable-release decls n=10240: overflow-reported 42261ms
+  depth stable-release decls n=9216: overflow-reported 36724ms
+  depth stable-release decls n=8704: ok 42623ms
+  depth stable-release decls n=8960: ok 43841ms
+fast-release size raw 3244084
+fast-release boot median 103 ms
+fast-release cold examples/arith/arith.bel: 374, 188, 183 ms
+fast-release cold examples/codatatypes/howes-method/howe-total.bel: 2337, 2852, 2508 ms
+fast-release cold examples/poplmark-reloaded+ [sources.cfg]: 6024, 4966, 4973 ms
+fast-release corpus: first pass 59.1 s, warm 61.0 s
+  depth fast-release term n=16: ok 52ms
+  depth fast-release term n=32: ok 77ms
+  depth fast-release term n=64: overflow-reported 34ms
+  depth fast-release term n=48: ok 116ms
+  depth fast-release term n=56: overflow-reported 34ms
+  depth fast-release term n=52: overflow-reported 32ms
+  depth fast-release term n=50: overflow-reported 33ms
+  depth fast-release term n=49: ok 94ms
+  depth fast-release arrows n=16: ok 28ms
+  depth fast-release arrows n=32: ok 39ms
+  depth fast-release arrows n=64: ok 47ms
+  depth fast-release arrows n=128: ok 79ms
+  depth fast-release arrows n=256: ok 148ms
+  depth fast-release arrows n=512: overflow-reported 219ms
+  depth fast-release arrows n=384: overflow-reported 181ms
+  depth fast-release arrows n=320: overflow-reported 166ms
+  depth fast-release arrows n=288: overflow-reported 161ms
+  depth fast-release arrows n=272: overflow-reported 150ms
+  depth fast-release arrows n=264: ok 177ms
+  depth fast-release lets n=16: ok 63ms
+  depth fast-release lets n=32: ok 114ms
+  depth fast-release lets n=64: ok 218ms
+  depth fast-release lets n=128: ok 679ms
+  depth fast-release lets n=256: overflow-reported 133ms
+  depth fast-release lets n=192: overflow-reported 134ms
+  depth fast-release lets n=160: overflow-reported 137ms
+  depth fast-release lets n=144: ok 885ms
+  depth fast-release lets n=152: overflow-reported 137ms
+  depth fast-release lets n=148: ok 981ms
+  depth fast-release decls n=16: ok 139ms
+  depth fast-release decls n=32: ok 204ms
+  depth fast-release decls n=64: ok 305ms
+  depth fast-release decls n=128: ok 537ms
+  depth fast-release decls n=256: ok 1035ms
+  depth fast-release decls n=512: ok 1926ms
+  depth fast-release decls n=1024: overflow-reported 1582ms
+  depth fast-release decls n=768: overflow-reported 1543ms
+  depth fast-release decls n=640: overflow-reported 1564ms
+  depth fast-release decls n=576: overflow-reported 1627ms
+  depth fast-release decls n=544: ok 2406ms
+  depth fast-release decls n=560: overflow-reported 1751ms
+wrote C:\Users\Dean\Documents\Coding\bel-jar\results\runtime-bench\node.json

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runtime bench</title>
+<link rel="icon" href="data:,">
+</head>
+<body>
+<p>The Beluga runtime benchmark (scripts/runtime-bench/chrome-bench.mjs drives this page).</p>
+<script>
+'use strict';
+// One worker per runtime, driven over messages. The driver calls these through
+// page.evaluate, one short call each, so no single call nears the protocol timeout.
+(function () {
+  var workers = new Map();
+  var nextId = 1;
+  var WASM_OPTIONS = { builtins: ['js-string', 'text-decoder', 'text-encoder'], importedStringConstants: 'str' };
+
+  function call(w, msg, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var id = nextId++;
+      var timer = setTimeout(function () { w.removeEventListener('message', on); reject(new Error('timeout')); }, timeoutMs || 600000);
+      function on(e) {
+        if (e.data.id !== id) return;
+        clearTimeout(timer);
+        w.removeEventListener('message', on);
+        if (e.data.error) reject(new Error(e.data.error)); else resolve(e.data.result);
+      }
+      w.addEventListener('message', on);
+      msg.id = id;
+      w.postMessage(msg);
+    });
+  }
+
+  window.bench = {
+    // Start a worker and boot a runtime in it. Resolves the worker's own timings
+    // plus the page's: new Worker() to ready.
+    boot: async function (key, build, opts) {
+      opts = opts || {};
+      var t0 = performance.now();
+      var w = new Worker('bench-worker.js');
+      var crashed = new Promise(function (_, reject) {
+        w.onerror = function (ev) { ev.preventDefault(); reject(new Error('worker error: ' + (ev.message || ''))); };
+      });
+      workers.set(key, w);
+      var msg = { type: 'boot', kind: build.kind, url: new URL(build.url, location.href).href };
+      if (opts.module) msg.module = window.bench.modules[build.wasm];
+      var r = await Promise.race([call(w, msg, opts.timeoutMs || 120000), crashed]);
+      r.pageNewWorkerToReadyMs = performance.now() - t0;
+      return r;
+    },
+    check: async function (key, code, timeoutMs) {
+      var w = workers.get(key);
+      var crashed = new Promise(function (_, reject) {
+        w.onerror = function (ev) { ev.preventDefault(); reject(new Error('worker error: ' + (ev.message || ''))); };
+      });
+      try {
+        return await Promise.race([call(w, { type: 'check', code: code }, timeoutMs), crashed]);
+      } catch (e) {
+        return { error: String(e && e.message || e) };
+      }
+    },
+    stop: function (key) {
+      var w = workers.get(key);
+      if (w) w.terminate();
+      workers.delete(key);
+    },
+    stopAll: function () { workers.forEach(function (w) { w.terminate(); }); workers.clear(); },
+    modules: {},
+    // Compile a .wasm once, on the page, with the options the loader would pass.
+    compile: async function (url) {
+      var t0 = performance.now();
+      window.bench.modules[url] = await WebAssembly.compileStreaming(fetch(url), WASM_OPTIONS);
+      return performance.now() - t0;
+    },
+    memory: async function () {
+      var m = await performance.measureUserAgentSpecificMemory();
+      var byScope = {};
+      m.breakdown.forEach(function (b) {
+        var scope = (b.attribution[0] && b.attribution[0].scope) || 'shared';
+        byScope[scope] = (byScope[scope] || 0) + b.bytes;
+      });
+      return { totalMB: +(m.bytes / 1048576).toFixed(1), byScopeMB: Object.fromEntries(Object.entries(byScope).map(function (e) { return [e[0], +(e[1] / 1048576).toFixed(1)]; })) };
+    },
+  };
+}());
+</script>
+</body>
+</html>

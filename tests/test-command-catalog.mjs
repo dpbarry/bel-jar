@@ -93,7 +93,7 @@ const EXPECTED_PALETTE_ORDER = [
   'set.font-size', 'set.line-height', 'set.font-family', 'set.cursor-blink',
   'set.syntax-highlight', 'set.semantic-highlight', 'set.parse-highlight',
   'set.occurrence-highlight', 'set.selection-matches', 'set.bracket-match',
-  'set.auto-close-brackets', 'set.reindent-paste', 'set.format-on-save', 'set.trim-whitespace',
+  'set.auto-close-brackets', 'set.pad-brackets', 'set.reindent-paste', 'set.format-on-save', 'set.trim-whitespace',
   'set.hole-gutter', 'set.hole-emphasis', 'set.quiet-typing', 'set.hover-sticky',
   'set.start-page', 'set.sync-settings', 'set.sync-both-changed', 'set.sync-overlap', 'set.sync-reconnect',
   'set.sync-notices', 'set.sign-out-keep',

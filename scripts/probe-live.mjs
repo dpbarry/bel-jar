@@ -16,6 +16,34 @@
 // ⛔ Hits the network, so it is NOT part of `npm run probe`. Point it at another
 // deployment with BELJAR_LIVE_URL=https://... npm run probe:live
 import { openProbe } from './probe-harness.mjs';
+import { readFileSync, readdirSync } from 'node:fs';
+import https from 'node:https';
+
+// The runtime's files, as js/beluga/beluga-client.js `BUILDS` names them, and the
+// .wasm beside each Wasm loader in this repository (what R2 must now hold).
+function runtimeFiles() {
+  const client = readFileSync('js/beluga/beluga-client.js', 'utf8');
+  const files = [...client.matchAll(/^\s*'?[\w-]+'?:\s*\{\s*file:\s*'([^']+)'/gm)].map((m) => m[1]);
+  return files.flatMap((f) => {
+    if (!f.endsWith('.wasm.js')) return [f];
+    const assets = f.replace(/\.js$/, '.assets');
+    return [f, ...readdirSync(assets).filter((x) => x.endsWith('.wasm')).map((x) => `${assets}/${x}`)];
+  });
+}
+
+// A response's headers as the network sends them: asked with the browser's
+// Accept-Encoding and Origin, read raw (fetch would decode and hide the encoding),
+// the body left unread.
+function headersOf(url, origin) {
+  return new Promise((resolve) => {
+    const req = https.get(url, { headers: { origin, 'accept-encoding': 'br, gzip', 'user-agent': 'beljar-probe-live' } }, (res) => {
+      resolve({ status: res.statusCode, ...res.headers });
+      res.destroy();
+    });
+    req.on('error', (e) => resolve({ status: 0, error: e.message }));
+    req.setTimeout(30000, () => { req.destroy(); resolve({ status: 0, error: 'timeout' }); });
+  });
+}
 
 const LIVE = process.env.BELJAR_LIVE_URL || 'https://beljar.deanbarry.com/';
 const CDN_HOST = 'beljar-cdn.deanbarry.com';
@@ -103,6 +131,9 @@ try {
   }, sig);
   console.log('  checker:', JSON.stringify(run));
   check(run.ok, `the checker boots from R2 and type-checks (${run.why || 'ok'})`);
+  // The default build (js/beluga/beluga-client.js DEFAULT_BUILD): Chrome runs Wasm.
+  const build = await page.evaluate(() => window.BelugaClient.getBuild());
+  check(build === 'wasm-cps', `on the default build, Wasm CPS (${build})`);
 
   // 2. Harpoon's dedicated proof worker (HarpoonEngine). The question is only
   //    whether the runtime LOADED in that worker: its ideProof* shim was never
@@ -132,13 +163,15 @@ try {
   check(!!harpoon.script && new URL(harpoon.script).host === CDN_HOST,
     `Harpoon's worker was handed the R2 runtime (got ${harpoon.script})`);
 
-  // 3. Where every runtime byte came from, and the URL each worker was given.
-  //    Matched by path: the worker shim's query string carries the encoded
-  //    runtime URL, so a full-URL match would count the shim as a runtime fetch.
+  // 3. Where every runtime byte the page fetched came from, and the URL each worker
+  //    was given. Matched by path: the worker shim's query string carries the encoded
+  //    runtime URL, so a full-URL match would count the shim as a runtime fetch. (A
+  //    worker's own fetches, the .wasm among them, are not in the page's timeline:
+  //    3b asks R2 for each file directly.)
   const net = await page.evaluate(() => {
     const res = performance.getEntriesByType('resource');
     return {
-      runtime: res.map((r) => r.name).filter((n) => /^\/beluga_web\.bc(\.dt)?\.js$/.test(new URL(n).pathname)),
+      runtime: res.map((r) => r.name).filter((n) => /^\/beluga_web(?:\.bc\.js|_wasm(?:_cps)?\.bc\.wasm\.js)$/.test(new URL(n).pathname)),
       workers: res.filter((r) => /\/beluga-worker\.js$/.test(new URL(r.name).pathname))
         .map((r) => new URL(r.name).searchParams.get('script')),
     };
@@ -154,10 +187,27 @@ try {
   const cors = consoleErrs.filter((e) => /CORS|Access-Control|importScripts|NetworkError/i.test(e));
   check(cors.length === 0, `no CORS or importScripts errors (${cors.join(' | ')})`);
 
-  // 4. Second visit: the service worker should own the runtime now.
+  // 3b. R2 serves every runtime file as a browser needs it: this build (the JS
+  //     build, each Wasm loader and its .wasm, as this repository has them, so run
+  //     after uploading), the site's CORS header, and compressed. A .wasm must be
+  //     application/wasm, or instantiateStreaming refuses it.
+  const site0 = new URL(LIVE).origin;
+  const files = runtimeFiles();
+  for (const f of files) {
+    const h = await headersOf(`https://${CDN_HOST}/${f}`, site0);
+    const want = f.endsWith('.wasm') ? 'application/wasm' : 'text/javascript';
+    check(h.status === 200 && (h['content-type'] || '').startsWith(want) && h['access-control-allow-origin'] === site0,
+      `R2 serves ${f} as ${want}, to this site (${h.status}, ${h['content-type']}, ${h['access-control-allow-origin']})`);
+    check(/^(br|gzip)$/.test(h['content-encoding'] || ''), `and compressed (${h['content-encoding'] || 'not compressed'})`);
+  }
+
+  // 4. Second visit: the service worker should own the runtime now, the loader
+  //    and the .wasm its worker fetched.
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.BelugaClient, { timeout: 60000 });
   const sw = await page.evaluate(async () => {
+    await window.BelugaClient.warm().catch(() => {});
+    await window.BelugaClient.checkResult('LF nat : type =\n| z : nat\n;\n').catch(() => {});
     const reg = await navigator.serviceWorker.getRegistration();
     let cached = [];
     for (const k of await caches.keys()) {
@@ -168,8 +218,9 @@ try {
   });
   console.log('  service worker:', JSON.stringify(sw));
   check(sw.registered, 'the service worker registered on the live origin');
-  check(sw.cached.some((u) => new URL(u).host === CDN_HOST && new URL(u).pathname === '/beluga_web.bc.js'),
-    'and it cached the R2 runtime, so repeat visits skip the 24 MB');
+  const cachedPaths = sw.cached.filter((u) => new URL(u).host === CDN_HOST).map((u) => new URL(u).pathname);
+  check(cachedPaths.includes('/beluga_web_wasm_cps.bc.wasm.js') && cachedPaths.some((p) => /^\/beluga_web_wasm_cps\.bc\.wasm\.assets\/[\w-]+\.wasm$/.test(p)),
+    `and it cached the R2 runtime, the loader and its .wasm, so repeat visits fetch nothing (${cachedPaths.join(', ')})`);
 
   // 5. The server (server/, docs/PERSIST.md §5.7): sign-in configured with BOTH its id and its
   //    secret (start answers 503 without either), the sync API closed to anyone without a

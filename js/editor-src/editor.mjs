@@ -251,7 +251,7 @@ import {
   readKeymapStylePref,
   buildEditorChromeTheme,
   buildToggleableExtensions,
-  buildBracketKeymap,
+  bracketKeymapExtension,
   buildSelectionExtensions,
 } from './editor-prefs.mjs';
 import { reservedChords, emacsFidelity, isMacPlatform } from './ide/modal/reserved-chords.mjs';
@@ -682,6 +682,10 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
     // facet itself is consulted at Prec.default. The handler still lives in this
     // extension so Standard remaps via matchesId see the same table.
     ...belAutocompletion(semanticEngine),
+    // Configured before the style packages. Both sit at Prec.highest, and the
+    // earlier map is asked first: an empty pair deletes together, then the key
+    // falls through to Vim, Emacs, or the default Backspace.
+    bracketKeymapCompartment.of(bracketKeymapExtension(prefs)),
     keymapStyleCompartment.of(buildKeymapStyleExtensions(prefs.keymapStyle)),
     statusStripFeed(readKeymapStylePref),
     // Style-neutral: macros belong to BelJar, not to a keymap, so the
@@ -706,7 +710,6 @@ function baseExtensions(placeholderText, onDocChange, semanticEngine, prefs, bra
       // there must be nothing for them to fall through to.
       indentOrInsertTab, ...defaultKeymap, ...foldKeymap,
     ]),
-    bracketKeymapCompartment.of(keymap.of(buildBracketKeymap(prefs))),
     placeholder(placeholderText),
     editorChrome(),
     gutterTooltipBand(),
@@ -1532,7 +1535,7 @@ export function mount(parentEl, options = {}) {
     const effects = [
       chromeCompartment.reconfigure(buildEditorChromeTheme(prefs)),
       ideCompartment.reconfigure(buildToggleableExtensions(prefs, { semanticEngine })),
-      bracketKeymapCompartment.reconfigure(keymap.of(buildBracketKeymap(prefs))),
+      bracketKeymapCompartment.reconfigure(bracketKeymapExtension(prefs)),
       selectionCompartment.reconfigure(buildSelectionExtensions(prefs)),
       scrollPastEndCompartment.reconfigure(scrollPastEndExtensions(prefs)),
       diagCompartment.reconfigure(buildDiagLintExtensions(semanticEngine, prefs, suiteOverlayDiagnostics)),

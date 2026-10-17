@@ -84,7 +84,7 @@ const global = globalThis;
   function resetAllSettings() {
     runCategoryReset(function () {
       Settings.resetAll();
-      BelugaRun.setBelugaMode('stable');
+      BelugaRun.setBelugaMode(Settings.get('belugaMode'));
       global.dispatchEvent(new CustomEvent('beljar:inspector-follow-changed', {
         detail: { on: Settings.get('inspectorFollow') },
       }));
@@ -1403,7 +1403,7 @@ const global = globalThis;
     attachPanelReset(main.querySelector('[data-category="beluga"]'), function () {
       runCategoryReset(function () {
         Settings.reset('beluga');
-        BelugaRun.setBelugaMode('stable');
+        BelugaRun.setBelugaMode(Settings.get('belugaMode'));
       }, 'beluga-reset');
     });
 
@@ -1644,6 +1644,11 @@ const global = globalThis;
       function () { return Settings.get('editorAutoCloseBrackets'); },
       function (p, on) { Settings.set('editorAutoCloseBrackets', on); }
     );
+    addSwitchRow(panelBodies.editor, 'editor-pad-brackets', 'Pad square brackets',
+      'Pads [ ] with inner spaces when typed (if auto-close is on) and on format. ',
+      function () { return Settings.get('editorPadBrackets'); },
+      function (p, on) { Settings.set('editorPadBrackets', on); }
+    );
     addSwitchRow(panelBodies.editor, 'editor-selection-matches', 'Selection matches', 'Highlight other matches of the selection.',
       function () { return Settings.get('editorSelectionMatches'); },
       function (p, on) { Settings.set('editorSelectionMatches', on); }
@@ -1880,20 +1885,27 @@ const global = globalThis;
     keybindingsApi = mountKeybindingsSheet(kbUnit.body);
 
     // Beluga
-    addDropdownRow(panelBodies.beluga, 'beluga-mode', 'Run and load',
-      'Stable: worker (non-blocking). Fast: main thread for runs and loads only; background checking always stays on the Stable worker.',
-      [{ value: 'stable', label: 'Stable' }, { value: 'fast', label: 'Fast' }],
+    // The builds BelugaClient's table says work in this browser (js/beluga/beluga-client.js
+    // `BUILDS`: a Wasm build needs WasmGC, tail calls and exception handling), named here;
+    // tests/test-beluga-builds.mjs holds the two lists together. A stored build that does
+    // not work here shows as the one that runs.
+    var BUILD_OPTIONS = [
+      { value: 'stable', label: 'Stable' },
+      { value: 'wasm', label: 'Wasm' },
+      { value: 'wasm-cps', label: 'Wasm CPS' },
+    ];
+    var client = global.BelugaClient;
+    var builds = client && client.availableBuilds ? client.availableBuilds() : ['stable'];
+    addDropdownRow(panelBodies.beluga, 'beluga-mode', 'Build version',
+      'Which build of Beluga checks and runs your files. Where the browser can run them, the Wasm builds are several times faster than Stable, and Wasm CPS handles the deepest proofs.',
+      BUILD_OPTIONS.filter(function (o) { return builds.indexOf(o.value) >= 0; }),
       function () {
-        return BelugaRun.getBelugaMode()
+        var mode = BelugaRun.getBelugaMode();
+        return client && client.effectiveBuild ? client.effectiveBuild(mode) : mode;
       },
       function (_p, m) {
         BelugaRun.setBelugaMode(m);
       }
-    );
-    addSwitchRow(panelBodies.beluga, 'beluga-fallback-stable', 'Retry with Stable if Fast fails',
-      'If a Fast run crashes, retry on the Stable worker.',
-      function () { return Settings.get('belugaFallbackStable'); },
-      function (p, on) { Settings.set('belugaFallbackStable', on); }
     );
     addSwitchRow(panelBodies.beluga, 'beluga-cancel-on-edit', 'Cancel load on edit',
       'Abort a pending run or load when the buffer changes.',

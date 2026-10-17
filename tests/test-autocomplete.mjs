@@ -17,7 +17,7 @@ import { contributeIdents } from '../js/editor-src/ide/completion/contributors.m
 import { rankLookupItems } from '../js/editor-src/ide/completion/weigh.mjs';
 import { fuzzyScore } from '../js/editor-src/ide/completion/fuzzy.mjs';
 import { belCompletionSource, gatherCompletions } from '../js/editor-src/ide/completion/source.mjs';
-import { coordsAtPosSafe } from '../js/editor-src/ide/completion/editor-autocomplete.mjs';
+import { acceptDispatch, coordsAtPosSafe } from '../js/editor-src/ide/completion/editor-autocomplete.mjs';
   import {
   SNIPPETS,
   isCaseArmSlot,
@@ -757,7 +757,7 @@ function mkState(src) {
   function assertHonest(snip, where) {
     expect(!DUMMY.test(snip.insert),
       `${where} ${snip.label} must not invent symbols, got ${JSON.stringify(snip.insert)}`);
-    expect(snip.insert.includes(snip.label) || snip.label === '? : ?',
+    expect(snip.insert.includes(snip.label),
       `${where} ${snip.label} insert keeps its keyword`);
   }
   for (const snip of SNIPPETS['top-decl']) assertHonest(snip, 'top');
@@ -765,7 +765,6 @@ function mkState(src) {
   for (const snip of SNIPPETS['case-arm']) assertHonest(snip, 'case-arm');
   for (const snip of SNIPPETS['schema-body']) assertHonest(snip, 'schema-body');
   for (const snip of SNIPPETS['ctor-line']) assertHonest(snip, 'ctor-line');
-  for (const snip of SNIPPETS['ctx-entry']) assertHonest(snip, 'ctx-entry');
   expect(SNIPPETS['top-decl'].some((s) => s.insert.includes('?')),
     'top-decl scaffolds use ? holes');
   expect(SNIPPETS['expr-head'].find((s) => s.label === 'case').insert.includes('_'),
@@ -1418,19 +1417,24 @@ function mkState(src) {
 }
 
 {
-  // Ctx-entry scaffold inside `[ , ]` before turnstile.
-  const src = 'rec f : {g:ctx} [g,  ⊢ nat] → [⊢ nat] = mlam g ⇒ fn x ⇒ x;';
-  // Find the position after `[g, `
-  const pos = src.indexOf('[g, ') + '[g, '.length;
-  const store = mkStore(src);
-  const engine = mkEngine(store);
-  const state = mkState(src);
-  const site = classifyCompletionSite(state, pos, engine);
-  // May be ctx-entry or declined binder — either way, if structure fires it offers scaffold.
-  if (site.structure === 'ctx-entry') {
-    const items = gatherCompletions(site, engine, state, { getPeerSymbols: () => [] });
-    expect(items.some((i) => i.label === '? : ?'),
-      `ctx-entry offers scaffold, got ${items.map((i) => i.label)}`);
+  // A hole is not a completion. Inside a context, `?` is not offered.
+  const cases = [
+    ['rec f : {g:ctx} [g,  ⊢ nat] → [⊢ nat] = mlam g ⇒ fn x ⇒ x;', '[g, '],
+    ['rec id : [⊢ nat] → [⊢ nat] =\nfn n ⇒ case n of\n| []', '| ['],
+  ];
+  for (const [src, mark] of cases) {
+    const pos = src.indexOf(mark) + mark.length;
+    const store = mkStore(src);
+    const engine = mkEngine(store);
+    const state = mkState(src);
+    const site = classifyCompletionSite(state, pos, engine);
+    expect(site.structure !== 'ctx-entry',
+      `context slot is not a ? scaffold (${JSON.stringify(mark)}), got ${site.structure}`);
+    const items = site.kind === 'none'
+      ? []
+      : gatherCompletions(site, engine, state, { getPeerSymbols: () => [] });
+    expect(!items.some((i) => i.label === '? : ?' || /\?/.test(i.label)),
+      `context slot does not recommend ?, got ${items.map((i) => i.label)}`);
   }
 }
 
@@ -2011,6 +2015,54 @@ function mkState(src) {
   expect(coordsAtPosSafe(view, 50) === rect, 'doc.length is a valid caret pos');
   view.state.doc.length = 200;
   expect(coordsAtPosSafe(view, 102) === null, 'missing tile is null, not a throw');
+}
+
+{
+  function itemsAt(src) {
+    const store = mkStore(src);
+    const engine = mkEngine(store);
+    const state = mkState(src);
+    const site = classifyCompletionSite(state, src.length, engine);
+    return {
+      site,
+      items: gatherCompletions(site, engine, state, { getPeerSymbols: () => [] }),
+    };
+  }
+  const rec = itemsAt('rec f : nat -> nat = ');
+  const tot = rec.items.find((i) => i.label === '/ total … /');
+  const trust = rec.items.find((i) => i.label === '/ trust /');
+  const fn = rec.items.find((i) => i.label === 'fn');
+  expect(!!tot && tot.insert === '/ total ? /' && tot.selectHole, 'totality inserts a selected measure hole');
+  expect(!!trust && trust.insert === '/ trust /', 'trust is offered under totality');
+  expect(!rec.items.some((i) => i.insert === '/ total /' || i.label === '/ total /'), 'bare / total / is not offered');
+  expect(rec.items[0] === tot, 'an empty query ranks totality first');
+  expect(fn && rec.items.indexOf(tot) < rec.items.indexOf(fn), 'totality ranks above fn');
+
+  const arrow = itemsAt('rec f : nat -> nat =\n  fn x \u21d2 ');
+  expect(!arrow.items.some((i) => i.label === '/ total … /' || i.label === '/ trust /'), 'totality is not offered after ⇒');
+  for (const src of ['schema g = ', 'let x = ', 'typedef t : ctype = ']) {
+    const site = itemsAt(src);
+    expect(!site.items.some((i) => i.label === '/ total … /' || i.label === '/ trust /'), `totality is not offered at ${src}`);
+  }
+
+  const slash = itemsAt('rec f : nat -> nat = /');
+  expect(slash.items.some((i) => i.label === '/ total … /'), '/ narrows to totality');
+  expect(slash.items.some((i) => i.label === '/ trust /'), '/ keeps trust');
+  expect(!slash.items.some((i) => i.label === 'fn'), '/ does not offer fn');
+  expect(slash.site.from === 'rec f : nat -> nat = /'.length - 1, '/ is inside the replace range');
+
+  const to = itemsAt('rec f : nat -> nat = to');
+  expect(to.items.some((i) => i.label === '/ total … /'), 'to narrows to totality');
+  expect(!to.items.some((i) => i.label === '/ trust /'), 'to hides trust');
+  expect(to.site.from === 'rec f : nat -> nat = to'.length - 2, 'to is the replace range');
+
+  const measure = acceptDispatch({ source: 'snippet', insert: '/ total ? /', selectHole: true }, 4, 6);
+  expect(measure.userEvent === 'input.accept', 'accept is tagged input.accept');
+  expect(measure.selection.anchor === 4 + '/ total '.length && measure.selection.head === measure.selection.anchor + 1,
+    'the measure hole is selected');
+  const fnDispatch = acceptDispatch({ source: 'snippet', insert: 'fn ? \u21d2 ?' }, 0, 0);
+  expect(fnDispatch.selection.anchor === 'fn ?'.length && fnDispatch.selection.head == null,
+    'an expression hole parks after the ?');
 }
 
 console.log('ok - autocomplete slice A');

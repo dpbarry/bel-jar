@@ -47,6 +47,7 @@ withPersist(() => {
 
 {
   const prefs = readEditorPrefs();
+  assert.equal(prefs.padBrackets, true, 'square brackets start padded');
   assert.equal(prefs.fontSize, 'md', 'no Settings on the page: every default comes from the table');
   assert.equal(prefs.tabSize, 2);
   assert.equal(prefs.diagGutter, true);

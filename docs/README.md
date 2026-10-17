@@ -24,6 +24,7 @@ Agent rules and commands: [`AGENTS.md`](../AGENTS.md), [`.cursor/rules/`](../.cu
 |-----|------|--------|
 | [modal-editing.md](modal-editing.md) | Command layer, status strip, Vim/Emacs | Registry landed; catalogue in progress; bar exists; Vim/Emacs depth not |
 | [case-completion.md](case-completion.md) | Supplying the missing cases of an induction from the ones written: the assignment table, what a `Checked` is worth, the measurement harness | Table, piece reader and harness built. Measured 3 Oct 2026: the shipped Orca engine, run on one missing case at a time, fills 61% of theorem cases (65% after an instant renaming lookup; 49% in proofs with ≥ 6). Whether to build it as a surface is undecided |
+| [wasm-runtime.md](wasm-runtime.md) | The Beluga runtime compiled with wasm_of_ocaml beside the two JS builds: the builds, the benchmark and differential, the numbers, what follows | Measured 16 Oct 2026; shipped 17 Oct: Wasm CPS is the default runtime, the JS build (release profile) the fallback, Fast retired |
 | [calf.md](calf.md) | Paper-proximate proof language over Beluga — the **dossier**: the claim, the encoding tax, the route to 31 Dec 2026 | Nothing built. §3 is the exhibit (nine encoding taxes on eleven lines of Beluga); §12 is the schedule; §16 is everything deferred past the first paper |
 
 ## Archive

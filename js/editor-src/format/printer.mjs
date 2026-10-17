@@ -46,6 +46,7 @@ function classify(ws) {
 
 export function makePrinter(src, opts = {}) {
   const IND = mergeStyle(opts.style).indent;
+  const padBoxes = !!opts.padBrackets;
 
   let leaves = [];
   let lead = new Map();
@@ -186,6 +187,12 @@ export function makePrinter(src, opts = {}) {
   function seq(ns) {
     const open = ns[0];
     const shut = ns[ns.length - 1];
+    // Empty `[]`. Padding on writes `[  ]`; padding off keeps the author's gap.
+    if (ns.length === 2 && open?.name === '[' && shut?.name === ']') {
+      const gap = src.slice(open.to, shut.from);
+      if (padBoxes) return concat(print(open), space, space, print(shut));
+      if (/^[ \t]*$/.test(gap)) return concat(print(open), text(gap), print(shut));
+    }
     if (ns.length > 2 && isLeaf(open) && CLOSER[open.name] && shut.name === CLOSER[open.name]) {
       return bracket(open, ns.slice(1, -1), shut);
     }
@@ -291,11 +298,13 @@ export function makePrinter(src, opts = {}) {
     if (ch[0]?.name !== '[' || shut?.name !== ']' || ti < 1) return seq(ch);
     const parts = [print(ch[0])];
     const ctx = ch.slice(1, ti);
-    if (ctx.length) parts.push(seqPlain(ctx), stickyOr(ch[ti], space));
+    const afterOpen = padBoxes ? space : sep(ctx.length ? ctx[0] : ch[ti]);
+    if (ctx.length) parts.push(afterOpen, seqPlain(ctx), stickyOr(ch[ti], space));
+    else parts.push(afterOpen);
     parts.push(print(ch[ti]));
     const body = ch.slice(ti + 1, -1);
     if (body.length) parts.push(stickyOr(body[0], space), seqPlain(body));
-    parts.push(stickyOr(shut, empty), print(shut));
+    parts.push(padBoxes ? space : sep(shut), print(shut));
     return concat(...parts);
   }
 

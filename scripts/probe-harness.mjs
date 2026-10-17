@@ -82,7 +82,7 @@ export async function openProbe(opts = {}) {
     executablePath: chrome,
     headless: 'new',
     protocolTimeout: 120000,
-    args: ['--window-size=1200,900'],
+    args: ['--window-size=1200,900', ...(opts.args || [])],
     defaultViewport: { width: 1200, height: 900, deviceScaleFactor: opts.scale || 2 },
   });
 

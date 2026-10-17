@@ -1,0 +1,64 @@
+{
+ "date": "2026-10-16T09:57:53.844Z",
+ "records": 6485,
+ "builds": {
+  "stable-release": {
+   "byStep": {
+    "A": {
+     "same": 161,
+     "different": 0
+    },
+    "B": {
+     "same": 161,
+     "different": 0
+    },
+    "C": {
+     "same": 6157,
+     "different": 0
+    },
+    "D": {
+     "same": 4,
+     "different": 0
+    },
+    "E": {
+     "same": 1,
+     "different": 0
+    }
+   },
+   "differences": 0,
+   "overflowedOnTerm1000": "false",
+   "sample": [],
+   "records": 6485
+  },
+  "fast-release": {
+   "byStep": {
+    "A": {
+     "same": 161,
+     "different": 0
+    },
+    "B": {
+     "same": 161,
+     "different": 0
+    },
+    "C": {
+     "same": 6157,
+     "different": 0
+    },
+    "D": {
+     "same": 4,
+     "different": 0
+    },
+    "E": {
+     "same": 1,
+     "different": 0
+    }
+   },
+   "differences": 0,
+   "overflowedOnTerm1000": "true",
+   "sample": [],
+   "records": 6485
+  }
+ },
+ "oracleOverflowedOnTerm1000": "false",
+ "seconds": 1487
+}

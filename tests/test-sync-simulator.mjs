@@ -102,7 +102,7 @@ function simulate(seed, opts) {
   }
 
   for (let i = 0; i < opts.devices; i++) {
-    const dev = { offline: false, running: null, tokens: 0, checked: new Set(), belugaMode: 'stable' };
+    const dev = { offline: false, running: null, tokens: 0, checked: new Set(), belugaMode: 'wasm-cps' };
     dev.t = transportFor(dev);
     Object.assign(dev, makeDevice(server, {
       account: ACCOUNT,
@@ -334,7 +334,7 @@ function simulate(seed, opts) {
     const ids = ['theme', 'editorFontSize', 'keymapStyle', 'belugaMode'];
     const id = pick(ids);
     const row = dev.settings.defaultOf(id);
-    const values = { theme: ['dark', 'light'], editorFontSize: ['sm', 'md', 'lg'], keymapStyle: ['default', 'vim', 'emacs'], belugaMode: ['stable', 'fast'] }[id];
+    const values = { theme: ['dark', 'light'], editorFontSize: ['sm', 'md', 'lg'], keymapStyle: ['default', 'vim', 'emacs'], belugaMode: ['wasm-cps', 'stable'] }[id];
     const v = pick(values.filter((x) => x !== row || rand() < 0.5));
     dev.settings.set(id, v);
     if (id === 'belugaMode') dev.belugaMode = v;

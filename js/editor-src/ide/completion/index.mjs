@@ -9,7 +9,6 @@ export {
   isLfKindSlot,
   isCompKindSlot,
   isSchemaBodySlot,
-  isCtxEntrySlot,
   isCtorLineSlot,
   isInfixAssocSlot,
   isTopDeclSlot,

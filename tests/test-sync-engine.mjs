@@ -468,7 +468,7 @@ function world() {
   a.work.projectId();
   a.settings.set('theme', 'light');
   a.settings.set('keymapStyle', 'vim');
-  a.settings.set('belugaMode', 'fast');
+  a.settings.set('belugaMode', 'stable');
   let res = await a.engine.syncAll();
   expect(res.settings.status === 'pushed', 'changed settings go up');
   expect(!('belugaMode' in server.settingsHistory('u_dean').at(-1).values), 'a setting that belongs to one device never leaves it');
@@ -477,11 +477,11 @@ function world() {
   b.settings.set('editorFontSize', 'lg');
   res = await b.engine.syncAll();
   expect(b.settings.get('theme') === 'light' && b.settings.get('keymapStyle') === 'vim', 'another device takes them');
-  expect(b.settings.get('belugaMode') === 'stable', 'but not the one that stays on its device');
+  expect(b.settings.get('belugaMode') === 'wasm-cps', 'but not the one that stays on its device');
   expect(b.settings.get('editorFontSize') === 'lg', 'and keeps what it changed itself');
   expect(seen.some((e) => e.origin === 'remote' && e.ids.includes('theme')), 'the page hears about it as a change from elsewhere');
   res = await a.engine.syncAll();
-  expect(a.settings.get('editorFontSize') === 'lg' && a.settings.get('belugaMode') === 'fast', 'different settings changed on two devices: both kept');
+  expect(a.settings.get('editorFontSize') === 'lg' && a.settings.get('belugaMode') === 'stable', 'different settings changed on two devices: both kept');
 
   a.settings.set('editorFontSize', 'sm');
   b.settings.set('editorFontSize', 'xl');

@@ -1,0 +1,198 @@
+wasm size raw 2005977
+wasm boot median 41 ms
+wasm cold examples/arith/arith.bel: 50, 51, 51 ms
+wasm cold examples/codatatypes/howes-method/howe-total.bel: 523, 605, 579 ms
+wasm cold examples/poplmark-reloaded+ [sources.cfg]: 1086, 1047, 1149 ms
+wasm corpus: first pass 11.0 s, warm 10.6 s
+  depth wasm term n=16: ok 23ms
+  depth wasm term n=32: ok 27ms
+  depth wasm term n=64: ok 32ms
+  depth wasm term n=128: ok 67ms
+  depth wasm term n=256: overflow-thrown 21ms
+  depth wasm term n=192: ok 77ms
+  depth wasm term n=224: ok 98ms
+  depth wasm term n=240: ok 104ms
+  depth wasm term n=248: ok 117ms
+  depth wasm term n=252: overflow-thrown 19ms
+  depth wasm arrows n=16: ok 10ms
+  depth wasm arrows n=32: ok 12ms
+  depth wasm arrows n=64: ok 14ms
+  depth wasm arrows n=128: ok 20ms
+  depth wasm arrows n=256: ok 30ms
+  depth wasm arrows n=512: ok 54ms
+  depth wasm arrows n=1024: ok 103ms
+  depth wasm arrows n=2048: overflow-thrown 183ms
+  depth wasm arrows n=1536: ok 162ms
+  depth wasm arrows n=1792: overflow-thrown 190ms
+  depth wasm arrows n=1664: ok 183ms
+  depth wasm arrows n=1728: overflow-thrown 141ms
+  depth wasm arrows n=1696: overflow-thrown 144ms
+  depth wasm lets n=16: ok 19ms
+  depth wasm lets n=32: ok 26ms
+  depth wasm lets n=64: ok 51ms
+  depth wasm lets n=128: ok 139ms
+  depth wasm lets n=256: ok 399ms
+  depth wasm lets n=512: ok 2686ms
+  depth wasm lets n=1024: overflow-thrown 56ms
+  depth wasm lets n=768: ok 9697ms
+  depth wasm lets n=896: overflow-thrown 70ms
+  depth wasm lets n=832: overflow-thrown 70ms
+  depth wasm lets n=800: overflow-thrown 55ms
+  depth wasm lets n=784: overflow-thrown 57ms
+  depth wasm decls n=16: ok 26ms
+  depth wasm decls n=32: ok 47ms
+  depth wasm decls n=64: ok 86ms
+  depth wasm decls n=128: ok 79ms
+  depth wasm decls n=256: ok 127ms
+  depth wasm decls n=512: ok 217ms
+  depth wasm decls n=1024: ok 374ms
+  depth wasm decls n=2048: ok 676ms
+  depth wasm decls n=4096: overflow-thrown 871ms
+  depth wasm decls n=3072: ok 1207ms
+  depth wasm decls n=3584: overflow-thrown 806ms
+  depth wasm decls n=3328: overflow-thrown 655ms
+  depth wasm decls n=3200: overflow-thrown 633ms
+  depth wasm decls n=3136: overflow-thrown 708ms
+wasm-cps size raw 2518892
+wasm-cps boot median 46 ms
+wasm-cps cold examples/arith/arith.bel: 83, 74, 82 ms
+wasm-cps cold examples/codatatypes/howes-method/howe-total.bel: 975, 930, 692 ms
+wasm-cps cold examples/poplmark-reloaded+ [sources.cfg]: 1517, 1488, 1496 ms
+wasm-cps corpus: first pass 15.0 s, warm 15.2 s
+  depth wasm-cps term n=16: ok 25ms
+  depth wasm-cps term n=32: ok 29ms
+  depth wasm-cps term n=64: ok 39ms
+  depth wasm-cps term n=128: ok 68ms
+  depth wasm-cps term n=256: ok 135ms
+  depth wasm-cps term n=512: ok 347ms
+  depth wasm-cps term n=1024: ok 931ms
+  depth wasm-cps term n=2048: ok 4725ms
+  depth wasm-cps term n=4096: ok 23136ms
+  depth wasm-cps term n=8192: timeout
+  depth wasm-cps arrows n=16: ok 13ms
+  depth wasm-cps arrows n=32: ok 14ms
+  depth wasm-cps arrows n=64: ok 16ms
+  depth wasm-cps arrows n=128: ok 24ms
+  depth wasm-cps arrows n=256: ok 34ms
+  depth wasm-cps arrows n=512: ok 55ms
+  depth wasm-cps arrows n=1024: ok 109ms
+  depth wasm-cps arrows n=2048: ok 267ms
+  depth wasm-cps arrows n=4096: ok 859ms
+  depth wasm-cps arrows n=8192: ok 3552ms
+  depth wasm-cps arrows n=16384: ok 16440ms
+  depth wasm-cps arrows n=32768: timeout
+  depth wasm-cps lets n=16: ok 25ms
+  depth wasm-cps lets n=32: ok 36ms
+  depth wasm-cps lets n=64: ok 72ms
+  depth wasm-cps lets n=128: ok 209ms
+  depth wasm-cps lets n=256: ok 693ms
+  depth wasm-cps lets n=512: ok 5375ms
+  depth wasm-cps lets n=1024: ok 33910ms
+  depth wasm-cps lets n=2048: timeout
+  depth wasm-cps decls n=16: ok 46ms
+  depth wasm-cps decls n=32: ok 61ms
+  depth wasm-cps decls n=64: ok 76ms
+  depth wasm-cps decls n=128: ok 100ms
+  depth wasm-cps decls n=256: ok 204ms
+  depth wasm-cps decls n=512: ok 306ms
+  depth wasm-cps decls n=1024: ok 545ms
+  depth wasm-cps decls n=2048: ok 961ms
+  depth wasm-cps decls n=4096: ok 1656ms
+  depth wasm-cps decls n=8192: ok 3305ms
+  depth wasm-cps decls n=16384: ok 7174ms
+  depth wasm-cps decls n=32768: ok 14532ms
+  depth wasm-cps decls n=65536: ok 33006ms
+fast size raw 33001297
+fast boot median 351 ms
+fast cold examples/arith/arith.bel: 240, 204, 238 ms
+fast cold examples/codatatypes/howes-method/howe-total.bel: 2547, 2533, 2570 ms
+fast cold examples/poplmark-reloaded+ [sources.cfg]: 6548, 6131, 6360 ms
+fast corpus: first pass 81.8 s, warm 87.3 s
+  depth fast term n=16: ok 65ms
+  depth fast term n=32: ok 83ms
+  depth fast term n=64: overflow-reported 39ms
+  depth fast term n=48: ok 113ms
+  depth fast term n=56: overflow-reported 39ms
+  depth fast term n=52: overflow-reported 38ms
+  depth fast term n=50: overflow-reported 38ms
+  depth fast term n=49: ok 140ms
+  depth fast arrows n=16: ok 37ms
+  depth fast arrows n=32: ok 43ms
+  depth fast arrows n=64: ok 75ms
+  depth fast arrows n=128: ok 133ms
+  depth fast arrows n=256: overflow-reported 198ms
+  depth fast arrows n=192: ok 130ms
+  depth fast arrows n=224: ok 151ms
+  depth fast arrows n=240: overflow-reported 158ms
+  depth fast arrows n=232: overflow-reported 151ms
+  depth fast arrows n=228: ok 151ms
+  depth fast lets n=16: ok 99ms
+  depth fast lets n=32: ok 122ms
+  depth fast lets n=64: ok 277ms
+  depth fast lets n=128: ok 754ms
+  depth fast lets n=256: overflow-reported 151ms
+  depth fast lets n=192: overflow-reported 157ms
+  depth fast lets n=160: overflow-reported 152ms
+  depth fast lets n=144: ok 968ms
+  depth fast lets n=152: overflow-reported 149ms
+  depth fast lets n=148: overflow-reported 146ms
+  depth fast decls n=16: ok 203ms
+  depth fast decls n=32: ok 220ms
+  depth fast decls n=64: ok 377ms
+  depth fast decls n=128: ok 673ms
+  depth fast decls n=256: ok 1505ms
+  depth fast decls n=512: ok 2252ms
+  depth fast decls n=1024: overflow-reported 1953ms
+  depth fast decls n=768: overflow-reported 2204ms
+  depth fast decls n=640: overflow-reported 2144ms
+  depth fast decls n=576: overflow-reported 1808ms
+  depth fast decls n=544: ok 2250ms
+  depth fast decls n=560: ok 2467ms
+stable size raw 25389546
+stable boot median 325 ms
+stable cold examples/arith/arith.bel: 370, 314, 345 ms
+stable cold examples/codatatypes/howes-method/howe-total.bel: 5997, 6035, 6977 ms
+stable cold examples/poplmark-reloaded+ [sources.cfg]: 14863, 14621, 14646 ms
+stable corpus: first pass 179.3 s, warm 188.9 s
+  depth stable term n=16: ok 94ms
+  depth stable term n=32: ok 119ms
+  depth stable term n=64: ok 208ms
+  depth stable term n=128: ok 428ms
+  depth stable term n=256: ok 930ms
+  depth stable term n=512: ok 2630ms
+  depth stable term n=1024: ok 9670ms
+  depth stable term n=2048: ok 39551ms
+  depth stable term n=4096: timeout
+  depth stable arrows n=16: ok 55ms
+  depth stable arrows n=32: ok 63ms
+  depth stable arrows n=64: ok 91ms
+  depth stable arrows n=128: ok 138ms
+  depth stable arrows n=256: ok 231ms
+  depth stable arrows n=512: ok 437ms
+  depth stable arrows n=1024: ok 1011ms
+  depth stable arrows n=2048: ok 3019ms
+  depth stable arrows n=4096: ok 11141ms
+  depth stable arrows n=8192: overflow-reported 4189ms
+  depth stable arrows n=6144: overflow-reported 3207ms
+  depth stable arrows n=5120: ok 16079ms
+  depth stable arrows n=5632: ok 19636ms
+  depth stable arrows n=5888: overflow-reported 2916ms
+  depth stable arrows n=5760: ok 21382ms
+  depth stable lets n=16: ok 175ms
+  depth stable lets n=32: ok 241ms
+  depth stable lets n=64: ok 509ms
+  depth stable lets n=128: ok 1357ms
+  depth stable lets n=256: ok 6811ms
+  depth stable lets n=512: ok 49408ms
+  depth stable lets n=1024: timeout
+  depth stable decls n=16: ok 298ms
+  depth stable decls n=32: ok 464ms
+  depth stable decls n=64: ok 604ms
+  depth stable decls n=128: ok 1029ms
+  depth stable decls n=256: ok 1804ms
+  depth stable decls n=512: ok 3562ms
+  depth stable decls n=1024: ok 8048ms
+  depth stable decls n=2048: ok 16933ms
+  depth stable decls n=4096: ok 28757ms
+  depth stable decls n=8192: slow 64057ms
+wrote C:\Users\Dean\Documents\Coding\bel-jar\results\runtime-bench\node.json

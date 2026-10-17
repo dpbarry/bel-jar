@@ -44,19 +44,23 @@ expect(resolver.includes('runtimeBase()'), 'mainScriptUrl honours the deployment
 expect(client.split('function mainScriptUrl').length === 2, 'there is exactly one mainScriptUrl');
 expect(/runtimeScriptUrl:\s*function/.test(client), 'BelugaClient exposes runtimeScriptUrl to other consumers');
 
+// A runtime blob's name: the JS builds and the Wasm builds' loaders.
+const BLOB = /beluga_web(?:_wasm\w*)?\.bc/;
+
 // 3. Harpoon asks; it does not rebuild the URL.
 expect(/client\.runtimeScriptUrl\(build\)/.test(harpoon), 'harpoon-client.js asks BelugaClient for the runtime URL');
-expect(!/beluga_web\.bc/.test(harpoon), 'harpoon-client.js names no runtime blob of its own');
+expect(!BLOB.test(harpoon), 'harpoon-client.js names no runtime blob of its own');
 expect(/try \{\s*bind\(slot\);\s*\} catch \(err\) \{\s*return Promise\.reject\(err\);/.test(harpoon),
   'a worker that cannot be constructed rejects the call instead of throwing out of start()');
 
 // 4. No new private copy anywhere in the authored sources. Every file that
-//    names a runtime blob is on this list for a stated reason.
+//    names a runtime blob, JS or Wasm (beluga_web_wasm*.bc.wasm.js), is on this list
+//    for a stated reason.
 const ALLOWED = new Map([
   ['js/beluga/beluga-client.js', 'the owner'],
   ['js/beluga/beluga-worker.js', 'receives the URL as ?script=; same-origin fallback when none is passed'],
 ]);
-const CLASSIC = new Set(['js/beluga/beluga-client.js', 'js/beluga/beluga-worker.js', 'js/harpoon/harpoon-client.js']);
+const CLASSIC = new Set(['js/beluga/beluga-client.js', 'js/beluga/beluga-worker.js', 'js/beluga/beluga-runtime-load.js', 'js/harpoon/harpoon-client.js']);
 const offenders = [];
 (function walk(dir) {
   for (const name of readdirSync(join(root, dir))) {
@@ -65,7 +69,7 @@ const offenders = [];
     // Authored sources only: every .mjs, plus the hand-written classic scripts.
     // Generated .js leaves are built from the .mjs and would double-count.
     if (!rel.endsWith('.mjs') && !CLASSIC.has(rel)) continue;
-    if (/beluga_web\.bc/.test(read(rel)) && !ALLOWED.has(rel)) offenders.push(rel);
+    if (BLOB.test(read(rel)) && !ALLOWED.has(rel)) offenders.push(rel);
   }
 })('js');
 expect(offenders.length === 0,
@@ -80,5 +84,31 @@ expect(/\[regex\]::Matches\(/.test(stamper) && /\$hits -ne 1/.test(stamper),
   'stamp-runtime.ps1 refuses unless each pattern matches exactly once');
 expect(stamper.indexOf('WriteAllText') > stamper.lastIndexOf('throw '),
   'stamp-runtime.ps1 writes nothing until every file has been checked');
+// rebuild.sh stamps without the .ps1 (until 2026-10-16 it wrote sw.js alone, and a
+// rebuild on Linux or macOS would have left the URL on the old build).
+const rebuildSh = read('_rebuild/rebuild.sh');
+expect(/beluga-runtime-\$\{version\}/.test(rebuildSh) && /RUNTIME_VERSION = '\$\{version\}'/.test(rebuildSh),
+  'rebuild.sh writes both CACHE_NAME and RUNTIME_VERSION from one timestamp');
+expect(rebuildSh.indexOf('mv "$sw_next"') > rebuildSh.lastIndexOf('exit 1'),
+  'rebuild.sh writes nothing until every file has been checked');
+
+// 6. The service worker caches every file of every build the client names, the .wasm
+//    beside each Wasm loader included, and nothing else.
+const swRuntime = /var RUNTIME = (\/.+\/);/.exec(sw);
+expect(swRuntime, 'sw.js declares the RUNTIME pattern of the files it caches');
+const SW_RE = new Function('return ' + swRuntime[1])();
+const buildFiles = [...client.matchAll(/^\s*'?[\w-]+'?:\s*\{\s*file:\s*'([^']+)'/gm)].map((m) => m[1]);
+expect(buildFiles.length >= 3, `the client names its builds' files (${buildFiles.join(', ')})`);
+for (const f of buildFiles) {
+  expect(SW_RE.test('/' + f), `sw.js caches ${f}`);
+  if (f.endsWith('.wasm.js')) {
+    const assets = f.replace(/\.js$/, '.assets');
+    const wasm = readdirSync(join(root, assets)).filter((x) => x.endsWith('.wasm'));
+    expect(wasm.length === 1 && SW_RE.test(`/${assets}/${wasm[0]}`), `and the .wasm its loader fetches (${wasm.join(', ')})`);
+  }
+}
+for (const p of ['/beluga_web.bc.dt.js', '/js/shell.js', '/beluga_web_wasm.bc.wasm.assets/notes.txt', '/beluga_web.bc.json']) {
+  expect(!SW_RE.test(p), `and nothing else (${p})`);
+}
 
 console.log(`OK runtime-url (${n} checks: one owner, stamped URL ${v[1]}, agrees with sw.js)`);

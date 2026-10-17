@@ -274,16 +274,59 @@ function jumpToCrumb(view, crumb) {
   view.focus();
 }
 
-function renderStructureBar(bar, view, path) {
-  bar.replaceChildren();
-  bar.hidden = false;
-  if (!path.length) return;
+function reduceMotion() {
+  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function placeStructureBar(view, bar) {
+  if (bar.nextElementSibling !== view.scrollDOM) view.dom.insertBefore(bar, view.scrollDOM);
+}
+
+/** Match one code line, and line the words up with the code column. */
+function syncRowBox(view, bar) {
+  const gutters = view.scrollDOM.querySelector('.cm-gutters');
+  const gutterW = gutters ? gutters.getBoundingClientRect().width : 0;
+  const scrollbarW = Math.max(0, view.scrollDOM.offsetWidth - view.scrollDOM.clientWidth);
+  const line = view.contentDOM.querySelector('.cm-line');
+  const codePad = line ? (getComputedStyle(line).paddingLeft || '6px') : '6px';
+  bar.style.setProperty('--structure-gutter', gutterW + 'px');
+  bar.style.setProperty('--structure-scrollbar', scrollbarW + 'px');
+  bar.style.setProperty('--structure-code-pad', codePad);
+  bar.classList.toggle('has-gutter', gutterW > 0.5);
+  const lh = view.defaultLineHeight;
+  if (lh > 0) bar.style.height = lh + 'px';
+}
+
+function renderStructureBar(bar, view, path, fadeIn) {
+  if (!path.length) {
+    bar.classList.add('is-empty');
+    bar.setAttribute('aria-hidden', 'true');
+    const inner = bar.querySelector('.beljar-structure-path-inner');
+    if (!inner || inner.classList.contains('is-leaving')) return;
+    if (reduceMotion()) {
+      inner.remove();
+      return;
+    }
+    inner.inert = true;
+    inner.classList.add('is-leaving');
+    const remove = () => { if (inner.isConnected) inner.remove(); };
+    inner.addEventListener('transitionend', (e) => {
+      if (e.target === inner && e.propertyName === 'opacity') remove();
+    });
+    setTimeout(remove, 240);
+    return;
+  }
+
+  bar.classList.remove('is-empty');
+  bar.removeAttribute('aria-hidden');
+  const inner = document.createElement('div');
+  inner.className = 'beljar-structure-path-inner' + (fadeIn && !reduceMotion() ? ' is-enter' : '');
   path.forEach((crumb, i) => {
     if (i > 0) {
       const sep = document.createElement('span');
       sep.className = 'beljar-structure-sep';
       sep.textContent = '>';
-      bar.appendChild(sep);
+      inner.appendChild(sep);
     }
     const part = document.createElement('span');
     part.className = 'beljar-structure-part';
@@ -301,17 +344,19 @@ function renderStructureBar(bar, view, path) {
     part.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') go(e);
     });
-    bar.appendChild(part);
+    inner.appendChild(part);
   });
+  bar.querySelector('.beljar-structure-path-inner')?.remove();
+  bar.appendChild(inner);
 }
 
 function syncStructureBar(view, bar, cache) {
-  const pos = view.state.selection.main.head;
-  const path = structurePathAt(view.state, pos);
+  const path = structurePathAt(view.state, view.state.selection.main.head);
   const sig = structurePathSignature(path);
   if (sig === cache.sig) return;
+  const fadeIn = path.length > 0 && cache.sig === '';
   cache.sig = sig;
-  renderStructureBar(bar, view, path);
+  renderStructureBar(bar, view, path, fadeIn);
 }
 
 export function stickyDeclHeader() {
@@ -320,8 +365,9 @@ export function stickyDeclHeader() {
       this.view = view;
       this.cache = { sig: null };
       this.bar = document.createElement('div');
-      this.bar.className = 'beljar-sticky-decl beljar-structure-path';
+      this.bar.className = 'beljar-sticky-decl beljar-structure-path is-empty';
       this.bar.setAttribute('aria-label', 'Structure path');
+      this.bar.setAttribute('aria-hidden', 'true');
       this.onEnter = () => {
         if (hasHoverTooltips(view.state)) {
           view.dispatch({ effects: closeHoverTooltips });
@@ -329,21 +375,29 @@ export function stickyDeclHeader() {
       };
       this.onMouseDown = (e) => {
         e.stopPropagation();
+        const el = e.target instanceof Element ? e.target : e.target.parentElement;
+        if (!el || !el.closest('.beljar-structure-part')) view.focus();
       };
       this.bar.addEventListener('mouseenter', this.onEnter);
       this.bar.addEventListener('mousedown', this.onMouseDown, true);
-      // Out of flow: the bar paints over the editor and must not change its height.
-      view.dom.insertBefore(this.bar, view.scrollDOM);
+      placeStructureBar(view, this.bar);
+      syncRowBox(view, this.bar);
       syncStructureBar(view, this.bar, this.cache);
+      this.frame = requestAnimationFrame(() => {
+        if (this.bar.isConnected) syncRowBox(this.view, this.bar);
+      });
     }
 
     update(update) {
+      placeStructureBar(update.view, this.bar);
+      if (update.geometryChanged) syncRowBox(update.view, this.bar);
       if (update.docChanged || update.selectionSet || update.geometryChanged) {
         syncStructureBar(update.view, this.bar, this.cache);
       }
     }
 
     destroy() {
+      if (this.frame) cancelAnimationFrame(this.frame);
       this.bar.removeEventListener('mouseenter', this.onEnter);
       this.bar.removeEventListener('mousedown', this.onMouseDown, true);
       this.bar.remove();

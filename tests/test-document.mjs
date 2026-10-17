@@ -173,6 +173,19 @@ function writesDuring(storage, fn) {
     { docFp: fp(SAMPLE), belugaBuild: 'stable' },
   );
   expect(!mismatch.ok && mismatch.reason === 'doc-fp-mismatch', 'a fingerprint mismatch is rejected');
+
+  // The build a checkpoint came from survives the store (the default is a Wasm build:
+  // read back as "stable", a Wasm checkpoint was refused on every open).
+  const { normalizeSemantic } = await import('../js/persist/document.mjs');
+  const stored = normalizeSemantic({ ...exported, docFp: fp(SAMPLE), belugaBuild: 'wasm-cps' });
+  expect(stored.belugaBuild === 'wasm-cps', `a checkpoint keeps the build it came from (${stored.belugaBuild})`);
+  const e4 = createSemanticEngine();
+  e4.update(parser.parse(SAMPLE), Text.of(SAMPLE.split('\n')));
+  expect(e4.importCheckpoint(stored, { docFp: fp(SAMPLE), belugaBuild: 'wasm-cps' }).ok, 'and is taken back on that build');
+  const other = createSemanticEngine();
+  other.update(parser.parse(SAMPLE), Text.of(SAMPLE.split('\n')));
+  expect(!other.importCheckpoint(stored, { docFp: fp(SAMPLE), belugaBuild: 'stable' }).ok, 'and refused on another');
+  expect(normalizeSemantic({ ...exported, belugaBuild: 42 }).belugaBuild === 'stable', 'a build that is not a name reads as stable');
 }
 
 // ── ⛔ a change underneath an open file is never overwritten (§4.4) ────────

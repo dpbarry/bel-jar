@@ -113,7 +113,9 @@ for (const re of privatePaths) {
   const hit = uploaded.find((p) => re.test(p));
   expect(!hit, `nothing matching ${re} is uploaded (found ${hit})`);
 }
-expect(!up.has('beluga_web.bc.js') && !up.has('beluga_web.bc.dt.js'), 'the Beluga runtime is not uploaded (it is served from R2)');
+expect(!up.has('beluga_web.bc.js'), 'the Beluga runtime is not uploaded (it is served from R2)');
+const wasmRuntime = uploaded.find((p) => /^beluga_web_wasm/.test(p));
+expect(!wasmRuntime, `nor are the Wasm builds, their loaders or their .assets (found ${wasmRuntime})`);
 const big = uploaded.find((p) => fs.statSync(path.join(root, p)).size > 25 * 1024 * 1024);
 expect(!big, `no file is over the 25 MiB asset cap (${big})`);
 expect(uploaded.length < 20000 * 0.5, `the upload is well under the 20,000-file limit (${uploaded.length})`);

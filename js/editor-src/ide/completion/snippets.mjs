@@ -152,14 +152,6 @@ export const SNIPPETS = Object.freeze({
       boost: 90,
     },
   ]),
-  'ctx-entry': Object.freeze([
-    {
-      label: '? : ?',
-      detail: 'context variable',
-      insert: '? : ?',
-      boost: 100,
-    },
-  ]),
   'ctor-line': Object.freeze([
     {
       label: '|',
@@ -561,52 +553,6 @@ export function isSchemaBodySlot(tree, doc, pos, query = '') {
   return false;
 }
 
-// Empty / sparse spot inside `[…]` where a context entry `? : ?` may start.
-export function isCtxEntrySlot(tree, doc, pos, query = '') {
-  if (!tree || pos == null) return false;
-  // Binder names are declined elsewhere; only offer the scaffold on empty /
-  // scaffold-prefix queries.
-  const q = String(query || '');
-  if (q && !/^(\?|\?\s*:|\?\s*:\s*\?)?$/i.test(q) && q !== '? : ?') return false;
-
-  for (let cur = tree.resolveInner(pos, -1); cur; cur = cur.parent) {
-    if (cur.name === 'ContextPart' || cur.name === 'ContextualType'
-        || cur.name === 'ContextualObject' || cur.name === 'ContextApplication') {
-      // After turnstile is term/type territory, not a context entry.
-      const turnstile = (() => {
-        for (let p = cur; p; p = p.parent) {
-          if (p.name === 'ContextualType' || p.name === 'ContextualObject') {
-            return childNamed(p, 'Turnstile');
-          }
-        }
-        return null;
-      })();
-      if (turnstile && pos >= turnstile.from) return false;
-
-      // Mid-entry (already past `name :`) is a type slot, not a scaffold.
-      for (let p = tree.resolveInner(pos, -1); p && p !== cur; p = p.parent) {
-        if (p.name === 'ContextEntry' || p.name === 'ContextTailEntry') {
-          const colon = childNamed(p, ':');
-          if (colon && pos >= colon.to) return false;
-          // Name already started — binder, not scaffold.
-          if (q) return false;
-        }
-      }
-
-      const before = skipWsBack(doc, pos);
-      if (before <= 0) return false;
-      const ch = doc.sliceString(before - 1, before);
-      // After `[` or `,` — a new entry may begin.
-      if (ch === '[' || ch === ',') {
-        const between = doc.sliceString(before, pos).trim();
-        if (!between) return true;
-        return /^(\?|\?\s*:.*)?$/i.test(between);
-      }
-    }
-  }
-  return false;
-}
-
 // Between inductive/coinductive constructors: only `|` is legal.
 export function isCtorLineSlot(tree, doc, pos) {
   if (!tree || pos == null) return false;
@@ -746,6 +692,71 @@ export function isInfixAssocSlot(tree, doc, pos, query = '') {
   return sameLineAfter(doc, open.to, tokFrom);
 }
 
+const TOTALITY_PREFIX = /^(?:t(?:o(?:t(?:a(?:l)?)?)?)?|tr(?:u(?:s(?:t)?)?)?)$/;
+
+const TOTALITY_SNIPPETS = Object.freeze([
+  {
+    label: '/ total … /',
+    insert: '/ total ? /',
+    boost: 320,
+    selectHole: true,
+  },
+  {
+    label: '/ trust /',
+    insert: '/ trust /',
+    boost: 300,
+  },
+]);
+
+function writingMeasure(raw) {
+  return /\/\s*(?:total|trust)\b\s+\S/i.test(raw) || /\/\s*(?:total|trust)\s+$/i.test(raw);
+}
+
+function totalityGapText(raw) {
+  if (writingMeasure(raw)) return false;
+  const t = raw.replace(/[ \t\n\r]+/g, ' ').trim().toLowerCase();
+  if (!t) return true;
+  if (t[0] === '/') {
+    const rest = t.slice(1).trim();
+    return rest === '' || TOTALITY_PREFIX.test(rest);
+  }
+  return TOTALITY_PREFIX.test(t);
+}
+
+function totalityQuery(raw) {
+  const t = raw.trim();
+  if (!t) return '';
+  if (t.startsWith('/')) {
+    const rest = t.slice(1).trim();
+    return rest || '/';
+  }
+  return t;
+}
+
+// The gap after a rec's `=`, before the expression. `/` and `to` still sit here.
+export function recRhsGap(tree, doc, pos) {
+  if (!tree || pos == null) return null;
+  let body = null;
+  for (let cur = tree.resolveInner(pos, -1); cur; cur = cur.parent) {
+    if (cur.name === 'RecBody') { body = cur; break; }
+  }
+  if (!body) return null;
+  let eq = null;
+  for (let c = body.firstChild; c; c = c.nextSibling) {
+    if (c.name === '=' && c.to <= pos) { eq = c; break; }
+  }
+  if (!eq) return null;
+  for (let c = body.firstChild; c; c = c.nextSibling) {
+    if (c.name === 'TotalityAnnotation' && pos > c.from && pos <= c.to && writingMeasure(doc.sliceString(c.from, pos))) {
+      return null;
+    }
+  }
+  if (!totalityGapText(doc.sliceString(eq.to, pos))) return null;
+  let from = eq.to;
+  while (from < pos && /\s/.test(doc.sliceString(from, from + 1))) from += 1;
+  return { from, to: pos, query: totalityQuery(doc.sliceString(from, pos)) };
+}
+
 export function structureSlotAt(tree, doc, pos, query = '') {
   if (isCaseArmSlot(tree, doc, pos)) return 'case-arm';
   if (isCtorLineSlot(tree, doc, pos)) return 'ctor-line';
@@ -755,7 +766,6 @@ export function structureSlotAt(tree, doc, pos, query = '') {
   if (isLfKindSlot(tree, doc, pos)) return 'lf-kind';
   if (isCompKindSlot(tree, doc, pos)) return 'comp-kind';
   if (isSchemaBodySlot(tree, doc, pos, query)) return 'schema-body';
-  if (isCtxEntrySlot(tree, doc, pos, query)) return 'ctx-entry';
   if (isTopDeclSlot(tree, doc, pos)) return 'top-decl';
   if (isExprHeadSlot(tree, doc, pos, query)) return 'expr-head';
   return null;
@@ -819,6 +829,23 @@ export function contributeSnippets(site) {
       just: 2,
       scoreHints: { base: snip.boost, proximity: 0 },
     });
+  }
+  if (site.recRhs) {
+    for (const snip of TOTALITY_SNIPPETS) {
+      if (q && !snip.label.toLowerCase().startsWith(q) && !snip.label.toLowerCase().includes(q)) continue;
+      const item = {
+        label: snip.label,
+        insert: snip.insert,
+        kind: 'snippet',
+        detail: '',
+        source: 'snippet',
+        cmType: 'keyword',
+        just: 2,
+        scoreHints: { base: snip.boost, proximity: 0 },
+      };
+      if (snip.selectHole) item.selectHole = true;
+      out.push(item);
+    }
   }
   return out;
 }

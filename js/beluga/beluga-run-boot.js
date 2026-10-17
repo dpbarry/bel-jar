@@ -181,7 +181,7 @@
     return belugaBusy;
   }
   function canStop() {
-    return belugaMode !== "fast" && typeof BelugaClient !== "undefined" && !!BelugaClient.cancelLoad;
+    return typeof BelugaClient !== "undefined" && !!BelugaClient.cancelLoad;
   }
   function isStoppable() {
     return belugaBusy && canStop();
@@ -192,13 +192,14 @@
     return true;
   }
   function modeToConfig(mode) {
-    return mode === "fast" ? { thread: "main", build: "fast" } : { thread: "worker", build: "stable" };
+    if (typeof BelugaClient !== "undefined" && BelugaClient.configFor) return BelugaClient.configFor(mode);
+    return { build: "stable" };
   }
   function getBelugaMode() {
     return belugaMode;
   }
   function shouldShowRunProgress() {
-    return belugaMode !== "fast";
+    return true;
   }
   function setBelugaMode(m) {
     belugaMode = m;
@@ -211,15 +212,6 @@
     SettingsUI.syncFromState();
   }
   function belugaProgressHook(msg) {
-    if (msg && msg.phase === "build-fallback") {
-      if (!Settings.get("belugaFallbackStable")) return;
-      Toasts.warn(
-        "Fast build hit the stack limit. Retrying with Stable; switch to Stable in Settings to avoid this.",
-        { duration: 0, closable: true }
-      );
-      if (belugaBusy) RunProgress.start({ op: "load" });
-      return;
-    }
     if (RunProgress.isRunning()) {
       RunProgress.onBelugaProgress(msg);
     }

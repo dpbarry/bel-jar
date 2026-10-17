@@ -1,0 +1,221 @@
+== wasm
+wasm boot cold 76 ms, warm 41 ms
+wasm cold examples/arith/arith.bel: 50, 66, 66 ms
+wasm cold examples/codatatypes/howes-method/howe-total.bel: 646, 534, 505 ms
+wasm cold examples/poplmark-reloaded+ [sources.cfg]: 1776, 1675, 1466 ms
+wasm pass 1: 16.1 s
+wasm pass 2: 15.0 s
+wasm pass 3: 16.2 s
+  depth wasm term n=16: ok 4ms
+  depth wasm term n=32: ok 5ms
+  depth wasm term n=64: ok 11ms
+  depth wasm term n=128: ok 20ms
+  depth wasm term n=256: overflow-thrown 9ms
+  depth wasm term n=192: overflow-thrown 11ms
+  depth wasm term n=160: ok 39ms
+  depth wasm term n=176: overflow-thrown 8ms
+  depth wasm term n=168: overflow-thrown 9ms
+  depth wasm term n=164: ok 40ms
+  depth wasm arrows n=16: ok 2ms
+  depth wasm arrows n=32: ok 5ms
+  depth wasm arrows n=64: ok 7ms
+  depth wasm arrows n=128: ok 14ms
+  depth wasm arrows n=256: ok 31ms
+  depth wasm arrows n=512: ok 66ms
+  depth wasm arrows n=1024: overflow-thrown 141ms
+  depth wasm arrows n=768: ok 108ms
+  depth wasm arrows n=896: overflow-thrown 183ms
+  depth wasm arrows n=832: ok 167ms
+  depth wasm arrows n=864: overflow-thrown 117ms
+  depth wasm arrows n=848: overflow-thrown 147ms
+  depth wasm lets n=16: ok 5ms
+  depth wasm lets n=32: ok 10ms
+  depth wasm lets n=64: ok 28ms
+  depth wasm lets n=128: ok 105ms
+  depth wasm lets n=256: ok 470ms
+  depth wasm lets n=512: overflow-thrown 27ms
+  depth wasm lets n=384: ok 1002ms
+  depth wasm lets n=448: overflow-thrown 24ms
+  depth wasm lets n=416: ok 1347ms
+  depth wasm lets n=432: overflow-thrown 23ms
+  depth wasm lets n=424: overflow-thrown 23ms
+  depth wasm decls n=16: ok 9ms
+  depth wasm decls n=32: ok 19ms
+  depth wasm decls n=64: ok 41ms
+  depth wasm decls n=128: ok 108ms
+  depth wasm decls n=256: ok 210ms
+  depth wasm decls n=512: ok 452ms
+  depth wasm decls n=1024: ok 827ms
+  depth wasm decls n=2048: overflow-thrown 405ms
+  depth wasm decls n=1536: ok 1113ms
+  depth wasm decls n=1792: overflow-thrown 328ms
+  depth wasm decls n=1664: overflow-thrown 326ms
+  depth wasm decls n=1600: overflow-thrown 317ms
+  depth wasm decls n=1568: overflow-thrown 327ms
+wasm pool: 1: 60ms 13.6MB | 1s: 32ms 13.6MB | 3: 46ms 32MB | 3s: 28ms 32MB | 7: 98ms 68.7MB | 7s: 45ms 68.7MB
+== wasm-cps
+wasm-cps boot cold 103 ms, warm 70 ms
+wasm-cps cold examples/arith/arith.bel: 82, 78, 78 ms
+wasm-cps cold examples/codatatypes/howes-method/howe-total.bel: 950, 902, 806 ms
+wasm-cps cold examples/poplmark-reloaded+ [sources.cfg]: 1628, 1342, 1320 ms
+wasm-cps pass 1: 13.7 s
+wasm-cps pass 2: 13.3 s
+wasm-cps pass 3: 13.2 s
+  depth wasm-cps term n=16: ok 6ms
+  depth wasm-cps term n=32: ok 10ms
+  depth wasm-cps term n=64: ok 16ms
+  depth wasm-cps term n=128: ok 29ms
+  depth wasm-cps term n=256: ok 92ms
+  depth wasm-cps term n=512: ok 339ms
+  depth wasm-cps term n=1024: ok 993ms
+  depth wasm-cps term n=2048: ok 3389ms
+  depth wasm-cps term n=4096: ok 13406ms
+  depth wasm-cps term n=8192: ok 57393ms
+  depth wasm-cps term n=16384: timeout
+  depth wasm-cps arrows n=16: ok 3ms
+  depth wasm-cps arrows n=32: ok 3ms
+  depth wasm-cps arrows n=64: ok 5ms
+  depth wasm-cps arrows n=128: ok 9ms
+  depth wasm-cps arrows n=256: ok 15ms
+  depth wasm-cps arrows n=512: ok 36ms
+  depth wasm-cps arrows n=1024: ok 102ms
+  depth wasm-cps arrows n=2048: ok 353ms
+  depth wasm-cps arrows n=4096: ok 857ms
+  depth wasm-cps arrows n=8192: ok 2161ms
+  depth wasm-cps arrows n=16384: overflow-thrown 1023ms
+  depth wasm-cps arrows n=12288: ok 4408ms
+  depth wasm-cps arrows n=14336: overflow-thrown 1029ms
+  depth wasm-cps arrows n=13312: ok 6031ms
+  depth wasm-cps arrows n=13824: ok 5970ms
+  depth wasm-cps arrows n=14080: ok 6625ms
+  depth wasm-cps lets n=16: ok 7ms
+  depth wasm-cps lets n=32: ok 17ms
+  depth wasm-cps lets n=64: ok 34ms
+  depth wasm-cps lets n=128: ok 115ms
+  depth wasm-cps lets n=256: ok 626ms
+  depth wasm-cps lets n=512: ok 3653ms
+  depth wasm-cps lets n=1024: ok 26315ms
+  depth wasm-cps lets n=2048: timeout
+  depth wasm-cps decls n=16: ok 12ms
+  depth wasm-cps decls n=32: ok 22ms
+  depth wasm-cps decls n=64: ok 43ms
+  depth wasm-cps decls n=128: ok 80ms
+  depth wasm-cps decls n=256: ok 171ms
+  depth wasm-cps decls n=512: ok 327ms
+  depth wasm-cps decls n=1024: ok 619ms
+  depth wasm-cps decls n=2048: ok 903ms
+  depth wasm-cps decls n=4096: ok 1879ms
+  depth wasm-cps decls n=8192: ok 3144ms
+  depth wasm-cps decls n=16384: ok 6465ms
+  depth wasm-cps decls n=32768: ok 13119ms
+  depth wasm-cps decls n=65536: ok 26437ms
+wasm-cps pool: 1: 77ms 27.9MB | 1s: 34ms 27.9MB | 3: 57ms 46.5MB | 3s: 26ms 46.5MB | 7: 97ms 83.7MB | 7s: 38ms 83.7MB
+== fast
+fast boot cold 573 ms, warm 468 ms
+fast cold examples/arith/arith.bel: 277, 287, 186 ms
+fast cold examples/codatatypes/howes-method/howe-total.bel: 2511, 2420, 2183 ms
+fast cold examples/poplmark-reloaded+ [sources.cfg]: 6686, 6571, 7422 ms
+fast pass 1: 61.6 s
+fast pass 2: 50.0 s
+fast pass 3: 49.6 s
+  depth fast term n=16: ok 63ms
+  depth fast term n=32: overflow-reported 25ms
+  depth fast term n=24: overflow-reported 25ms
+  depth fast term n=20: ok 63ms
+  depth fast term n=22: ok 73ms
+  depth fast term n=23: ok 54ms
+  depth fast arrows n=16: ok 33ms
+  depth fast arrows n=32: ok 33ms
+  depth fast arrows n=64: ok 46ms
+  depth fast arrows n=128: ok 75ms
+  depth fast arrows n=256: overflow-reported 107ms
+  depth fast arrows n=192: overflow-reported 93ms
+  depth fast arrows n=160: overflow-reported 90ms
+  depth fast arrows n=144: overflow-reported 79ms
+  depth fast arrows n=136: ok 70ms
+  depth fast arrows n=140: ok 119ms
+  depth fast lets n=16: ok 84ms
+  depth fast lets n=32: ok 91ms
+  depth fast lets n=64: ok 248ms
+  depth fast lets n=128: overflow-reported 85ms
+  depth fast lets n=96: overflow-reported 73ms
+  depth fast lets n=80: overflow-reported 74ms
+  depth fast lets n=72: ok 234ms
+  depth fast lets n=76: overflow-reported 74ms
+  depth fast lets n=74: overflow-reported 86ms
+  depth fast decls n=16: ok 119ms
+  depth fast decls n=32: ok 155ms
+  depth fast decls n=64: ok 322ms
+  depth fast decls n=128: ok 538ms
+  depth fast decls n=256: ok 898ms
+  depth fast decls n=512: overflow-reported 580ms
+  depth fast decls n=384: overflow-reported 626ms
+  depth fast decls n=320: overflow-reported 602ms
+  depth fast decls n=288: overflow-reported 556ms
+  depth fast decls n=272: overflow-reported 573ms
+  depth fast decls n=264: overflow-reported 551ms
+fast pool: 1: 457ms 91.2MB | 3: 672ms 243.4MB | 7: 1848ms 563.6MB
+== stable
+stable boot cold 480 ms, warm 465 ms
+stable cold examples/arith/arith.bel: 338, 256, 259 ms
+stable cold examples/codatatypes/howes-method/howe-total.bel: 4135, 3671, 3617 ms
+stable cold examples/poplmark-reloaded+ [sources.cfg]: 8638, 7512, 7136 ms
+stable pass 1: 77.8 s
+stable pass 2: 76.1 s
+stable pass 3: 77.0 s
+  depth stable term n=16: ok 61ms
+  depth stable term n=32: ok 84ms
+  depth stable term n=64: ok 126ms
+  depth stable term n=128: ok 246ms
+  depth stable term n=256: ok 660ms
+  depth stable term n=512: ok 1704ms
+  depth stable term n=1024: ok 5569ms
+  depth stable term n=2048: ok 24343ms
+  depth stable term n=4096: overflow-reported 1772ms
+  depth stable term n=3072: overflow-reported 49788ms
+  depth stable term n=2560: overflow-reported 35305ms
+  depth stable term n=2304: ok 33126ms
+  depth stable term n=2432: overflow-reported 37789ms
+  depth stable term n=2368: ok 35305ms
+  depth stable arrows n=16: ok 37ms
+  depth stable arrows n=32: ok 46ms
+  depth stable arrows n=64: ok 56ms
+  depth stable arrows n=128: ok 80ms
+  depth stable arrows n=256: ok 132ms
+  depth stable arrows n=512: ok 259ms
+  depth stable arrows n=1024: ok 453ms
+  depth stable arrows n=2048: ok 1133ms
+  depth stable arrows n=4096: overflow-reported 902ms
+  depth stable arrows n=3072: overflow-reported 648ms
+  depth stable arrows n=2560: ok 1618ms
+  depth stable arrows n=2816: ok 1824ms
+  depth stable arrows n=2944: overflow-reported 667ms
+  depth stable arrows n=2880: ok 1896ms
+  depth stable lets n=16: ok 82ms
+  depth stable lets n=32: ok 122ms
+  depth stable lets n=64: ok 247ms
+  depth stable lets n=128: ok 797ms
+  depth stable lets n=256: ok 3613ms
+  depth stable lets n=512: ok 20932ms
+  depth stable lets n=1024: timeout
+  depth stable decls n=16: ok 136ms
+  depth stable decls n=32: ok 214ms
+  depth stable decls n=64: ok 338ms
+  depth stable decls n=128: ok 499ms
+  depth stable decls n=256: ok 855ms
+  depth stable decls n=512: ok 1541ms
+  depth stable decls n=1024: ok 2838ms
+  depth stable decls n=2048: ok 5300ms
+  depth stable decls n=4096: ok 10922ms
+  depth stable decls n=8192: overflow-reported 14592ms
+  depth stable decls n=6144: ok 14436ms
+  depth stable decls n=7168: overflow-reported 13089ms
+  depth stable decls n=6656: overflow-reported 11809ms
+  depth stable decls n=6400: overflow-reported 10920ms
+  depth stable decls n=6272: overflow-reported 11419ms
+stable pool: 1: 378ms 79.7MB | 3: 504ms 221.5MB | 7: 918ms 505.5MB
+wrote C:\Users\Dean\Documents\Coding\bel-jar\results\runtime-bench\chrome.json
+  ok   the probe ran to completion
+  ok   no page errors throughout
+
+chrome-bench: ALL OK  (2 checks)

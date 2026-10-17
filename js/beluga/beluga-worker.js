@@ -6,8 +6,8 @@ var params = new URLSearchParams(self.location.search);
 function belugaScriptUrl() {
   var fromParam = params.get('script');
   if (fromParam) return fromParam;
-  var rel = params.get('build') === 'fast' ? '../../beluga_web.bc.dt.js' : '../../beluga_web.bc.js';
-  return new URL(rel, self.location.href).href;
+  // No ?script= (BelugaClient always passes one): the stable build, same origin.
+  return new URL('../../beluga_web.bc.js', self.location.href).href;
 }
 
 var BELUGA_JS = belugaScriptUrl();
@@ -75,6 +75,23 @@ function runBelugaJob(type, payload) {
   throw new Error('Unknown job type: ' + type);
 }
 
+// A JS build catches a stack overflow inside OCaml and answers it (beluga_web.ml's
+// normalize_exn): "Stack overflow", as a failed check or load, or as a command's text.
+// Under Wasm no OCaml handler sees the engine's overflow and it is thrown out of the
+// call instead (docs/wasm-runtime.md §5), so it is answered here exactly as the JS build
+// answers it, and nothing above this worker can tell the builds apart. The instance is
+// sound afterwards (the differential's step E). A load that overflows commits nothing.
+var IS_WASM = false;
+
+function overflowAnswer(type) {
+  if (type === 'check') return { ok: false, output: 'Stack overflow\n' };
+  if (type === 'load') {
+    return { ok: false, output: 'Stack overflow\n', fingerprint: String(Beluga.getCommittedFingerprint()) };
+  }
+  if (type === 'run') return 'Stack overflow';
+  return undefined;
+}
+
 function rejectJob(job, message) {
   if (!job) return;
   self.postMessage({ id: job.id, type: 'error', message: message });
@@ -113,7 +130,11 @@ function runNext() {
     });
   } catch (e) {
     var msg = e && e.message ? e.message : String(e);
-    if ((e instanceof RangeError) || /maximum call stack|too much recursion/i.test(msg)) {
+    var overflow = (e instanceof RangeError) || /maximum call stack|too much recursion/i.test(msg);
+    var asJs = overflow && IS_WASM ? overflowAnswer(currentJob.type) : undefined;
+    if (asJs !== undefined) {
+      self.postMessage({ id: currentJob.id, type: 'result', result: asJs });
+    } else if (overflow) {
       self.postMessage({ id: currentJob.id, type: 'stack-overflow' });
     } else {
       self.postMessage({ id: currentJob.id, type: 'error', message: msg });
@@ -138,6 +159,7 @@ self.onmessage = function (e) {
 // The runtime loader is shared with the case-completion worker (beluga-runtime-load.js),
 // so the one way the runtime is loaded cannot drift between them.
 importScripts(new URL('beluga-runtime-load.js', self.location.href).href);
+IS_WASM = self.isWasmRuntime(BELUGA_JS);
 
 function loadBelugaScript() {
   return self.loadBelugaRuntime(BELUGA_JS);

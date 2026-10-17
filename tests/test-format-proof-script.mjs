@@ -17,7 +17,7 @@ const src = `rec nex4 : [ ⊢ nd ((A ∨ ¬ A) ⊃ (¬ ¬ A) ⊃ A) ] =
 const out = formatString(src, parser.parse(src));
 const outLines = out.split('\n');
 
-assert.ok(outLines[1].startsWith('  [⊢ ⊃I'), 'proof body indented under rec');
+assert.ok(outLines[1].startsWith('  [ ⊢ ⊃I'), 'proof body indented under rec');
 assert.equal(outLines[2].search(/\S/), 4, 'nested ⊃I +2');
 assert.equal(outLines[3].search(/\S/), 6, '∨E +2');
 assert.equal(outLines[4].search(/\S/), 8, 'branch +2');

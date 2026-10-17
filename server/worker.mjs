@@ -69,9 +69,10 @@ export async function handleSync(request, env, method) {
   }
 }
 
-// The Beluga runtime, the two files .assetsignore keeps out of the upload
-// (the live site loads them from R2).
-const RUNTIME = /^\/beluga_web\.bc(\.dt)?\.js$/;
+// The Beluga runtime, the files .assetsignore keeps out of the upload (the live
+// site loads them from R2): the JS build, and each Wasm build's loader and the
+// .wasm in the folder beside it.
+const RUNTIME = /^\/(?:beluga_web\.bc\.js|beluga_web_wasm(?:_cps)?\.bc\.wasm\.js|beluga_web_wasm(?:_cps)?\.bc\.wasm\.assets\/[\w-]+\.wasm)$/;
 
 export default {
   async fetch(request, env, ctx) {

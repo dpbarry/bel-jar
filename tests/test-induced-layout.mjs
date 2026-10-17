@@ -50,6 +50,11 @@ const enterCases = [
   ['finished case arm grows the next', 'rec f : nat -> nat =\n  case n of\n  | z => z‸', 'rec f : nat -> nat =\n  case n of\n  | z => z\n  | ‸'],
   ['finished arm body on the next line grows a bar at the bar column', 'rec f : nat -> nat =\n  case n of\n  | z =>\n    x‸', 'rec f : nat -> nat =\n  case n of\n  | z =>\n    x\n  | ‸'],
   ['open arm does not grow a bar', 'rec f : nat -> nat =\n  case n of\n  | z =>‸', null],
+  ['let still owing its body does not grow a bar', 'rec f : nat -> nat =\n  case n of\n  | z =>\n    let y = x in‸', null],
+  ['let without in does not grow a bar', 'rec f : nat -> nat =\n  case n of\n  | z =>\n    let y = x‸', null],
+  ['if without else does not grow a bar', 'rec f : nat -> nat =\n  case n of\n  | z => if e then x‸', null],
+  ['a finished let body grows a bar', 'rec f : nat -> nat =\n  case n of\n  | z =>\n    let y = x in y‸', 'rec f : nat -> nat =\n  case n of\n  | z =>\n    let y = x in y\n  | ‸'],
+  ['a finished if grows a bar', 'rec f : nat -> nat =\n  case n of\n  | z => if e then x else y‸', 'rec f : nat -> nat =\n  case n of\n  | z => if e then x else y\n  | ‸'],
   ['open constructor type does not grow a bar', 'LF t : type =\n  | s : t ->‸', null],
   ['unicode arrow does not grow a bar', 'LF t : type =\n  | s : t →‸', null],
   ['open :: continues the result', 'coinductive Stream : ctype =\n  | hd : nat ::‸', null],
@@ -151,4 +156,155 @@ for (const [what, from, to] of snapCases) assert.equal(snap(from), to, what);
   assert.equal(view.state.doc.toString(), base + '    ;', 'input.complete does not snap');
 }
 
-console.log(`OK induced layout (${enterCases.length + snapCases.length} routes)`);
+function viewOf(doc) {
+  let st = EditorState.create({
+    doc,
+    selection: { anchor: doc.length },
+    extensions: [...exts, inducedLayout(), history()],
+  });
+  const view = {
+    get state() { return st; },
+    dispatch(spec) { st = (spec instanceof Transaction ? spec : st.update(spec)).state; },
+  };
+  return view;
+}
+
+function insertAt(view, at, text, userEvent, head, anchor = head) {
+  view.dispatch({
+    changes: { from: at, to: at, insert: text },
+    selection: { anchor: at + anchor, head: at + head },
+    userEvent,
+  });
+}
+
+const layoutCases = [];
+function layout(what, run) {
+  layoutCases.push(what);
+  run();
+}
+
+layout('accepting fn after rec breaks and indents', () => {
+  const base = 'rec f : nat -> nat = ';
+  const view = viewOf(base);
+  const ins = 'fn ? \u21d2 ?';
+  insertAt(view, base.length, ins, 'input.accept', ins.indexOf('?') + 1);
+  assert.equal(view.state.doc.toString(), 'rec f : nat -> nat =\n  fn ? \u21d2 ?');
+  const head = view.state.selection.main.head;
+  assert.equal(view.state.doc.sliceString(head - 1, head), '?');
+  undo(view);
+  assert.equal(view.state.doc.toString(), base, 'the layout shares the accept undo group');
+});
+
+layout('typing a name after rec breaks under the equals', () => {
+  const view = viewOf('rec f : nat -> nat = ');
+  for (const ch of 'sum-z') {
+    const at = view.state.selection.main.head;
+    insertAt(view, at, ch, 'input.type', 1);
+  }
+  assert.equal(view.state.doc.toString(), 'rec f : nat -> nat =\n  sum-z');
+  assert.equal(view.state.selection.main.head, view.state.doc.length);
+});
+
+layout('pasting a case indents the arm', () => {
+  const base = 'rec f : nat -> nat = ';
+  const view = viewOf(base);
+  const ins = 'case ? of\n| _ \u21d2 ?';
+  insertAt(view, base.length, ins, 'input.paste', ins.indexOf('?') + 1);
+  assert.equal(view.state.doc.toString(), 'rec f : nat -> nat =\n  case ? of\n  | _ \u21d2 ?');
+});
+
+layout('a case after the arrow stays on the arrow line', () => {
+  const base = 'rec f : nat -> nat =\n  fn x \u21d2 ';
+  const view = viewOf(base);
+  const ins = 'case ? of\n| _ \u21d2 ?';
+  insertAt(view, base.length, ins, 'input.accept', ins.indexOf('?') + 1);
+  assert.equal(
+    view.state.doc.toString(),
+    'rec f : nat -> nat =\n  fn x \u21d2 case ? of\n  | _ \u21d2 ?',
+  );
+});
+
+layout('a totality hole breaks under the equals and stays selected', () => {
+  const base = 'rec f : nat -> nat = ';
+  const view = viewOf(base);
+  const ins = '/ total ? /';
+  const hole = ins.indexOf('?');
+  insertAt(view, base.length, ins, 'input.accept', hole + 1, hole);
+  assert.equal(view.state.doc.toString(), 'rec f : nat -> nat =\n  / total ? /');
+  const sel = view.state.selection.main;
+  assert.equal(view.state.doc.sliceString(sel.from, sel.to), '?');
+});
+
+layout('a totality annotation and its expression each take a line', () => {
+  const base = 'rec f : nat = ';
+  const view = viewOf(base);
+  const ins = '/ total 1 / fn x => x;';
+  insertAt(view, base.length, ins, 'input.paste', ins.length);
+  assert.equal(view.state.doc.toString(), 'rec f : nat =\n  / total 1 /\n  fn x => x\n;');
+});
+
+layout('an LF bar pasted at column 0 indents, and a parsed semicolon breaks', () => {
+  const view = viewOf('');
+  const ins = 'LF nat : type =\n| z : nat;';
+  insertAt(view, 0, ins, 'input.paste', ins.length);
+  assert.equal(view.state.doc.toString(), 'LF nat : type =\n  | z : nat\n;');
+});
+
+layout('an LF hole scaffold indents its bar', () => {
+  const view = viewOf('');
+  const ins = 'LF ? : type =\n| ? : ?;';
+  insertAt(view, 0, ins, 'input.paste', ins.length);
+  assert.equal(view.state.doc.toString(), 'LF ? : type =\n  | ? : ?;');
+});
+
+layout('module end takes its own line', () => {
+  const view = viewOf('');
+  const ins = 'module M = struct end;';
+  insertAt(view, 0, ins, 'input.paste', ins.length);
+  assert.equal(view.state.doc.toString(), 'module M = struct\nend;');
+});
+
+layout('let and impossible take only the rec-body break', () => {
+  const base = 'rec f : nat -> nat = ';
+  for (const [ins, want] of [
+    ['let ? = ? in ?', 'rec f : nat -> nat =\n  let ? = ? in ?'],
+    ['impossible ?', 'rec f : nat -> nat =\n  impossible ?'],
+  ]) {
+    const view = viewOf(base);
+    insertAt(view, base.length, ins, 'input.accept', ins.length);
+    assert.equal(view.state.doc.toString(), want, ins);
+  }
+});
+
+layout('a short let, schema, and typedef stay on their equals line', () => {
+  for (const ins of ['let x = e;', 'schema ctx = block (x : nat);', 'typedef t : ctype = nat;']) {
+    const view = viewOf('');
+    insertAt(view, 0, ins, 'input.paste', ins.length);
+    assert.equal(view.state.doc.toString(), ins, ins);
+  }
+});
+
+layout('a keystroke on a settled line does not reflow another declaration', () => {
+  const doc = 'rec f : nat -> nat =\n  fn x \u21d2 \n;\nrec g : nat = y;';
+  const view = viewOf(doc);
+  const at = doc.indexOf('\u21d2 ') + '\u21d2 '.length;
+  insertAt(view, at, 'x', 'input.type', 1);
+  assert.equal(view.state.doc.toString(), 'rec f : nat -> nat =\n  fn x \u21d2 x\n;\nrec g : nat = y;');
+});
+
+layout('input.complete does not lay out', () => {
+  const base = 'rec f : nat -> nat = ';
+  const view = viewOf(base);
+  const ins = 'fn ? \u21d2 ?';
+  insertAt(view, base.length, ins, 'input.complete', ins.length);
+  assert.equal(view.state.doc.toString(), base + ins);
+});
+
+layout('a proof script stays where it was pasted', () => {
+  const base = 'proof p : [|- nat] =\n';
+  const view = viewOf(base);
+  insertAt(view, base.length, '| intros', 'input.paste', '| intros'.length);
+  assert.equal(view.state.doc.toString(), base + '| intros');
+});
+
+console.log(`OK induced layout (${enterCases.length + snapCases.length} routes, ${layoutCases.length} layout)`);

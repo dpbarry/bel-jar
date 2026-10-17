@@ -1,0 +1,92 @@
+{
+ "date": "2026-10-17T19:19:53.537Z",
+ "records": 6485,
+ "builds": {
+  "wasm": {
+   "byStep": {
+    "A": {
+     "same": 161,
+     "different": 0
+    },
+    "B": {
+     "same": 161,
+     "different": 0
+    },
+    "C": {
+     "same": 6157,
+     "different": 0
+    },
+    "D": {
+     "same": 4,
+     "different": 0
+    },
+    "E": {
+     "same": 1,
+     "different": 0
+    }
+   },
+   "differences": 0,
+   "overflowedOnTerm1000": "true",
+   "sample": [],
+   "records": 6485
+  },
+  "wasm-cps": {
+   "byStep": {
+    "A": {
+     "same": 161,
+     "different": 0
+    },
+    "B": {
+     "same": 161,
+     "different": 0
+    },
+    "C": {
+     "same": 6157,
+     "different": 0
+    },
+    "D": {
+     "same": 4,
+     "different": 0
+    },
+    "E": {
+     "same": 1,
+     "different": 0
+    }
+   },
+   "differences": 0,
+   "overflowedOnTerm1000": "false",
+   "sample": [],
+   "records": 6485
+  },
+  "shipped-stable": {
+   "byStep": {
+    "A": {
+     "same": 161,
+     "different": 0
+    },
+    "B": {
+     "same": 161,
+     "different": 0
+    },
+    "C": {
+     "same": 6157,
+     "different": 0
+    },
+    "D": {
+     "same": 4,
+     "different": 0
+    },
+    "E": {
+     "same": 1,
+     "different": 0
+    }
+   },
+   "differences": 0,
+   "overflowedOnTerm1000": "false",
+   "sample": [],
+   "records": 6485
+  }
+ },
+ "oracleOverflowedOnTerm1000": "false",
+ "seconds": 1509
+}

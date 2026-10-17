@@ -9,7 +9,16 @@ const src = `rec f : [ ⊢ tm] → [ ⊢ tm] =
 `;
 
 const out = formatString(src, parser.parse(src));
-assert.match(out, /↦\*\/refl\]\)\n;/, 'declaration ; on its own line');
-assert.ok(!out.includes('refl]);'), 'semicolon must not fold onto expression line');
+assert.match(out, /↦\*\/refl \]\)\n;/, 'declaration ; on its own line');
+assert.ok(!/refl\s*\]\);/.test(out), 'semicolon must not fold onto expression line');
+
+const totSrc = 'rec f : nat = / total 1 / fn x => x;\n';
+const totWant = 'rec f : nat =\n  / total 1 /\n  fn x => x\n;\n';
+assert.equal(formatString(totSrc, parser.parse(totSrc)), totWant, 'totality takes its own line');
+assert.equal(
+  formatString(totSrc, parser.parse(totSrc), { printWidth: 1e9 }),
+  totWant,
+  'unlimited width keeps the totality break',
+);
 
 console.log('OK format decl semicolon');

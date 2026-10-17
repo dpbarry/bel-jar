@@ -30,7 +30,10 @@
     var base = SCRIPT_SRC
       ? new URL('../beluga/beluga-worker.js', SCRIPT_SRC).href
       : new URL('js/beluga/beluga-worker.js', document.baseURI).href;
-    var b = build === 'fast' ? 'fast' : 'stable';
+    // The build that works here, as BelugaClient decides it (its one table).
+    var b = global.BelugaClient && typeof global.BelugaClient.effectiveBuild === 'function'
+      ? global.BelugaClient.effectiveBuild(build)
+      : 'stable';
     return base
       + '?build=' + encodeURIComponent(b)
       + '&script=' + encodeURIComponent(belugaScriptUrl(b));

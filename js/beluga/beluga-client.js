@@ -3,18 +3,77 @@
 (function (global) {
   var SCRIPT_SRC = document.currentScript && document.currentScript.src;
 
-  var cfg = { thread: 'worker', build: 'stable' };
   var onProgress = null;
 
-  // The SEMANTIC CHECKER must NEVER run on the main thread. Fast mode
-  // (thread:'main', build:'fast') is a deliberate trade for the explicit Run
-  // action only — the user accepts a freeze when they press Run. But the editor's
-  // background type-checking (hover types, settlement, hole goals) must stay off
-  // the main thread, or merely refreshing/navigating freezes the UI while Beluga
-  // runs behind the scenes. So the checker slot is ALWAYS a stable web worker,
-  // regardless of `cfg`. Only `load`/`run` (the primary slot) honour `cfg`.
-  var CHECKER_THREAD = 'worker';
-  var CHECKER_BUILD = 'stable';
+  // The builds of the Beluga runtime: the ONE table. Settings > Beluga > Build
+  // version offers what availableBuilds() returns, the setting's values and default
+  // (settings-schema.mjs) are these keys and DEFAULT_BUILD, and every runtime URL is
+  // built from `file` (tests/test-beluga-builds.mjs holds them all to it).
+  //   stable    js_of_ocaml, CPS: the fallback, for a browser that cannot run Wasm
+  //   wasm      wasm_of_ocaml, direct style
+  //   wasm-cps  wasm_of_ocaml, CPS: the default, deeper than stable on every input
+  //             measured and as fast as wasm in Chrome (docs/wasm-runtime.md)
+  // Every build runs in workers. "Fast" (the double-translation build, Run and Load on
+  // the main thread) was retired on 2026-10-16: a Wasm build in a worker is ~4× faster
+  // and never freezes the page.
+  // A Wasm build is a loader plus a folder of .wasm beside it; the loader finds
+  // the folder from its own URL (beluga-runtime-load.js), so only `file` is named.
+  var BUILDS = {
+    stable: { file: 'beluga_web.bc.js', kind: 'js' },
+    wasm: { file: 'beluga_web_wasm.bc.wasm.js', kind: 'wasm' },
+    'wasm-cps': { file: 'beluga_web_wasm_cps.bc.wasm.js', kind: 'wasm' },
+  };
+  var DEFAULT_BUILD = 'wasm-cps';
+  var FALLBACK_BUILD = 'stable';
+
+  // What a Wasm build needs of the engine: GC, tail calls and exception handling
+  // (Chrome 119, Firefox 122, Safari 18.2). Asked of the engine by validating a
+  // few bytes that use each, never guessed from the user agent.
+  var WASM_PROBES = [
+    [0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 95, 1, 120, 0], // a struct type
+    [0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 6, 1, 4, 0, 18, 0, 11], // return_call
+    [0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 8, 1, 6, 0, 6, 64, 25, 11, 11], // try / catch_all
+  ];
+  var wasmSupport = null;
+
+  function wasmSupported() {
+    if (wasmSupport !== null) return wasmSupport;
+    try {
+      wasmSupport = typeof WebAssembly === 'object' && WASM_PROBES.every(function (bytes) {
+        return WebAssembly.validate(new Uint8Array(bytes));
+      });
+    } catch (_) {
+      wasmSupport = false;
+    }
+    return wasmSupport;
+  }
+
+  // The builds that work in this browser. The deployed site serves the Wasm builds
+  // from R2 beside the JS one (upload them first: _rebuild/RECIPE.md, Deploying).
+  function availableBuilds() {
+    return Object.keys(BUILDS).filter(function (b) {
+      return BUILDS[b].kind !== 'wasm' || wasmSupported();
+    });
+  }
+
+  // The build that runs for a chosen one: itself where it works; otherwise the
+  // default where that works, else Stable (a Wasm build stored where the browser can
+  // run it, read where it cannot; or a retired value such as "fast").
+  function effectiveBuild(build) {
+    var available = availableBuilds();
+    if (available.indexOf(build) >= 0) return build;
+    return available.indexOf(DEFAULT_BUILD) >= 0 ? DEFAULT_BUILD : FALLBACK_BUILD;
+  }
+
+  // The SEMANTIC CHECKER must NEVER run on the main thread: refreshing or
+  // navigating would freeze the UI while Beluga runs behind the scenes. Every slot
+  // (primary, checker, intel, prover and its pool) is a web worker on the chosen
+  // build, so choosing one runs everything on it.
+  var cfg = { build: effectiveBuild(DEFAULT_BUILD) };
+
+  function checkerBuild() {
+    return cfg.build;
+  }
 
   var primarySlot = null;
   var primaryStandby = null;
@@ -26,26 +85,17 @@
   var checkerIdleTimer = null;
   var proverIdleTimer = null;
 
-  var mainReady = false;
-  var mainReadyPromise = null;
-  var mainActiveBuild = null;
-
   var currentEditorCode = '';
   var editorFingerprint = '';
-  var mainCommittedFingerprint = '';
   var activeLoad = null;
 
   var LOAD_CANCELLED_MSG = 'Beluga load cancelled';
   var CHECK_CANCELLED_MSG = 'Beluga check cancelled';
 
   // The settings table (js/persist/settings-schema.mjs) where the page has one; the
-  // defaults, both on, where it does not (Node tests). Until 2026-09-28 these asked
+  // default, on, where it does not (Node tests). Until 2026-09-28 this asked
   // Persist for functions the persistence rebuild removed, and Run threw on every file.
-  // Literal ids, so tests/test-persist-api-use.mjs holds them to the table.
-  function shouldFallbackStable() {
-    return !global.Settings || !!global.Settings.get('belugaFallbackStable');
-  }
-
+  // A literal id, so tests/test-persist-api-use.mjs holds it to the table.
   function shouldCancelOnEdit() {
     return !global.Settings || !!global.Settings.get('belugaCancelOnEdit');
   }
@@ -96,15 +146,15 @@
       + '&script=' + encodeURIComponent(mainScriptUrl(build));
   }
 
-  // Where the js_of_ocaml runtime is served from. Same origin by default, so
-  // local dev, file:// and the probe suite behave exactly as before. A
-  // deployment overrides it with BELJAR_RUNTIME_BASE: the fast build is ~31.5 MB,
-  // over Cloudflare's per-file static-asset cap, so both blobs live in R2.
+  // Where the runtime is served from. Same origin by default, so local dev,
+  // file:// and the probe suite behave exactly as before. A deployment overrides
+  // it with BELJAR_RUNTIME_BASE: the runtime files are kept out of the Worker's
+  // upload (.assetsignore) and live in R2.
   //
   // A cross-origin base needs CORS on the bucket. The worker loads the runtime
-  // with fetch() in CORS mode and falls back to importScripts; without
-  // Access-Control-Allow-Origin both fail (seen in Chrome) and Beluga never
-  // boots.
+  // with fetch() in CORS mode and falls back to importScripts, and a Wasm build's
+  // loader fetches its .wasm in CORS mode too; without Access-Control-Allow-Origin
+  // they fail (seen in Chrome) and Beluga never boots.
   function runtimeBase() {
     var override = typeof globalThis !== 'undefined' ? globalThis.BELJAR_RUNTIME_BASE : null;
     if (override) return new URL(String(override), document.baseURI).href;
@@ -120,14 +170,14 @@
   // and Cloudflare's edge both key on it. Without it a rebuilt runtime hides
   // behind the old bytes for the edge TTL, and in the meantime different users
   // check proofs against different compilers.
-  var RUNTIME_VERSION = '20260922151200';
+  var RUNTIME_VERSION = '20261017150734';
 
   // ⛔ The ONE place the runtime URL is built. Harpoon's proof worker loads the
   // same bytes and asks for them through BelugaClient.runtimeScriptUrl. It used
   // to keep a private copy of this logic, which still pointed at the app origin
   // after the blobs moved to R2, so its worker 404'd on the deployed site.
   function mainScriptUrl(build) {
-    var file = build === 'fast' ? 'beluga_web.bc.dt.js' : 'beluga_web.bc.js';
+    var file = BUILDS[effectiveBuild(build)].file;
     return new URL(file + '?v=' + RUNTIME_VERSION, runtimeBase()).href;
   }
 
@@ -173,9 +223,6 @@
   }
 
   function scheduleCheckerIdleShutdown() {
-    // The checker is ALWAYS a worker now (independent of cfg.thread / fast mode),
-    // so this no longer gates on cfg.thread — it must run even in fast mode.
-    if (CHECKER_THREAD !== 'worker') return;
     clearCheckerIdleTimer();
     if (!checkerSlot || checkerSlot.pending.size > 0) return;
     checkerIdleTimer = setTimeout(function () {
@@ -414,7 +461,7 @@
   function beginProverSession() {
     proverSessionCount += 1;
     clearProverIdleTimer();
-    return ensureProverReady(CHECKER_BUILD);
+    return ensureProverReady(checkerBuild());
   }
 
   function endProverSession() {
@@ -455,105 +502,22 @@
       });
   }
 
-  function loadScript(url) {
-    return new Promise(function (resolve, reject) {
-      var s = document.createElement('script');
-      s.src = url;
-      s.onload = resolve;
-      s.onerror = function () { reject(new Error('Failed to load ' + url)); };
-      document.head.appendChild(s);
-    });
-  }
-
-  function ensureMainReady(build) {
-    if (mainReady && mainActiveBuild === build) return Promise.resolve();
-    if (mainReadyPromise && mainActiveBuild === build) return mainReadyPromise;
-    mainActiveBuild = build;
-    mainReadyPromise = loadScript(mainScriptUrl(build))
-      .then(function () {
-        if (typeof global.Beluga === 'undefined') throw new Error('Beluga failed to load');
-        global.reportBelugaProgress = function (payload) {
-          if (!payload || !onProgress) return;
-          onProgress({ type: 'progress', phase: payload.phase || '', state: payload.state || '' });
-        };
-        mainReady = true;
-      })
-      .catch(function (err) {
-        mainReadyPromise = null;
-        throw err;
-      });
-    return mainReadyPromise;
-  }
-
-  function callMain(type, payload) {
-    return new Promise(function (resolve) {
-      if (type === 'check') resolve(global.Beluga.checkFromString(payload));
-      else if (type === 'load') resolve(global.Beluga.loadFromString(payload));
-      else if (type === 'run') resolve(global.Beluga.runCommand(payload));
-      else if (type === 'fingerprint') resolve(global.Beluga.getCommittedFingerprint());
-      else throw new Error('Unknown main-thread Beluga call: ' + type);
-    });
-  }
-
   function resultText(result) {
     return typeof result === 'string' ? result : result && result.output;
   }
 
   function syncCommittedFingerprintFromLoadResult(result) {
     if (!result || !result.ok || !result.fingerprint) return;
-    var fp = String(result.fingerprint);
-    if (cfg.thread === 'worker') {
-      if (primarySlot) primarySlot.committedFingerprint = fp;
-    } else {
-      mainCommittedFingerprint = fp;
-    }
+    if (primarySlot) primarySlot.committedFingerprint = String(result.fingerprint);
   }
 
   function invalidatePrimaryFingerprint() {
     if (primarySlot) primarySlot.committedFingerprint = '';
-    mainCommittedFingerprint = '';
   }
 
   function commandInvalidatesCommittedFingerprint(cmd) {
     var text = String(cmd != null ? cmd : '').replace(/^%:/, '').trim().toLowerCase();
     return text === 'reset' || text === 'reload' || text === 'load' || text.indexOf('load ') === 0;
-  }
-
-  function isOverflowValue(value) {
-    var text = resultText(value);
-    return typeof text === 'string' &&
-      /stack.?overflow|maximum call stack|too much recursion/i.test(text);
-  }
-
-  function isOverflowError(err) {
-    if (err && err.isStackOverflow) return true;
-    var msg = err && (err.message || String(err));
-    return !!msg && /stack.?overflow|maximum call stack|too much recursion/i.test(msg);
-  }
-
-  function switchToStable() {
-    if (primarySlot) {
-      terminateSlot(primarySlot, new Error('Beluga switched to stable build'));
-      primarySlot = null;
-    }
-    disposePrimaryStandby(new Error('Beluga switched to stable build'));
-    if (checkerSlot) {
-      terminateSlot(checkerSlot, new Error('Beluga switched to stable build'));
-      checkerSlot = null;
-    }
-    if (proverSlot) {
-      terminateSlot(proverSlot, new Error('Beluga switched to stable build'));
-      proverSlot = null;
-    }
-    terminateProverPool(new Error('Beluga switched to stable build'));
-    proverSessionCount = 0;
-    clearCheckerIdleTimer();
-    clearProverIdleTimer();
-    mainReady = false;
-    mainReadyPromise = null;
-    mainActiveBuild = null;
-    activeLoad = null;
-    mainCommittedFingerprint = '';
   }
 
   function teardown() {
@@ -570,35 +534,23 @@
     proverSessionCount = 0;
     clearCheckerIdleTimer();
     clearProverIdleTimer();
-    mainReady = false;
-    mainReadyPromise = null;
-    mainActiveBuild = null;
-    mainCommittedFingerprint = '';
     activeLoad = null;
   }
 
+  // The configuration a chosen build runs as: the build that works here.
+  function configFor(build) {
+    return { build: effectiveBuild(build) };
+  }
+
   function configure(opts) {
-    var changed = false;
-    if (opts.thread !== undefined && opts.thread !== cfg.thread) {
-      cfg.thread = opts.thread;
-      changed = true;
-    }
-    if (opts.build !== undefined && opts.build !== cfg.build) {
-      cfg.build = opts.build;
-      changed = true;
-    }
-    if (changed) teardown();
+    var build = opts && opts.build !== undefined ? effectiveBuild(opts.build) : cfg.build;
+    if (build === cfg.build) return;
+    cfg.build = build;
+    teardown();
   }
 
   function maybeWarmPrimaryStandby() {
-    if (
-      cfg.thread !== 'worker' ||
-      cfg.build !== 'stable' ||
-      !activeLoad ||
-      !activeLoad.stale
-    ) {
-      return;
-    }
+    if (!activeLoad || !activeLoad.stale) return;
 
     if (!primaryStandby) primaryStandby = createWorkerSlot(cfg.build, 'primary-standby');
     var standby = primaryStandby;
@@ -638,12 +590,11 @@
     if (activeLoad === loadInfo) activeLoad = null;
   }
 
-  // Stop the explicit Run. Only a worker load can be stopped: on the main thread
-  // the page is blocked for the whole run and nothing could ask. A primary slot
-  // still fetching its script is left to finish warming — the load itself sees
-  // it is no longer active and rejects as cancelled.
+  // Stop the explicit Run. A primary slot still fetching its script is left to
+  // finish warming — the load itself sees it is no longer active and rejects as
+  // cancelled.
   function cancelLoad() {
-    if (cfg.thread !== 'worker' || !activeLoad) return false;
+    if (!activeLoad) return false;
     clearActiveLoad(activeLoad);
     invalidatePrimaryFingerprint();
     disposePrimaryStandby(makeCancelledError(LOAD_CANCELLED_MSG));
@@ -738,7 +689,7 @@
   function dispatchCheckResultOnSlot(code, hooks, ensureReady, onIdle) {
     var requestCode = String(code != null ? code : '');
     onIdle.clear();
-    return ensureReady(CHECKER_BUILD)
+    return ensureReady(checkerBuild())
       .then(function (slot) {
         return postWorker(slot, 'check', requestCode, hooks, null)
           .then(function (result) {
@@ -778,7 +729,7 @@
     var requestCode = String(code != null ? code : '');
     var requestFP = fingerprintCode(requestCode);
 
-    return ensureIntelReady(CHECKER_BUILD)
+    return ensureIntelReady(checkerBuild())
       .then(function (slot) {
         if (slot.committedFingerprint === requestFP) {
           return postWorker(slot, 'run', cmd, null, { slot: 'intel' });
@@ -844,7 +795,7 @@
     }
 
     clearCheckerIdleTimer();
-    return ensureCheckerReady(CHECKER_BUILD)
+    return ensureCheckerReady(checkerBuild())
       .then(function (slot) {
         // Always reload — a prior committed load may carry drifted hole numbers.
         return postWorker(slot, 'load', requestCode, null, null).then(function (loadResult) {
@@ -870,7 +821,7 @@
     var requestFP = fingerprintCode(requestCode);
     var payload = { line: line, col: col };
 
-    return ensureIntelReady(CHECKER_BUILD)
+    return ensureIntelReady(checkerBuild())
       .then(function (slot) {
         return intelLoadThen(slot, requestCode, requestFP, 'ide-type', payload);
       })
@@ -888,7 +839,7 @@
     var requestFP = fingerprintCode(requestCode);
     var payload = { name: name };
 
-    return ensureIntelReady(CHECKER_BUILD)
+    return ensureIntelReady(checkerBuild())
       .then(function (slot) {
         return intelLoadThen(slot, requestCode, requestFP, 'ide-decl-type', payload);
       })
@@ -906,7 +857,7 @@
     var requestFP = fingerprintCode(requestCode);
 
     onIdle.clear();
-    return ensureReady(CHECKER_BUILD)
+    return ensureReady(checkerBuild())
       .then(function (slot) {
         if (slot.committedFingerprint === requestFP) {
           return '';
@@ -960,7 +911,7 @@
     var payload = { name: name };
 
     clearProverIdleTimer();
-    return ensureProverReady(CHECKER_BUILD)
+    return ensureProverReady(checkerBuild())
       .then(function (slot) {
         if (slot.committedFingerprint === requestFP) {
           return postWorker(slot, 'ide-decl-type', payload, null, null);
@@ -990,121 +941,60 @@
     var requestCode = String(code != null ? code : '');
     var requestFingerprint = fingerprintCode(requestCode);
 
-    if (cfg.thread === 'worker') {
-      if (activeLoad) return Promise.reject(new Error('Beluga load already in progress'));
+    if (activeLoad) return Promise.reject(new Error('Beluga load already in progress'));
 
-      // A "pinned" load intentionally differs from the editor buffer (project
-      // run: prelude/whole-project concatenation) — it must NOT be treated as
-      // stale just because its code isn't byte-identical to the buffer.
-      var pinned = !!(hooks && hooks.pinned);
-      var loadInfo = {
-        requestFingerprint: requestFingerprint,
-        startedAt: Date.now(),
-        pinned: pinned,
-        stale: shouldCancelOnEdit() && !pinned && requestFingerprint !== editorFingerprint && currentEditorCode !== '',
-        longTimer: null,
-      };
-      activeLoad = loadInfo;
+    // A "pinned" load intentionally differs from the editor buffer (project
+    // run: prelude/whole-project concatenation) — it must NOT be treated as
+    // stale just because its code isn't byte-identical to the buffer.
+    var pinned = !!(hooks && hooks.pinned);
+    var loadInfo = {
+      requestFingerprint: requestFingerprint,
+      startedAt: Date.now(),
+      pinned: pinned,
+      stale: shouldCancelOnEdit() && !pinned && requestFingerprint !== editorFingerprint && currentEditorCode !== '',
+      longTimer: null,
+    };
+    activeLoad = loadInfo;
 
-      return ensurePrimaryReady(cfg.build)
-        .then(function (slot) {
-          if (activeLoad !== loadInfo) throw makeCancelledError(LOAD_CANCELLED_MSG);
-          loadInfo.longTimer = setTimeout(function () {
-            if (activeLoad === loadInfo && loadInfo.stale) maybeWarmPrimaryStandby();
-          }, LONG_LOAD_THRESHOLD_MS);
-          return postWorker(slot, 'load', requestCode, hooks, { forwardGlobalProgress: true });
-        })
-        .then(function (result) {
-          if (loadInfo.stale) {
-            handleStaleCompletedLoad(loadInfo);
-            throw makeCancelledError(LOAD_CANCELLED_MSG);
-          }
-          clearActiveLoad(loadInfo);
-          disposePrimaryStandby(makeCancelledError(LOAD_CANCELLED_MSG));
-          syncCommittedFingerprintFromLoadResult(result);
-          return resultText(result) || '';
-        })
-        .catch(function (err) {
-          clearActiveLoad(loadInfo);
-          if (!isCancelledError(err)) disposePrimaryStandby(makeCancelledError(LOAD_CANCELLED_MSG));
-          throw err;
-        });
-    }
-
-    function run(build) {
-      return ensureMainReady(build).then(function () {
-        return callMain('load', requestCode);
-      });
-    }
-
-    return run(cfg.build)
+    return ensurePrimaryReady(cfg.build)
+      .then(function (slot) {
+        if (activeLoad !== loadInfo) throw makeCancelledError(LOAD_CANCELLED_MSG);
+        loadInfo.longTimer = setTimeout(function () {
+          if (activeLoad === loadInfo && loadInfo.stale) maybeWarmPrimaryStandby();
+        }, LONG_LOAD_THRESHOLD_MS);
+        return postWorker(slot, 'load', requestCode, hooks, { forwardGlobalProgress: true });
+      })
       .then(function (result) {
-        if (cfg.build === 'fast' && isOverflowValue(result) && shouldFallbackStable()) {
-          if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
-          switchToStable();
-          return run('stable').then(function (fallback) {
-            syncCommittedFingerprintFromLoadResult(fallback);
-            return resultText(fallback) || '';
-          });
+        if (loadInfo.stale) {
+          handleStaleCompletedLoad(loadInfo);
+          throw makeCancelledError(LOAD_CANCELLED_MSG);
         }
+        clearActiveLoad(loadInfo);
+        disposePrimaryStandby(makeCancelledError(LOAD_CANCELLED_MSG));
         syncCommittedFingerprintFromLoadResult(result);
         return resultText(result) || '';
       })
       .catch(function (err) {
-        if (cfg.build === 'fast' && isOverflowError(err) && shouldFallbackStable()) {
-          if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
-          switchToStable();
-          return run('stable').then(function (fallback) {
-            syncCommittedFingerprintFromLoadResult(fallback);
-            return resultText(fallback) || '';
-          });
-        }
+        clearActiveLoad(loadInfo);
+        if (!isCancelledError(err)) disposePrimaryStandby(makeCancelledError(LOAD_CANCELLED_MSG));
         throw err;
       });
   }
 
   function dispatchRun(cmd, hooks) {
     var payload = String(cmd != null ? cmd : '');
-    if (cfg.thread === 'worker') {
-      return ensurePrimaryReady(cfg.build)
-        .then(function (slot) {
-          return postWorker(slot, 'run', payload, hooks, { forwardGlobalProgress: true });
-        })
-        .then(function (result) {
-          if (commandInvalidatesCommittedFingerprint(payload)) invalidatePrimaryFingerprint();
-          return resultText(result) || '';
-        });
-    }
-
-    function run(build) {
-      return ensureMainReady(build).then(function () {
-        return callMain('run', payload);
-      });
-    }
-
-    return run(cfg.build)
+    return ensurePrimaryReady(cfg.build)
+      .then(function (slot) {
+        return postWorker(slot, 'run', payload, hooks, { forwardGlobalProgress: true });
+      })
       .then(function (result) {
-        if (cfg.build === 'fast' && isOverflowValue(result) && shouldFallbackStable()) {
-          if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
-          switchToStable();
-          return run('stable').then(function (fallback) { return resultText(fallback) || ''; });
-        }
         if (commandInvalidatesCommittedFingerprint(payload)) invalidatePrimaryFingerprint();
         return resultText(result) || '';
-      })
-      .catch(function (err) {
-        if (cfg.build === 'fast' && isOverflowError(err) && shouldFallbackStable()) {
-          if (onProgress) onProgress({ type: 'progress', phase: 'build-fallback' });
-          switchToStable();
-          return run('stable').then(function (fallback) { return resultText(fallback) || ''; });
-        }
-        throw err;
       });
   }
 
   function ensureReady() {
-    if (cfg.thread === 'worker') return ensurePrimaryReady(cfg.build).then(function () {});
-    return ensureMainReady(cfg.build);
+    return ensurePrimaryReady(cfg.build).then(function () {});
   }
 
   global.BelugaClient = {
@@ -1112,23 +1002,25 @@
 
     setProgressHandler: function (fn) { onProgress = fn; },
 
-    isReady: function () {
-      if (cfg.thread === 'worker') return !!(primarySlot && primarySlot.ready);
-      return mainReady;
-    },
+    isReady: function () { return !!(primarySlot && primarySlot.ready); },
 
-    getBuild: function () {
-      if (cfg.thread === 'worker') return primarySlot ? primarySlot.build : null;
-      return mainActiveBuild;
-    },
-
-    getThread: function () { return cfg.thread; },
+    // The build every slot runs: the one chosen, as it works here.
+    getBuild: function () { return cfg.build; },
 
     workerUrl: function (build) { return workerUrl(build || cfg.build); },
 
     // The runtime script URL for a build. Anything else that loads the Beluga
-    // runtime (Harpoon's dedicated worker) asks here rather than rebuilding it.
-    runtimeScriptUrl: function (build) { return mainScriptUrl(build === 'fast' ? 'fast' : 'stable'); },
+    // runtime (Harpoon's dedicated worker, case completion) asks here rather than
+    // rebuilding it. A build that does not work here is the one that runs instead
+    // (effectiveBuild).
+    runtimeScriptUrl: function (build) { return mainScriptUrl(build); },
+
+    // The builds, as Settings > Beluga > Build version offers them: only those
+    // that work in this browser, in the table's order.
+    availableBuilds: availableBuilds,
+    effectiveBuild: effectiveBuild,
+    configFor: configFor,
+    defaultBuild: DEFAULT_BUILD,
 
     warm: function () { return ensureReady(); },
 
@@ -1139,10 +1031,7 @@
     getEditorFingerprint: function () { return editorFingerprint; },
 
     getCommittedFingerprint: function () {
-      var fp = cfg.thread === 'worker'
-        ? (primarySlot ? primarySlot.committedFingerprint : '')
-        : mainCommittedFingerprint;
-      return fp || null;
+      return (primarySlot ? primarySlot.committedFingerprint : '') || null;
     },
 
     load: function (code, hooks) {
@@ -1203,7 +1092,7 @@
       var posSpec = String(positionsSpec != null ? positionsSpec : '');
       var payload = { start: startLine, end: endLine, positions: posSpec };
 
-      return ensureIntelReady(CHECKER_BUILD)
+      return ensureIntelReady(checkerBuild())
         .then(function (slot) {
           return intelLoadThen(slot, requestCode, requestFP, 'ide-elaborate', payload);
         })
@@ -1240,14 +1129,14 @@
     setIntelKeepWarm: function (on) {
       intelKeepWarm = !!on;
       if (intelKeepWarm && !intelSlot) {
-        ensureIntelReady(CHECKER_BUILD).catch(function () {});
+        ensureIntelReady(checkerBuild()).catch(function () {});
       }
     },
 
     warmIntel: function (code) {
       var requestCode = String(code != null ? code : '');
       var requestFP = fingerprintCode(requestCode);
-      return ensureIntelReady(CHECKER_BUILD).then(function (slot) {
+      return ensureIntelReady(checkerBuild()).then(function (slot) {
         if (slot.committedFingerprint === requestFP) return true;
         return postWorker(slot, 'load', requestCode, null, { slot: 'intel' })
           .then(function (loadResult) {

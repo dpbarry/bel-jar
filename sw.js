@@ -1,12 +1,24 @@
 'use strict';
 
-// The Beluga runtime is a 25-33 MB js_of_ocaml bundle. Fetching it from the
-// network on every load is the single biggest thing between opening BelJar and
+// The Beluga runtime: a Wasm build (a loader and its .wasm, 2-2.5 MB) or the JS
+// build (2.6 MB) where the browser cannot run Wasm. Fetching it from the network
+// on every load is the single biggest thing between opening BelJar and
 // type-checking anything, so it is cached — and nothing else is.
-var CACHE_NAME = 'beluga-runtime-20260922151200';
+var CACHE_NAME = 'beluga-runtime-20261017150734';
+
+// Its files, as js/beluga/beluga-client.js `BUILDS` names them: the JS build and
+// each Wasm build's loader (both stamped ?v=), and the .wasm in the folder beside a
+// loader, named by its content hash (tests/test-runtime-url.mjs holds this to them).
+var RUNTIME = /\/(?:beluga_web\.bc\.js|beluga_web_wasm(?:_cps)?\.bc\.wasm\.js|beluga_web_wasm(?:_cps)?\.bc\.wasm\.assets\/[\w-]+\.wasm)$/;
 
 function isBelugaRuntime(url) {
-  return /\/beluga_web\.bc(\.dt)?\.js$/.test(new URL(url).pathname);
+  return RUNTIME.test(new URL(url).pathname);
+}
+
+// A .wasm's name is its content hash: the bytes under a name never change, so it
+// is never revalidated (CACHE_NAME still evicts it with its build).
+function isContentNamed(url) {
+  return /\.wasm$/.test(new URL(url).pathname);
 }
 
 function stashInCache(cache, request, response) {
@@ -74,6 +86,7 @@ self.addEventListener('fetch', function (event) {
   event.respondWith(
     caches.open(CACHE_NAME).then(function (cache) {
       return cache.match(event.request).then(function (cached) {
+        if (cached && isContentNamed(event.request.url)) return cached;
         if (cached) {
           // ⛔ Never let the revalidation affect the response. It is started
           // either way; `waitUntil` only asks the browser to keep this worker

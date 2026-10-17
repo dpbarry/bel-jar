@@ -2,7 +2,7 @@ import { ensureSyntaxTree, indentService } from '@codemirror/language';
 import { parser } from '../beluga-parser.js';
 import { render } from './doc.mjs';
 import { makePrinter } from './printer.mjs';
-import { keptAsWritten, resolvePrintWidth } from './document-format.mjs';
+import { keptAsWritten, resolvePadBrackets, resolvePrintWidth } from './document-format.mjs';
 import { declaresName } from '../tree-helpers.mjs';
 
 const COMMENTS = new Set(['LineComment', 'BlockComment']);
@@ -33,7 +33,10 @@ const lineStartCol = (text, at) => {
 };
 
 function columns(text, inner, width) {
-  const rendered = render(makePrinter(text, { printWidth: width }).pp(inner), width);
+  const rendered = render(makePrinter(text, {
+    printWidth: width,
+    padBrackets: resolvePadBrackets(),
+  }).pp(inner), width);
   const src = items(inner, text);
   const out = items(parser.parse(rendered).topNode, rendered);
   const cols = new Map();

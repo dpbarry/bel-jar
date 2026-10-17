@@ -1,11 +1,15 @@
 # What the deployed site does NOT carry.
 #
-# The two Beluga runtime blobs are served from R2 (beljar-cdn.deanbarry.com): the
-# fast build is ~31.5 MB, over Cloudflare's 25 MiB per-file static-asset cap,
-# and shipping both would mean ~56 MB of upload on every deploy. index.html
-# points at the bucket on deployed hosts; locally they load from this repo.
+# The Beluga runtime is served from R2 (beljar-cdn.deanbarry.com), uploaded with
+# each rebuild (_rebuild/RECIPE.md, Deploying): it was once over Cloudflare's
+# 25 MiB per-file static-asset cap, and it changes far less often than the site.
+# edit.html points at the bucket on deployed hosts; locally it loads from this repo.
+# The JS build (the fallback where Wasm cannot run):
 beluga_web.bc.js
-beluga_web.bc.dt.js
+# The two wasm_of_ocaml builds (the default, beluga_web_wasm_cps): each a loader
+# plus a folder of content-hashed .wasm.
+beluga_web_wasm*.bc.wasm.js
+beluga_web_wasm*.bc.wasm.assets
 
 # The repository itself. wrangler skips nothing on its own (only .assetsignore,
 # _redirects and _headers), and the Git build deploys from a clone, so until

@@ -85,7 +85,10 @@ export function normalizeSemantic(raw) {
   return {
     docFp: typeof raw.docFp === 'string' ? raw.docFp : '',
     scopeKey: typeof raw.scopeKey === 'string' ? raw.scopeKey : '',
-    belugaBuild: raw.belugaBuild === 'fast' ? 'fast' : 'stable',
+    // The build the types came from, as recorded: importCheckpoint refuses a checkpoint
+    // from another build. Until 2026-10-16 anything but "fast" read back as "stable",
+    // so a checkpoint written on a Wasm build was refused on every open.
+    belugaBuild: typeof raw.belugaBuild === 'string' && raw.belugaBuild ? raw.belugaBuild : 'stable',
     types: types || { v: 1, decls: [], metavars: [], reconstructed: [] },
     identity: Array.isArray(raw.identity) ? raw.identity : [],
     deriveAttempted: Array.isArray(raw.deriveAttempted) ? raw.deriveAttempted : [],

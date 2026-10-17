@@ -14,7 +14,7 @@
 2. **Hardcoded stdout** — `Chatter.print` writes to `Format.std_formatter`. No way to capture output.
 3. **Blocking prompt** — `Logic.ml` calls `read_line()` for "More solutions?" — blocks forever in JS.
 4. **`Unix.times()`** — `Monitor.ml` uses this for timing. `js_of_ocaml`'s Unix stub throws.
-5. **`Str` library** — `prettyint.ml` uses `Str.regexp`. `Str` has C stubs, incompatible with js_of_ocaml.
+5. **`Str` library** — `prettyint.ml` used `Str.regexp` (patch 8 takes it out). `Str` is still linked, though: `syncom/name.ml` calls `Str.regexp` / `Str.search_backward`, and `beluga_html` (which core links, below) uses it. Both js_of_ocaml and wasm_of_ocaml ship their own `Str` primitives, so this builds; it is not C-stub-free.
 6. **Warning 53** — `js_of_ocaml-ppx` can trigger warning 53 (`misplaced-attribute`) on the web executable. Suppress with `-w -53` on `src/web/dune` only. Invalid `[@unboxed]` on `List1` / `List2` / `Synext_precedence` was removed for OCaml 5.4.
 
 ---
@@ -248,7 +248,7 @@ let is_name_syntactically_valid name =
   String.length s > 0 && s.[0] <> '"'
 ```
 
-**src/core/dune:** Removed `str` from the `(libraries ...)` list. `str` remains in `src/html/dune` because `beluga_html` is a separate library not linked into the web bundle.
+**src/core/dune:** Removed `str` from the `(libraries ...)` list. `str` remains in `src/html/dune` and `src/syntax/syncom/dune`. ⚠ `beluga_html` IS linked into the web bundle: core lists it (`src/core/dune`) for `Load.read_signature_and_write_html`, which only the CLI's `--html` reaches. It brings `str`, `omd` and `uri` (and through `uri`, `bigstringaf`, whose one primitive wasm_of_ocaml lacks: see Wasm builds).
 
 ---
 
@@ -268,44 +268,40 @@ Without specifying the package, `dune build` may fail depending on the version.
 
 ### 10. Web build target — `src/web/dune` (NEW)
 
+Three executables from the one shim (abridged; the file itself carries the comments):
+
 ```dune
+; the JS build: the fallback where Wasm cannot run
 (executable
  (name beluga_web)
  (modules beluga_web)
  (modes js)
- (libraries
-  js_of_ocaml
-  support
-  beluga
-  beluga_syntax
-  beluga_parser)
+ (libraries js_of_ocaml support beluga beluga_syntax beluga_parser harpoon_core)
  (js_of_ocaml
   (flags (:standard --disable use-js-string --effects=cps)))
  (flags (:standard -w -53))
- (preprocess
-  (pps js_of_ocaml-ppx)))
+ (preprocess (pps js_of_ocaml-ppx)))
 
+; each Wasm build from its own copy of the shim (dune wants one module per executable)
 (rule
- (target beluga_web_dt.ml)
+ (target beluga_web_wasm_cps.ml)
  (deps beluga_web.ml)
  (action (copy %{deps} %{target})))
 
 (executable
- (name beluga_web_dt)
- (modules beluga_web_dt)
- (modes js)
- (libraries
-  js_of_ocaml
-  support
-  beluga
-  beluga_syntax
-  beluga_parser)
- (js_of_ocaml
-  (flags (:standard --disable use-js-string --effects=double-translation)))
+ (name beluga_web_wasm_cps)          ; and beluga_web_wasm, with --effects=disabled
+ (modules beluga_web_wasm_cps)
+ (modes wasm)
+ (libraries js_of_ocaml support beluga beluga_syntax beluga_parser harpoon_core)
+ (wasm_of_ocaml
+  (compilation_mode whole_program)
+  (sourcemap no)
+  (flags (:standard --effects=cps)))
  (flags (:standard -w -53))
- (preprocess
-  (pps js_of_ocaml-ppx)))
+ (preprocess (pps js_of_ocaml-ppx)))
 ```
+
+See [Wasm builds](#wasm-builds). The `(wasm_of_ocaml ...)` field needs `(lang dune 3.17)` in `Beluga-W/dune-project` (it was 3.7); the bump left the JS outputs byte-identical (checked 2026-10-16 from a `dune clean` with the cache off). The double-translation build (`beluga_web_dt`, BelJar's "Fast" mode, run on the main thread) was removed on 2026-10-16: a Wasm build in a worker is faster and never freezes the page.
 
 > [!WARNING]
 > `--disable use-js-string` is **required**. Without it, js_of_ocaml uses JS native strings, but Beluga's lexer and string handling depend on OCaml byte-sequence semantics. Unicode characters (`⊃`, `∧`, `∨`, `¬`, `⊤`) corrupt without this flag.
@@ -390,7 +386,59 @@ graph TD
 
 Two stages: OCaml compiles to bytecode (`.bc`), then js_of_ocaml translates that bytecode to JavaScript. The `bc` in the filename literally stands for **bytecode**. All Beluga warning/error settings apply during Stage 1 (normal OCaml compilation) — js_of_ocaml only sees the already-compiled bytecode in Stage 2.
 
-The build scripts (`rebuild.ps1` / `rebuild.sh`) just run `dune build` in `Beluga-W` and copy the output to the project root.
+The build scripts (`rebuild.ps1` / `rebuild.sh`) run `dune build --profile release` in `Beluga-W` for the three web targets, copy them to the project root, then stamp them (`stamp-runtime.ps1`; `rebuild.sh` does the same two stamps itself). Then they go to R2: [Deploying](#deploying).
+
+**The release profile** (since 2026-10-16): whole program, minified, no source map. Until then the JS build was dune's dev profile: separately compiled, pretty-printed, with an inline base64 source map (11 MB of its 25.4 MB), and it checked 1.9× slower in Chrome. The answers are the same, byte for byte (`docs/wasm-runtime.md` §3). The JS build is now 2.6 MB, ~330 KB as R2 sends it.
+
+---
+
+## Wasm builds
+
+BelJar's default runtime since 2026-10-16 is `beluga_web_wasm_cps`, where the browser can run Wasm; the JS build is the fallback, and Settings > Beluga > Build version chooses (Stable, Wasm, Wasm CPS). Measured in [`docs/wasm-runtime.md`](../docs/wasm-runtime.md).
+
+**Toolchain** (all four needed; versions as built 2026-10-16):
+
+| Tool | Version | How |
+|---|---|---|
+| OCaml | 5.4.1 | the existing opam switch (`%LOCALAPPDATA%\opam\default`) |
+| dune | 3.23.0 | existing; the project needs `(lang dune 3.17)` |
+| js_of_ocaml-compiler | 6.3.2 | existing |
+| wasm_of_ocaml-compiler | 6.3.2 | `opam install wasm_of_ocaml-compiler.6.3.2`: it requires `js_of_ocaml = version`, so pin it to the installed js_of_ocaml, or opam upgrades the JS compiler under the JS builds. Adds only itself and `conf-binaryen` |
+| Binaryen | version_126 | `conf-binaryen` just runs `wasm-opt --version`, and Windows has no package: unpack the official `binaryen-version_126-x86_64-windows.tar.gz` (GitHub releases, check its `.sha256`) to `%LOCALAPPDATA%\binaryen\version_126\` (`rebuild.ps1` looks there; `BINARYEN_BIN` overrides). version_126 is the release wasm_of_ocaml 6.3.2's CI ran with (it takes the latest; 6.3.2 shipped 2026-02-15, version_126 is of 2026-02-13). ≥ 119 is the stated minimum |
+
+**Outputs**, copied to the repo root by the rebuild scripts under dune's names (the loader names its folder, so they cannot be renamed apart):
+
+```
+beluga_web_wasm.bc.wasm.js            12 KB loader
+beluga_web_wasm.bc.wasm.assets/code-<hash>.wasm      ~1.8 MB
+beluga_web_wasm_cps.bc.wasm.js        12 KB loader
+beluga_web_wasm_cps.bc.wasm.assets/code-<hash>.wasm  ~2.3 MB
+```
+
+The `.wasm` is named by its content hash, so it busts caches by itself; only the loader needs the `?v=` stamp. `.assetsignore` keeps all four out of the Worker upload (`tests/test-deploy-config.mjs`).
+
+---
+
+## Deploying
+
+The runtime is served from R2 (bucket `beljar-runtime`, at `https://beljar-cdn.deanbarry.com/`, CORS for the site's origins), never by the Worker. After a rebuild, in this order:
+
+1. **Upload to R2**: `npm run upload:runtime` (`scripts/upload-runtime.mjs`; `--dry-run` prints the wrangler commands without running them). It uploads what `js/beluga/beluga-client.js` `BUILDS` names, and the `.wasm` beside each loader, with the types a browser needs (`application/wasm` for the `.wasm`, which `instantiateStreaming` refuses otherwise; a year's cache, its name being its hash), then reads every file back through the CDN under the new stamp and compares its bytes. Deploy only once it says R2 holds this build.
+2. **Deploy the site** (the Git build deploys a push to the repository's default branch).
+3. **Check it**: `npm run probe:live`. Among the rest: the editor runs Wasm CPS from the CDN, R2 sends each runtime file with its type, the site's CORS header and compressed, and the service worker caches the loader and its `.wasm`.
+
+⛔ R2 first. Deploy first and the new page asks for files R2 does not have yet (the Wasm loader 404s), or Cloudflare's edge caches the old bytes under the new URL until its TTL. Old objects (`beluga_web.bc.dt.js`, earlier `.wasm`) can stay: nothing asks for them.
+
+**Effects.** Beluga performs none: nothing under `Beluga-W/src`, nor gen, extlib, sedlex or the js_of_ocaml library, uses `Effect`; `Stdlib.Effect` is linked only as part of the stdlib. So the main build is `--effects=disabled` (direct style, no JSPI, and so no Chrome-137-only requirement). The default, `jspi`, would buy nothing. The CPS build exists for stack depth alone: with Wasm tail calls a CPS continuation does not grow the stack.
+
+**Link warning, harmless:** `Missing primitives: bigstringaf_blit_to_bytes`. It comes from `uri` (via `beluga_html`, above), whose only caller is the CLI's `--html` path; wasm_of_ocaml supplies a stub that raises.
+
+**Differences from the JS builds that matter to anything loading them:**
+
+- **A stack overflow escapes OCaml.** Under js_of_ocaml, `normalize_exn` turns the JS `RangeError` into `Stack_overflow` and `checkFromString` *returns* "Stack overflow". Under Wasm the engine's `RangeError: Maximum call stack size exceeded` is not caught by any OCaml handler: it is *thrown* out of `checkFromString`. The instance answers correctly afterwards (`differential.mjs`, step E).
+- **Startup is asynchronous and silent.** The loader is an async function whose promise it drops; `Beluga` appears when OCaml's start assigns it (onto `globalThis`: the loader reads `globalThis.module.export`, sic). In Node, `vm.runInContext` returns that promise; a worker has to observe the assignment.
+- **The loader finds its `.wasm` from `document.currentScript.src`**, which a worker has not got (it then fetches relative to the worker's own URL). In Node it reads them relative to `require.main.filename`, and it hooks `process.on('uncaughtException')`. `tests/_beluga-runtime.mjs` loads all four builds in Node behind one shape.
+- **It needs WasmGC, tail calls and exception handling** (Chrome 119, Firefox 122, Safari 18.2, Node 22), and uses the JS String Builtins where present (`instantiateStreaming(…, { builtins: [...] })`).
 
 ---
 
@@ -461,7 +509,8 @@ When Beluga updates upstream, re-apply these 13 patches in order:
 | 9 | `src/core/prettyint.ml` | **Modify** | Replace `Str` regex with char check |
 | 10 | `src/core/dune` | **Modify** | Remove `str` from libraries |
 | 11 | `src/html/dune` | **Modify** | Add `(package beluga)` to install stanza |
-| 12 | `src/web/dune` | **Create** | Two js_of_ocaml executables: `beluga_web` (`--effects=cps`, stable) and `beluga_web_dt` (`--effects=double-translation`, fast) — the DT source is generated by a `(rule ...)` that copies `beluga_web.ml`; scoped `-w -53` on both |
+| 12 | `src/web/dune` | **Create** | One js_of_ocaml executable, `beluga_web` (`--effects=cps`, the fallback), and two wasm_of_ocaml executables, `beluga_web_wasm` (`--effects=disabled`) and `beluga_web_wasm_cps` (`--effects=cps`, BelJar's default), each from a copy of `beluga_web.ml` made by a `(rule ...)`, whole program, no source map; scoped `-w -53` on all three. (`beluga_web_dt`, double translation, was removed 2026-10-16) |
+| 12b | `dune-project` | **Modify** | `(lang dune 3.17)` (from 3.7): the `(wasm_of_ocaml ...)` field needs it |
 | 13 | `src/web/beluga_web.ml` | **Create** | JS entry point — progress scanning via `make_progress_formatter`; `normalize_exn` converts JS `RangeError` → `Stack_overflow`; trial-session rollback pattern; `Error.disable_colored_output ()` |
 
 > [!TIP]

@@ -89,6 +89,8 @@ const ROWS = [
   // ── editing behaviour ─────────────────────────────────────────────────────
   { slug: 'auto-close-brackets', title: 'Auto-close brackets', aliases: ['autoclose'],
     setting: 'editorAutoCloseBrackets' },
+  { slug: 'pad-brackets', title: 'Pad square brackets',
+    setting: 'editorPadBrackets' },
   { slug: 'reindent-paste', title: 'Re-indent on paste',
     setting: 'editorReindentPaste' },
   { slug: 'format-on-save', title: 'Format on save',

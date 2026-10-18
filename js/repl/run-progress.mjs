@@ -5,12 +5,22 @@ var FADE_OUT_MS = 175;
   var SMOOTH_K = 8;
   var CREEP_BUDGET_SCALE = 0.5;
 
-  // Conservative first-run model (stable WASM); refined per device after loads.
-  var DEFAULT_BASE_MS = 650;
-  var DEFAULT_MS_PER_LINE = 16;
-  var MIN_MS_PER_LINE = 1.5;
-  var MIN_BASE_MS = 120;
-  var MIN_ESTIMATE_MS = 900;
+  // What a run costs before this device has run anything on a build, one model per
+  // build in js/beluga/beluga-client.js `BUILDS` (tests/test-run-model.mjs holds the
+  // two lists together). Fitted to the bundled library in Chrome 155 (2026-10-17,
+  // docs/wasm-runtime.md): the 75th percentile of ms per line, so the bar nears its end
+  // as a typical run does, plus the worker round trip. Then refined per device and per
+  // build: the builds differ ~5x, and one model for all of them was learned on the old
+  // JS build and floored at 1.5 ms a line, so a Wasm run (~0.2) always looked 6-9x
+  // longer than it was.
+  var BUILD_DEFAULTS = {
+    stable: { baseMs: 120, msPerLine: 1.2 },
+    wasm: { baseMs: 60, msPerLine: 0.4 },
+    'wasm-cps': { baseMs: 60, msPerLine: 0.3 },
+  };
+  var MIN_MS_PER_LINE = 0.05;
+  var MIN_BASE_MS = 20;
+  var MIN_ESTIMATE_MS = 250;
   var LEARN_MIN_LINES = 5;
   var LEARN_ALPHA_CAP = 0.35;
   var LEARN_ALPHA_FLOOR = 0.08;
@@ -27,6 +37,7 @@ var FADE_OUT_MS = 175;
   var targetRatio = 0;
   var creepStart = 0;
   var lineCount = 0;
+  var runBuild = 'stable';
 
   var PHASE_WEIGHTS = {
     init: { begin: 0.05, done: 0.05 },
@@ -36,13 +47,22 @@ var FADE_OUT_MS = 175;
 
   var DEFAULT_PHASE = { begin: 0.2, done: 0.85 };
 
-  function defaultModel() {
-    return { baseMs: DEFAULT_BASE_MS, msPerLine: DEFAULT_MS_PER_LINE, sampleCount: 0 };
+  // The build Beluga runs on now (BelugaClient's), or Stable where there is none.
+  function currentBuild() {
+    var C = global.BelugaClient;
+    var b = C && typeof C.getBuild === 'function' ? C.getBuild() : null;
+    return BUILD_DEFAULTS[b] ? b : 'stable';
   }
 
-  function readModel() {
+  function defaultModel(build) {
+    var d = BUILD_DEFAULTS[build] || BUILD_DEFAULTS.stable;
+    return { baseMs: d.baseMs, msPerLine: d.msPerLine, sampleCount: 0 };
+  }
+
+  function readModel(build) {
     var D = global.Device;
-    var raw = D ? D.get('runModel') : null;
+    var all = D ? D.get('runModel') : null;
+    var raw = all && all[build];
     if (!raw) return null;
     return {
       baseMs: Math.max(MIN_BASE_MS, raw.baseMs),
@@ -55,12 +75,14 @@ var FADE_OUT_MS = 175;
     return Math.max(LEARN_ALPHA_FLOOR, Math.min(LEARN_ALPHA_CAP, 2 / (sampleCount + 2)));
   }
 
-  function writeStats(lines, ms) {
+  // Fold one finished run into the model of the build it ran on.
+  function writeStats(lines, ms, build) {
     if (lines < LEARN_MIN_LINES || ms <= 0) return;
     var D = global.Device;
     if (!D) return;
+    build = BUILD_DEFAULTS[build] ? build : currentBuild();
     try {
-      var prev = readModel() || defaultModel();
+      var prev = readModel(build) || defaultModel(build);
       var observedRate = ms / lines;
       var alpha = learningAlpha(prev.sampleCount);
       if (prev.sampleCount >= 3) {
@@ -76,16 +98,19 @@ var FADE_OUT_MS = 175;
         var impliedBase = Math.max(MIN_BASE_MS, ms - lines * msPerLine);
         baseMs = prev.baseMs * (1 - alpha) + impliedBase * alpha;
       }
-      D.set('runModel', {
-        msPerLine: Math.round(msPerLine * 100) / 100,
+      var all = Object.assign({}, D.get('runModel') || {});
+      all[build] = {
+        msPerLine: Math.round(msPerLine * 1000) / 1000,
         baseMs: Math.round(baseMs),
         sampleCount: prev.sampleCount + 1,
-      });
+      };
+      D.set('runModel', all);
     } catch (_) {}
   }
 
-  function estimateDurationMs(lines) {
-    var model = readModel() || defaultModel();
+  function estimateDurationMs(lines, build) {
+    build = BUILD_DEFAULTS[build] ? build : currentBuild();
+    var model = readModel(build) || defaultModel(build);
     var n = Math.max(1, lines || 1);
     return Math.max(MIN_ESTIMATE_MS, model.baseMs + n * model.msPerLine);
   }
@@ -153,7 +178,7 @@ var FADE_OUT_MS = 175;
 
     if (creepStart > 0) {
       var elapsed = now - creepStart;
-      var estimated = estimateDurationMs(lineCount);
+      var estimated = estimateDurationMs(lineCount, runBuild);
       var tau = estimated * CREEP_BUDGET_SCALE;
       var creep = 0.95 * (1 - Math.exp(-elapsed / tau));
       targetRatio = Math.max(targetRatio, Math.min(creep, 0.95));
@@ -222,10 +247,10 @@ var FADE_OUT_MS = 175;
   }
 
   global.RunProgress = {
-    /** Fold one finished run into the device's model (what complete() does with its timing). */
+    /** Fold one finished run into the device's model for a build (what complete() does with its timing). */
     learn: writeStats,
 
-    /** How long a run of this many lines should take, by the learned model. */
+    /** How long a run of this many lines should take on a build (the current one if none), by its learned model. */
     estimateMs: estimateDurationMs,
 
     bind: function (opts) {
@@ -245,6 +270,9 @@ var FADE_OUT_MS = 175;
 
     start: function (opts) {
       lineCount = (opts && opts.lineCount) || 0;
+      // The build this run is on, for its estimate and for what it teaches (a switch
+      // mid-run must not teach the new build the old one's time).
+      runBuild = currentBuild();
       stopRaf();
       displayRatio = 0;
       targetRatio = 0;
@@ -269,7 +297,7 @@ var FADE_OUT_MS = 175;
             if (outputEl) outputEl.setAttribute('aria-busy', 'false');
             displayRatio = 0;
             targetRatio = 0;
-            if (opts && opts.lines > 0 && opts.ms > 0) writeStats(opts.lines, opts.ms);
+            if (opts && opts.lines > 0 && opts.ms > 0) writeStats(opts.lines, opts.ms, runBuild);
             resolve();
           });
         });

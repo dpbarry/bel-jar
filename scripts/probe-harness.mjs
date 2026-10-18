@@ -61,9 +61,10 @@ export async function openProbe(opts = {}) {
       // ahead can be kept for the next one, and home's preload of the editor
       // (js/home/preload-editor.mjs) could never be seen to work here.
       const etag = '"' + data.length.toString(16) + '-' + createHash('sha1').update(data).digest('hex').slice(0, 16) + '"';
-      // ⛔ Not the Beluga runtime (24 MB and more): the deployed site does not serve
-      // it at all (it comes from R2), and a browser context's in-memory cache cannot
-      // hold it: offered as cacheable, its load was reported as a failed cache write.
+      // ⛔ Not a file of 8 MB and more: a browser context's in-memory cache cannot
+      // hold one (offered as cacheable, the old 24 MB Beluga runtime's load was
+      // reported as a failed cache write). Today's runtime files, the Wasm builds and
+      // the JS one at 1.8-2.6 MB, are under the line and revalidate like the rest.
       if (data.length < 8 * 1024 * 1024) {
         res.setHeader('ETag', etag);
         res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');

@@ -13,7 +13,8 @@ edit.html                  the editor, on one project (/edit?p=ID)
   ├─ js/                   shell domains + editor-src + editor-cm.bundle.js
   │    ├─ app/ commands/ status-strip/ persist/ harpoon/ beluga/ explorer/ library/ ui/ workspace/ repl/
   │    └─ editor-src/ → bundled to editor-cm.bundle.js
-  ├─ beluga_web.bc.js      Beluga (js_of_ocaml), via worker
+  ├─ beluga_web_wasm_cps.bc.wasm.js   Beluga (wasm_of_ocaml, the default), in workers
+  │    (beluga_web_wasm.bc.wasm.js, Wasm; beluga_web.bc.js, js_of_ocaml, where Wasm cannot run)
   └─ js/shell.js           product shell after clients + editor
 
 index.html                 home: the projects, and signing in (/)
@@ -27,7 +28,7 @@ The two pages, and every address between them, are [PERSIST §5.11](PERSIST.md).
 |-------|------|------|
 | Shell | `js/{app,commands,status-strip,persist,harpoon,beluga,explorer,library,ui,workspace,repl}/`, `js/shell.mjs` | Product boot → `shell.js` |
 | Editor core | `js/editor-src/` → `js/editor-cm.bundle.js` | AST, semantics, prover, CM extensions |
-| Beluga | `beluga_web.bc.js`, `js/beluga/` | Surgical checker on a **web worker** |
+| Beluga | `beluga_web_wasm*.bc.wasm.js` + `.assets/` (Wasm), `beluga_web.bc.js` (JS fallback), `js/beluga/` | Surgical checker on **web workers**, one build for every slot (`beluga-client.js` `BUILDS`) |
 | Corpus | `library/` | Bundled examples + manifests |
 | Test fixtures | `tests/fixtures/` | Sample Beluga sources for unit tests |
 | Server | `server/` | The Cloudflare Worker: the sync API on D1 and R2, and GitHub sign-in with sessions ([PERSIST §5.7](PERSIST.md)); `deletion.mjs` deletes an account and runs the daily job; `server/wrangler.jsonc` is local development only |

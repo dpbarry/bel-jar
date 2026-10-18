@@ -13,7 +13,7 @@
 1. **No filesystem** — `Load.load_fresh` opens files via `In_channel`. Browser has no `open_in`.
 2. **Hardcoded stdout** — `Chatter.print` writes to `Format.std_formatter`. No way to capture output.
 3. **Blocking prompt** — `Logic.ml` calls `read_line()` for "More solutions?" — blocks forever in JS.
-4. **`Unix.times()`** — `Monitor.ml` uses this for timing. `js_of_ocaml`'s Unix stub throws.
+4. **`Unix.times()`** — `Monitor.ml` uses this for timing. `js_of_ocaml`'s Unix stub throws (wasm_of_ocaml's loader implements `times`, so the Wasm builds do not need patch 6, but the JS build does).
 5. **`Str` library** — `prettyint.ml` used `Str.regexp` (patch 8 takes it out). `Str` is still linked, though: `syncom/name.ml` calls `Str.regexp` / `Str.search_backward`, and `beluga_html` (which core links, below) uses it. Both js_of_ocaml and wasm_of_ocaml ship their own `Str` primitives, so this builds; it is not C-stub-free.
 6. **Warning 53** — `js_of_ocaml-ppx` can trigger warning 53 (`misplaced-attribute`) on the web executable. Suppress with `-w -53` on `src/web/dune` only. Invalid `[@unboxed]` on `List1` / `List2` / `Synext_precedence` was removed for OCaml 5.4.
 
@@ -175,7 +175,7 @@ val load_from_string_fresh :
 
 ### 6. Safe Unix.times — `src/core/monitor.ml`
 
-**Problem:** `Unix.times()` throws in `js_of_ocaml`.
+**Problem:** `Unix.times()` throws in `js_of_ocaml` (the JS build). wasm_of_ocaml implements it, so under Wasm the fallback below never runs.
 
 **Added (lines 25–29):**
 ```ocaml
@@ -238,7 +238,7 @@ Logic.Options.more_solutions_prompt := (fun () -> false);
 
 ### 8. Remove Str dependency — `src/core/prettyint.ml` + `src/core/dune`
 
-**Problem:** `Str` uses C stubs. js_of_ocaml can't compile C stubs.
+**Problem (as first found):** `Str` uses C stubs, which neither js_of_ocaml nor wasm_of_ocaml compiles. Both turned out to ship their own `Str` primitives, and `Str` is still linked elsewhere (item 5 above); this patch only takes it out of `prettyint.ml`.
 
 **prettyint.ml (lines 126–128):**
 ```ocaml
@@ -364,10 +364,12 @@ This file ties everything together:
    - `Beluga.runCommand(cmd)` runs against the committed session
    - `Beluga.getCommittedFingerprint()` reports what Beluga itself believes is currently loaded
    - `Beluga.reset()` resets both the session and the committed fingerprint
-6. Exception handling: `normalize_exn` converts JS `RangeError` → OCaml `Stack_overflow` before printing, so stack overflows produce a clean message rather than a raw JS exception string; falls back to `Printexc.to_string` for anything else
+6. Exception handling: `normalize_exn` converts JS `RangeError` → OCaml `Stack_overflow` before printing, so on the JS build stack overflows produce a clean message ("Stack overflow") rather than a raw JS exception string; falls back to `Printexc.to_string` for anything else. On the Wasm builds no OCaml handler sees the engine's overflow, so `normalize_exn` never meets it: the overflow is thrown out of the call, and `js/beluga/beluga-worker.js` (`overflowAnswer`) answers it exactly as the JS build would ([Wasm builds](#wasm-builds))
 
 > [!IMPORTANT]
 > **Trial-session pattern in both `checkFromString` and `loadFromString`.** A failed load leaves Beluga's globally mutable state (`Store`, `Typeinfo`, `Holes`, reconstruction state) half-corrupted. Reusing that session for the next load would silently poison subsequent successes. So every web load/check call builds a *fresh* session via `create ()`, attempts the load on it, and only `loadFromString` commits the trial to the live `session` ref if it succeeded. `checkFromString` always discards the trial. This is the key split that keeps lint from poisoning REPL state.
+>
+> A fresh session is not enough on its own: some state is global to the whole runtime, not the session. So `load_from_string` also resets, before every load, the unification constraint store (`Unify.StdTrail.resetGlobalCnstrs`) and the logic engine's query queue (`Store.clear (); Logic.prepare ()`). A failed load used to leave a queued `--query` for the next load to run against the new store (2026-10-18, `tests/test-beluga-stale-query.mjs`).
 >
 > `load_from_string` therefore returns `(string * bool)` rather than just `string`: the buffer contents plus a success flag the caller uses to decide whether to commit. `loadFromString` also updates a Beluga-owned content fingerprint so JS can ask Beluga what is truly committed before running commands.
 
@@ -377,14 +379,15 @@ This file ties everything together:
 
 ```mermaid
 graph TD
-    A["OCaml sources"] -->|"dune build src/web/beluga_web.bc.js"| B["OCaml bytecode compiler"]
-    B --> C["beluga_web.bc (bytecode)"]
-    C -->|"js_of_ocaml"| D["beluga_web.bc.js"]
-    D -->|"copy to root"| E["bel-jar/beluga_web.bc.js"]
-    E --> F["index.html loads it via script tag"]
+    A["OCaml sources"] -->|"dune build --profile release"| B["OCaml bytecode compiler"]
+    B --> C["bytecode (.bc), one per executable"]
+    C -->|"wasm_of_ocaml + Binaryen"| D["beluga_web_wasm(_cps).bc.wasm.js + .assets/code-hash.wasm"]
+    C -->|"js_of_ocaml"| E["beluga_web.bc.js"]
+    D -->|"copy to root, upload to R2"| F["BelugaClient (BUILDS) loads the chosen build in each worker"]
+    E -->|"copy to root, upload to R2"| F
 ```
 
-Two stages: OCaml compiles to bytecode (`.bc`), then js_of_ocaml translates that bytecode to JavaScript. The `bc` in the filename literally stands for **bytecode**. All Beluga warning/error settings apply during Stage 1 (normal OCaml compilation) — js_of_ocaml only sees the already-compiled bytecode in Stage 2.
+Two stages: OCaml compiles to bytecode (`.bc`), then wasm_of_ocaml (the Wasm builds) or js_of_ocaml (the JS build) translates that bytecode. The `bc` in the filenames literally stands for **bytecode**. All Beluga warning/error settings apply during Stage 1 (normal OCaml compilation) — the second stage only sees the already-compiled bytecode.
 
 The build scripts (`rebuild.ps1` / `rebuild.sh`) run `dune build --profile release` in `Beluga-W` for the three web targets, copy them to the project root, then stamp them (`stamp-runtime.ps1`; `rebuild.sh` does the same two stamps itself). Then they go to R2: [Deploying](#deploying).
 
@@ -444,11 +447,11 @@ The runtime is served from R2 (bucket `beljar-runtime`, at `https://beljar-cdn.d
 
 ## Frontend
 
-[`index.html`](../index.html) boots Beluga clients, the editor bundle, then the product shell:
+[`edit.html`](../edit.html), the editor, boots the Beluga clients, the editor bundle, then the product shell (home, `index.html`, loads no Beluga):
 
 `beluga-client.js` → `harpoon-client.js` → `editor-cm.bundle.js` → `shell.js`
 
-(see [`docs/CODEMAP.md`](../docs/CODEMAP.md)). Styles load via [`css/style.css`](../css/style.css) (import cascade).
+`beluga-client.js` never runs Beluga on the page: each slot is a worker (`js/beluga/beluga-worker.js`) that loads the chosen build through `js/beluga/beluga-runtime-load.js` (see [`docs/CODEMAP.md`](../docs/CODEMAP.md)). Styles load via [`css/style.css`](../css/style.css) (import cascade).
 
 ### JS API
 
@@ -511,7 +514,7 @@ When Beluga updates upstream, re-apply these 13 patches in order:
 | 11 | `src/html/dune` | **Modify** | Add `(package beluga)` to install stanza |
 | 12 | `src/web/dune` | **Create** | One js_of_ocaml executable, `beluga_web` (`--effects=cps`, the fallback), and two wasm_of_ocaml executables, `beluga_web_wasm` (`--effects=disabled`) and `beluga_web_wasm_cps` (`--effects=cps`, BelJar's default), each from a copy of `beluga_web.ml` made by a `(rule ...)`, whole program, no source map; scoped `-w -53` on all three. (`beluga_web_dt`, double translation, was removed 2026-10-16) |
 | 12b | `dune-project` | **Modify** | `(lang dune 3.17)` (from 3.7): the `(wasm_of_ocaml ...)` field needs it |
-| 13 | `src/web/beluga_web.ml` | **Create** | JS entry point — progress scanning via `make_progress_formatter`; `normalize_exn` converts JS `RangeError` → `Stack_overflow`; trial-session rollback pattern; `Error.disable_colored_output ()` |
+| 13 | `src/web/beluga_web.ml` | **Create** | The web entry point, the same source for all three builds — progress scanning via `make_progress_formatter`; `normalize_exn` converts JS `RangeError` → `Stack_overflow` (the JS build only: under Wasm the overflow escapes, and BelJar's worker answers it); trial-session rollback pattern; `Error.disable_colored_output ()` |
 
 > [!TIP]
 > Quickest diff: `diff -rq Beluga/src Beluga-W/src` shows exactly which files diverge.
@@ -526,8 +529,8 @@ When Beluga updates upstream, re-apply these 13 patches in order:
 | No stdout capture | `Format.std_formatter` → console | Redirect via `Chatter.set_formatter` to a `Buffer.t` |
 | Query output lost | `Frontend.solve` writes to `std_formatter`/`printf` | `output_formatter` ref redirected to session buffer at create |
 | Blocking I/O | `read_line()` halts JS event loop | Configurable function ref, default "no" |
-| C stubs | `Unix.times()` + `Str` not in JS | `try/with` fallback + pure OCaml reimplementation |
+| C stubs | `Unix.times()` not in js_of_ocaml (wasm_of_ocaml has it); `Str` thought missing (both compilers ship it) | `try/with` fallback + pure OCaml reimplementation |
 | Build errors | Warning 53 from ppx codegen | `-w -53` scoped to `src/web/dune` |
-| String corruption | JS strings ≠ OCaml byte sequences | `--disable use-js-string` flag |
+| String corruption | JS strings ≠ OCaml byte sequences (js_of_ocaml; Wasm strings are bytes already) | `--disable use-js-string` flag on the JS build |
 | ANSI codes in HTML | Beluga's error printer emits color escapes | `Error.disable_colored_output ()` at session create |
 | State poisoned by failed loads | `Store`/`Typeinfo`/`Holes` are global mutable refs | Trial-session pattern: build fresh session per load, commit only on success |

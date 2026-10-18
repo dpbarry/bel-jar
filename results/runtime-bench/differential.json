@@ -1,35 +1,7 @@
 {
- "date": "2026-10-16T07:53:32.977Z",
+ "date": "2026-10-18T04:42:36.316Z",
  "records": 6485,
  "builds": {
-  "fast": {
-   "byStep": {
-    "A": {
-     "same": 161,
-     "different": 0
-    },
-    "B": {
-     "same": 161,
-     "different": 0
-    },
-    "C": {
-     "same": 6157,
-     "different": 0
-    },
-    "D": {
-     "same": 4,
-     "different": 0
-    },
-    "E": {
-     "same": 1,
-     "different": 0
-    }
-   },
-   "differences": 0,
-   "overflowedOnTerm1000": "true",
-   "sample": [],
-   "records": 6485
-  },
   "wasm": {
    "byStep": {
     "A": {
@@ -88,5 +60,5 @@
   }
  },
  "oracleOverflowedOnTerm1000": "false",
- "seconds": 1505
+ "seconds": 626
 }

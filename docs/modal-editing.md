@@ -1156,7 +1156,8 @@ into `probe.mjs`** — that is the whole point of the split.
 style *transitions*, so the reordering is not free. It is off the routine path, which was the point.
 
 ⛔ **`npm test` was NOT split.** The two Beluga files own ~half its clock and splitting them would
-halve the common loop — but they are the only thing verifying the WASM shim, and a green `npm test`
+halve the common loop — but they are what verifies the Beluga shim end to end (on the JS build,
+the test oracle; `test-beluga-builds.mjs` holds the Wasm builds to it), and a green `npm test`
 that no longer means "Beluga still type-checks" is a trap, not a saving. The probes were duplicated;
 these are not.
 

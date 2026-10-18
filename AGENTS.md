@@ -24,8 +24,8 @@ session links, no "Generated with Claude Code", in files, messages or anything e
 ## Quick commands
 
 ```bash
-npm test                  # full suite: 301 files, ~110s (BELJAR_TEST_JOBS=8 default)
-npm run test:fast         # same minus the 7 Beluga integration files, ~50s — says so on exit
+npm test                  # full suite: ~340 files, ~110s (BELJAR_TEST_JOBS=8 default)
+npm run test:fast         # same minus the Beluga integration files (every test-*beluga*), ~50s — says so on exit
 npm run build             # editor + shell ESM leaves + library (not OCaml)
 npm run check:build       # fail when authored .mjs is newer than committed .js
 node scripts/build-editor.mjs   # editor bundle only

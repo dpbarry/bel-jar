@@ -282,8 +282,8 @@
   </div>
   <div id="menu-root" class="menu-root"></div>
 
-  <!-- The deployed hosts. The Beluga runtime is served from R2 there (the fast
-       build is ~31.5 MB, over Cloudflare's per-file static-asset cap), and a
+  <!-- The deployed hosts. The Beluga runtime (the Wasm builds and the JS one)
+       is served from R2 there, never by the Worker (.assetsignore), and a
        server always answers /api, so an account that cannot be reached is a
        failure to explain, never "no server" (js/account/account.mjs). Local,
        file:// and the probes fall through to the copies in this repo. -->

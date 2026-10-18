@@ -28,8 +28,9 @@ const SERIAL = new Set([
 ]);
 
 /**
- * `--fast` skips the Beluga integration files: 7 of them, ~44s of a ~92s run,
- * driving the real type-checker through the WASM shim. Nothing in the UI, the
+ * `--fast` skips the Beluga integration files: every test-*beluga* file (about half
+ * the run), driving the real type-checker: the JS build (the oracle) and, in
+ * test-beluga-builds.mjs and others, the Wasm builds against it. Nothing in the UI, the
  * keymap or the strip can break them, so paying that on every iteration is
  * waste.
  *

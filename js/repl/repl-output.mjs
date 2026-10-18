@@ -1260,19 +1260,6 @@ var output = document.getElementById('output');
     }
   }
 
-  function appendBuildFallbackNotice() {
-    var block = createReplBlock();
-    var shell = document.createElement('div');
-    shell.className = 'repl-rich';
-    var pre = document.createElement('pre');
-    pre.className = 'repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes';
-    pre.textContent = 'Fast build hit the stack limit. Retrying with Stable.\nTip: switch to Stable in Settings to avoid this for large files.';
-    shell.appendChild(pre);
-    block.appendChild(shell);
-    streamAppend(block);
-    scrollReplBottom();
-  }
-
   global.ReplOutput = {
     appendOutput: appendOutput,
     appendReplHelp: appendReplHelp,
@@ -1282,7 +1269,6 @@ var output = document.getElementById('output');
     dismissRunSkeleton: dismissRunSkeleton,
     settleInterruptedPendingRuns: settleInterruptedPendingRuns,
     appendBelugaResponse: appendBelugaResponse,
-    appendBuildFallbackNotice: appendBuildFallbackNotice,
     appendRichMsg: appendRichMsg,
     appendProjectOpened: appendProjectOpened,
     appendProjectEmpty: appendProjectEmpty,

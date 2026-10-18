@@ -7,7 +7,7 @@
  *
  * ⛔ Nothing here may reach the editor, the workspace, the explorer or Beluga.
  * Booting the frame must never start a Beluga worker: that is what lets a
- * dashboard cost ~80 KB instead of 2.8 MB plus a 24 MB runtime.
+ * dashboard cost ~80 KB instead of 2.8 MB plus the Beluga runtime (2-2.6 MB).
  *
  * ⛔ This is the ONLY owner of the shared chrome. app.mjs calls Frame.mount()
  * rather than wiring these buttons itself — two owners is how a theme toggle

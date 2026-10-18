@@ -78,6 +78,12 @@ try {
   check(first.clean.ok === true && workerScripts().join() === FILES['wasm-cps'],
     `and its workers load ${FILES['wasm-cps']} (${workerScripts().join(', ')}; first check ${Math.round(first.firstMs)} ms)`);
 
+  // The Run bar's estimate is the build's own (repl/run-progress.mjs): Wasm CPS is
+  // not expected to take as long as the old JS build did.
+  const estimate = await page.evaluate(() => ({ now: window.RunProgress.estimateMs(300), stable: window.RunProgress.estimateMs(300, 'stable') }));
+  check(estimate.now < 1000 && estimate.now < estimate.stable,
+    `the Run bar expects 300 lines on Wasm CPS in ${Math.round(estimate.now)} ms, on Stable in ${Math.round(estimate.stable)} ms`);
+
   const offered = await chooseInRow(null);
   check(offered.join('|') === 'Stable|Wasm|Wasm CPS', `the row offers every build (${offered.join(', ')})`);
   const stableAnswer = {};

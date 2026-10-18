@@ -877,7 +877,7 @@
       return cap ? out.slice(0, cap) : out;
     };
   }
-  function runModel(raw) {
+  function oneRunModel(raw) {
     if (!raw || typeof raw !== "object") return void 0;
     const { baseMs, msPerLine, sampleCount } = raw;
     if (!(typeof msPerLine === "number" && msPerLine > 0) || !(typeof baseMs === "number" && baseMs >= 0)) return void 0;
@@ -886,6 +886,19 @@
       msPerLine,
       sampleCount: typeof sampleCount === "number" && sampleCount >= 1 ? Math.floor(sampleCount) : 1
     };
+  }
+  function runModel(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return void 0;
+    if (typeof raw.msPerLine === "number") {
+      const legacy = oneRunModel(raw);
+      return legacy ? { stable: legacy } : void 0;
+    }
+    const out = {};
+    for (const [build, model] of Object.entries(raw)) {
+      const m = /^[\w-]{1,32}$/.test(build) ? oneRunModel(model) : void 0;
+      if (m) out[build] = m;
+    }
+    return out;
   }
   function accountIds(raw) {
     if (!Array.isArray(raw)) return void 0;
@@ -949,7 +962,8 @@
     { id: "commandLineHistory", type: "json", default: [], normalize: stringList(50) },
     // the commands run from the palette, newest first: its Recent section (command-palette.mjs)
     { id: "paletteRecent", type: "json", default: [], normalize: stringList(20) },
-    { id: "runModel", type: "json", default: null, normalize: runModel },
+    // the run-time estimator's models, one per Beluga build (repl/run-progress.mjs)
+    { id: "runModel", type: "json", default: {}, normalize: runModel },
     { id: "jumpLog", default: false }
   ];
   var BY_ID2 = new Map(DEVICE.map((row) => [row.id, row]));

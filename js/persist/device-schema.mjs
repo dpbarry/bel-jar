@@ -30,8 +30,8 @@ function stringList(cap) {
   };
 }
 
-/** The run-time estimator's learned model (repl/run-progress.mjs). */
-function runModel(raw) {
+/** One learned model of the run-time estimator (repl/run-progress.mjs). */
+function oneRunModel(raw) {
   if (!raw || typeof raw !== 'object') return undefined;
   const { baseMs, msPerLine, sampleCount } = raw;
   if (!(typeof msPerLine === 'number' && msPerLine > 0) || !(typeof baseMs === 'number' && baseMs >= 0)) return undefined;
@@ -40,6 +40,26 @@ function runModel(raw) {
     msPerLine,
     sampleCount: typeof sampleCount === 'number' && sampleCount >= 1 ? Math.floor(sampleCount) : 1,
   };
+}
+
+/**
+ * The estimator's models, one per Beluga build ({ [build]: model }): the builds
+ * differ ~5x. Until 2026-10-17 the row held ONE model, learned on the JS build; that
+ * is read as the Stable build's (migrated, never dropped: docs/PERSIST.md §3.1), and
+ * the first write after stores the new shape.
+ */
+function runModel(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  if (typeof raw.msPerLine === 'number') {
+    const legacy = oneRunModel(raw);
+    return legacy ? { stable: legacy } : undefined;
+  }
+  const out = {};
+  for (const [build, model] of Object.entries(raw)) {
+    const m = /^[\w-]{1,32}$/.test(build) ? oneRunModel(model) : undefined;
+    if (m) out[build] = m;
+  }
+  return out;
 }
 
 function accountIds(raw) {
@@ -110,7 +130,8 @@ export const DEVICE = [
   { id: 'commandLineHistory', type: 'json', default: [], normalize: stringList(50) },
   // the commands run from the palette, newest first: its Recent section (command-palette.mjs)
   { id: 'paletteRecent', type: 'json', default: [], normalize: stringList(20) },
-  { id: 'runModel', type: 'json', default: null, normalize: runModel },
+  // the run-time estimator's models, one per Beluga build (repl/run-progress.mjs)
+  { id: 'runModel', type: 'json', default: {}, normalize: runModel },
   { id: 'jumpLog', default: false },
 ];
 

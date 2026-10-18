@@ -4,7 +4,7 @@
 // build (2.6 MB) where the browser cannot run Wasm. Fetching it from the network
 // on every load is the single biggest thing between opening BelJar and
 // type-checking anything, so it is cached — and nothing else is.
-var CACHE_NAME = 'beluga-runtime-20261017150734';
+var CACHE_NAME = 'beluga-runtime-20261018002008';
 
 // Its files, as js/beluga/beluga-client.js `BUILDS` names them: the JS build and
 // each Wasm build's loader (both stamped ?v=), and the .wasm in the folder beside a

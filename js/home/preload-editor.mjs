@@ -11,8 +11,8 @@
  *
  * ⛔ One owner of what the editor loads: its own document. Home reads the
  * script addresses out of edit.html, version queries and all, so a list kept
- * here cannot fall behind it. The Beluga runtime (24 MB, from R2) is not among
- * them: the service worker keeps that one.
+ * here cannot fall behind it. The Beluga runtime (from R2, loaded by the editor's
+ * workers, never named in edit.html) is not among them: the service worker keeps it.
  */
 import { Routes } from '../frame/routes.mjs';
 

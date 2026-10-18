@@ -170,7 +170,7 @@
   // and Cloudflare's edge both key on it. Without it a rebuilt runtime hides
   // behind the old bytes for the edge TTL, and in the meantime different users
   // check proofs against different compilers.
-  var RUNTIME_VERSION = '20261017150734';
+  var RUNTIME_VERSION = '20261018002008';
 
   // ⛔ The ONE place the runtime URL is built. Harpoon's proof worker loads the
   // same bytes and asks for them through BelugaClient.runtimeScriptUrl. It used
@@ -318,7 +318,7 @@
             duration: 'long',
             durable: true,
             body: 'Type-checking is unavailable until it loads. Reload the page;'
-              + ' if it keeps failing, check that beluga_web.bc.js downloads fully.',
+              + ' if it keeps failing, check that ' + BUILDS[slot.build].file + ' downloads fully.',
             detail: (msg || 'Beluga worker crashed') + loc,
             source: 'beluga.worker',
             dedupeKey: 'beluga.worker.onerror',

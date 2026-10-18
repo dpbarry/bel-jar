@@ -4,11 +4,14 @@
   var FADE_OUT_MS = 175;
   var SMOOTH_K = 8;
   var CREEP_BUDGET_SCALE = 0.5;
-  var DEFAULT_BASE_MS = 650;
-  var DEFAULT_MS_PER_LINE = 16;
-  var MIN_MS_PER_LINE = 1.5;
-  var MIN_BASE_MS = 120;
-  var MIN_ESTIMATE_MS = 900;
+  var BUILD_DEFAULTS = {
+    stable: { baseMs: 120, msPerLine: 1.2 },
+    wasm: { baseMs: 60, msPerLine: 0.4 },
+    "wasm-cps": { baseMs: 60, msPerLine: 0.3 }
+  };
+  var MIN_MS_PER_LINE = 0.05;
+  var MIN_BASE_MS = 20;
+  var MIN_ESTIMATE_MS = 250;
   var LEARN_MIN_LINES = 5;
   var LEARN_ALPHA_CAP = 0.35;
   var LEARN_ALPHA_FLOOR = 0.08;
@@ -23,18 +26,26 @@
   var targetRatio = 0;
   var creepStart = 0;
   var lineCount = 0;
+  var runBuild = "stable";
   var PHASE_WEIGHTS = {
     init: { begin: 0.05, done: 0.05 },
     "Type Reconstruction": { begin: 0.12, done: 0.72 },
     Holes: { begin: 0.78, done: 0.92 }
   };
   var DEFAULT_PHASE = { begin: 0.2, done: 0.85 };
-  function defaultModel() {
-    return { baseMs: DEFAULT_BASE_MS, msPerLine: DEFAULT_MS_PER_LINE, sampleCount: 0 };
+  function currentBuild() {
+    var C2 = global.BelugaClient;
+    var b = C2 && typeof C2.getBuild === "function" ? C2.getBuild() : null;
+    return BUILD_DEFAULTS[b] ? b : "stable";
   }
-  function readModel() {
+  function defaultModel(build3) {
+    var d = BUILD_DEFAULTS[build3] || BUILD_DEFAULTS.stable;
+    return { baseMs: d.baseMs, msPerLine: d.msPerLine, sampleCount: 0 };
+  }
+  function readModel(build3) {
     var D = global.Device;
-    var raw = D ? D.get("runModel") : null;
+    var all = D ? D.get("runModel") : null;
+    var raw = all && all[build3];
     if (!raw) return null;
     return {
       baseMs: Math.max(MIN_BASE_MS, raw.baseMs),
@@ -45,12 +56,13 @@
   function learningAlpha(sampleCount) {
     return Math.max(LEARN_ALPHA_FLOOR, Math.min(LEARN_ALPHA_CAP, 2 / (sampleCount + 2)));
   }
-  function writeStats(lines, ms) {
+  function writeStats(lines, ms, build3) {
     if (lines < LEARN_MIN_LINES || ms <= 0) return;
     var D = global.Device;
     if (!D) return;
+    build3 = BUILD_DEFAULTS[build3] ? build3 : currentBuild();
     try {
-      var prev = readModel() || defaultModel();
+      var prev = readModel(build3) || defaultModel(build3);
       var observedRate = ms / lines;
       var alpha = learningAlpha(prev.sampleCount);
       if (prev.sampleCount >= 3) {
@@ -64,16 +76,19 @@
         var impliedBase = Math.max(MIN_BASE_MS, ms - lines * msPerLine);
         baseMs = prev.baseMs * (1 - alpha) + impliedBase * alpha;
       }
-      D.set("runModel", {
-        msPerLine: Math.round(msPerLine * 100) / 100,
+      var all = Object.assign({}, D.get("runModel") || {});
+      all[build3] = {
+        msPerLine: Math.round(msPerLine * 1e3) / 1e3,
         baseMs: Math.round(baseMs),
         sampleCount: prev.sampleCount + 1
-      });
+      };
+      D.set("runModel", all);
     } catch (_) {
     }
   }
-  function estimateDurationMs(lines) {
-    var model = readModel() || defaultModel();
+  function estimateDurationMs(lines, build3) {
+    build3 = BUILD_DEFAULTS[build3] ? build3 : currentBuild();
+    var model = readModel(build3) || defaultModel(build3);
     var n = Math.max(1, lines || 1);
     return Math.max(MIN_ESTIMATE_MS, model.baseMs + n * model.msPerLine);
   }
@@ -132,7 +147,7 @@
     lastTick = now;
     if (creepStart > 0) {
       var elapsed = now - creepStart;
-      var estimated = estimateDurationMs(lineCount);
+      var estimated = estimateDurationMs(lineCount, runBuild);
       var tau = estimated * CREEP_BUDGET_SCALE;
       var creep = 0.95 * (1 - Math.exp(-elapsed / tau));
       targetRatio = Math.max(targetRatio, Math.min(creep, 0.95));
@@ -196,9 +211,9 @@
     setTimeout(finish2, FADE_OUT_MS + 50);
   }
   global.RunProgress = {
-    /** Fold one finished run into the device's model (what complete() does with its timing). */
+    /** Fold one finished run into the device's model for a build (what complete() does with its timing). */
     learn: writeStats,
-    /** How long a run of this many lines should take, by the learned model. */
+    /** How long a run of this many lines should take on a build (the current one if none), by its learned model. */
     estimateMs: estimateDurationMs,
     bind: function(opts) {
       headerEl = opts.header;
@@ -214,6 +229,7 @@
     },
     start: function(opts) {
       lineCount = opts && opts.lineCount || 0;
+      runBuild = currentBuild();
       stopRaf();
       displayRatio = 0;
       targetRatio = 0;
@@ -237,7 +253,7 @@
             if (outputEl) outputEl.setAttribute("aria-busy", "false");
             displayRatio = 0;
             targetRatio = 0;
-            if (opts && opts.lines > 0 && opts.ms > 0) writeStats(opts.lines, opts.ms);
+            if (opts && opts.lines > 0 && opts.ms > 0) writeStats(opts.lines, opts.ms, runBuild);
             resolve2();
           });
         });
@@ -1142,7 +1158,7 @@
       return cap ? out.slice(0, cap) : out;
     };
   }
-  function runModel(raw) {
+  function oneRunModel(raw) {
     if (!raw || typeof raw !== "object") return void 0;
     const { baseMs, msPerLine, sampleCount } = raw;
     if (!(typeof msPerLine === "number" && msPerLine > 0) || !(typeof baseMs === "number" && baseMs >= 0)) return void 0;
@@ -1151,6 +1167,19 @@
       msPerLine,
       sampleCount: typeof sampleCount === "number" && sampleCount >= 1 ? Math.floor(sampleCount) : 1
     };
+  }
+  function runModel(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return void 0;
+    if (typeof raw.msPerLine === "number") {
+      const legacy = oneRunModel(raw);
+      return legacy ? { stable: legacy } : void 0;
+    }
+    const out = {};
+    for (const [build3, model] of Object.entries(raw)) {
+      const m = /^[\w-]{1,32}$/.test(build3) ? oneRunModel(model) : void 0;
+      if (m) out[build3] = m;
+    }
+    return out;
   }
   function accountIds(raw) {
     if (!Array.isArray(raw)) return void 0;
@@ -1214,7 +1243,8 @@
     { id: "commandLineHistory", type: "json", default: [], normalize: stringList(50) },
     // the commands run from the palette, newest first: its Recent section (command-palette.mjs)
     { id: "paletteRecent", type: "json", default: [], normalize: stringList(20) },
-    { id: "runModel", type: "json", default: null, normalize: runModel },
+    // the run-time estimator's models, one per Beluga build (repl/run-progress.mjs)
+    { id: "runModel", type: "json", default: {}, normalize: runModel },
     { id: "jumpLog", default: false }
   ];
   var BY_ID2 = new Map(DEVICE.map((row) => [row.id, row]));
@@ -24100,18 +24130,6 @@ ${blocks.join("\n\n")}`;
       ReplPersist.saveNow();
     }
   }
-  function appendBuildFallbackNotice() {
-    var block = createReplBlock();
-    var shell2 = document.createElement("div");
-    shell2.className = "repl-rich";
-    var pre = document.createElement("pre");
-    pre.className = "repl-rich-pre repl-rich-pre--run repl-rich-pre--run-holes";
-    pre.textContent = "Fast build hit the stack limit. Retrying with Stable.\nTip: switch to Stable in Settings to avoid this for large files.";
-    shell2.appendChild(pre);
-    block.appendChild(shell2);
-    streamAppend(block);
-    scrollReplBottom();
-  }
   global36.ReplOutput = {
     appendOutput,
     appendReplHelp,
@@ -24121,7 +24139,6 @@ ${blocks.join("\n\n")}`;
     dismissRunSkeleton,
     settleInterruptedPendingRuns,
     appendBelugaResponse,
-    appendBuildFallbackNotice,
     appendRichMsg,
     appendProjectOpened,
     appendProjectEmpty,

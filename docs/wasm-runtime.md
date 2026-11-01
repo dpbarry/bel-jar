@@ -5,11 +5,12 @@ An experiment first: the app loads nothing of it yet. This page is the record: h
 made, what was measured and how, the numbers, and what follows from them. How to build is
 [`_rebuild/RECIPE.md`](../_rebuild/RECIPE.md) ("Wasm builds").
 
-Status: **measured 16 Oct 2026; shipped 17 Oct** (Dean's three decisions, §7):
+Status: **measured 16 Oct 2026; built 17 Oct; deployed 18 Oct** (runtime build `20261018002008`,
+`probe:live` all 50 checks passing). Dean's three decisions, §7:
 
 - **Wasm CPS is the default runtime** wherever the browser runs Wasm (WasmGC, tail calls and
   exception handling, validated, never guessed); everywhere else, the JS build. Settings > Beluga >
-  Build version chooses among Stable, Wasm and Wasm CPS. Every Beluga slot (checker, intel, prover
+  Build version chooses among Wasm CPS, Wasm direct and JS CPS (named so on 18 Oct; this page uses their ids, `wasm-cps`, `wasm` and `stable`). Every Beluga slot (checker, intel, prover
   and its pool, Harpoon, case completion) runs the chosen build.
 - **The JS build is compiled in dune's release profile**: 2.6 MB instead of 25.4 MB, 1.9× faster
   in Chrome, the same answers.
@@ -266,7 +267,8 @@ that (3.94 MB), so that column estimates each build on the wire.
 | `wasm-cps` | 2.52 MB | 618 KB | 630 KB | 464 KB |
 
 **The transfer gain is the release profile's, not Wasm's**: `stable-release` is half the bytes of
-`wasm-cps`. Whether Cloudflare compresses `application/wasm` at all is not yet known (§7).
+`wasm-cps`. Cloudflare does compress `application/wasm` (brotli, seen by `probe:live` on the
+deployed site, 18 Oct), so the brotli columns are what the wire carries.
 
 **A pool of workers in Chrome**, booted together, each then checking one medium unit; memory from
 `performance.measureUserAgentSpecificMemory()` (the page is cross-origin isolated).
@@ -356,8 +358,8 @@ too (the overflow answer, the loader, the one owner of the URL, `sw.js` and R2 w
 5. **Caching and deploy.** The `.wasm` is named by its hash, so only the loader needs the stamp.
    `sw.js` caches the loader and `.wasm` paths too. R2 gets the loader and the `.assets/` folder,
    the `.wasm` uploaded with `--content-type application/wasm` (`instantiateStreaming` refuses
-   anything else); whether Cloudflare compresses `application/wasm` on the way out has to be seen
-   on the live response (`probe:live` checks it). Order unchanged: R2, then deploy, then
+   anything else); Cloudflare compresses it on the way out (brotli; `probe:live` checks it, and
+   saw it on 18 Oct). Order unchanged: R2, then deploy, then
    `probe:live`. `scripts/dev-server.mjs`, `server/worker.mjs` (dev proxy) and
    `tests/test-dev-runtime.mjs` learn the new paths and the MIME type.
 6. **Compile once.** Handing the page-compiled `WebAssembly.Module` to each worker halves the time

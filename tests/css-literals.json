@@ -140,7 +140,7 @@
  "css/header.css": {
   "colour": 3,
   "radius": 0,
-  "spacing": 6,
+  "spacing": 5,
   "uppercase": 0
  },
  "css/home.css": {

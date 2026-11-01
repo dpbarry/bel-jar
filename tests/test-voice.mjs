@@ -36,7 +36,7 @@ const SURFACES = walk(join(root, 'js'), (f) => f.endsWith('.mjs')
 const PROPER = new Set(('BelJar Beluga Harpoon Orca Calf GitHub Google Chrome Safari Firefox Edge Windows Linux Mac '
   + 'macOS iOS Vim Emacs JetBrains Mono Inter Cloudflare REPL LF I OK Ctrl Alt Shift Cmd Meta Enter Esc Escape '
   + 'Tab Space Backspace Delete Home End PageUp PageDown Up Down Left Right Leader Live Server JSON URL CSS HTML API '
-  + 'ID Markdown Unicode ASCII Twelf Normal Insert Visual').split(' '));
+  + 'ID Markdown Unicode ASCII Twelf Normal Insert Visual WebAssembly JavaScript').split(' '));
 /** A key or a chord: Ctrl+S, M-y, C-x. */
 const CHORD = /^(?:Ctrl|Alt|Shift|Cmd|Meta|Option|[CMS])[+-]/;
 const SMALL = new Set('a an and as at but by for from in into nor of on onto or per the to vs via with'.split(' '));

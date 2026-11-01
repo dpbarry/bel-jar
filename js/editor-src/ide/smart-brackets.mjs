@@ -92,6 +92,15 @@ export function bracketTypeEdit(state, insert, padBoxes) {
         range: EditorSelection.cursor(range.head + insert.length),
       };
     }
+    // A padded box's closer is a space away (`[ x‸ ]`): typing it steps over both,
+    // or `]` typed by hand left the box's own ` ]` stranded after it.
+    if (isClose && padBoxes && insert === ']' && next === ' ' && charAt(state.doc, range.head + 1) === ']') {
+      special = true;
+      return {
+        changes: { from: range.head, to: range.head + 2, insert: ' ]' },
+        range: EditorSelection.cursor(range.head + 2),
+      };
+    }
     if (isOpen) {
       const close = CLOSE_OF[insert];
       const mate = closerAheadAt(state.doc, range.head, close);

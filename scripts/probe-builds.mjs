@@ -22,7 +22,8 @@ const CLEAN = readFileSync('library/data/examples/arith/arith.bel', 'utf8');
 const BROKEN = CLEAN + '\nrec broken : [ |- nat] = [ |- nonsense];\n';
 const DEEP = DEPTH_FAMILIES.term(1000);
 const FILES = { stable: 'beluga_web.bc.js', wasm: 'beluga_web_wasm.bc.wasm.js', 'wasm-cps': 'beluga_web_wasm_cps.bc.wasm.js' };
-const LABELS = { stable: 'Stable', wasm: 'Wasm', 'wasm-cps': 'Wasm CPS' };
+// The names the row shows (ids are what the device stores: `stable` is JS CPS).
+const LABELS = { 'wasm-cps': 'Wasm CPS', wasm: 'Wasm direct', stable: 'JS CPS' };
 
 // The row, as the page draws it: its trigger, and the options its panel lists.
 async function openRow() {
@@ -85,7 +86,30 @@ try {
     `the Run bar expects 300 lines on Wasm CPS in ${Math.round(estimate.now)} ms, on Stable in ${Math.round(estimate.stable)} ms`);
 
   const offered = await chooseInRow(null);
-  check(offered.join('|') === 'Stable|Wasm|Wasm CPS', `the row offers every build (${offered.join(', ')})`);
+  check(offered.join('|') === 'Wasm CPS|Wasm direct|JS CPS', `the row offers every build, the default first (${offered.join(', ')})`);
+
+  // The row's info button says what each build is, CPS included.
+  await page.evaluate(() => window.SettingsUI.open('beluga'));
+  await wait(400);
+  const info = await page.evaluateHandle(() => {
+    const row = [...document.querySelectorAll('.jar-dialog__setting')]
+      .find((r) => r.querySelector('.jar-dialog__setting-label')?.textContent === 'Build version');
+    return row ? row.querySelector('.jar-setting-info') : null;
+  });
+  check(!!info.asElement(), 'the row has an info button');
+  if (info.asElement()) {
+    await info.asElement().hover();
+    await wait(400);
+    const help = await page.evaluate(() => {
+      const pop = [...document.querySelectorAll('.jar-setting-info-popover')].find((p) => !p.hidden);
+      return pop ? pop.textContent : '';
+    });
+    check(/continuation-passing style \(CPS\)/.test(help) && /Wasm CPS/.test(help) && /Wasm direct/.test(help) && /JS CPS/.test(help) && !/Stable/.test(help),
+      `and its popover explains every build offered, CPS by name (${help.length} chars)`);
+    await P.shot('build-version-help');
+  }
+  await page.keyboard.press('Escape');
+  await wait(300);
   const stableAnswer = {};
 
   for (const build of ['stable', 'wasm', 'wasm-cps']) {

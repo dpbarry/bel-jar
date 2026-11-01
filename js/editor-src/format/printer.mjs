@@ -184,13 +184,21 @@ export function makePrinter(src, opts = {}) {
     return concat(...parts);
   }
 
+  // A substitution index on the name before it (`K'[]`, `M[]`), not a box: an LF
+  // `Substitution`, or brackets written flush against a name.
+  function isIndex(open) {
+    if (open.parent && open.parent.name === 'Substitution') return true;
+    return open.from > 0 && /[\w'#$]/.test(src[open.from - 1]);
+  }
+
   function seq(ns) {
     const open = ns[0];
     const shut = ns[ns.length - 1];
-    // Empty `[]`. Padding on writes `[  ]`; padding off keeps the author's gap.
+    // Empty `[]`. Padding on writes `[  ]`; padding off keeps the author's gap. An
+    // index is never padded, empty or not (`M[ρ]` stays tight; so does `K'[]`).
     if (ns.length === 2 && open?.name === '[' && shut?.name === ']') {
       const gap = src.slice(open.to, shut.from);
-      if (padBoxes) return concat(print(open), space, space, print(shut));
+      if (padBoxes && !isIndex(open)) return concat(print(open), space, space, print(shut));
       if (/^[ \t]*$/.test(gap)) return concat(print(open), text(gap), print(shut));
     }
     if (ns.length > 2 && isLeaf(open) && CLOSER[open.name] && shut.name === CLOSER[open.name]) {

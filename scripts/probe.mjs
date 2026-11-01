@@ -43,7 +43,8 @@ try {
   }));
   console.log('  registry:', JSON.stringify(reg));
   // 179: Version History (not bindable) and the three case commands (bindable), 2026-10-05.
-  check(reg.total === 179, `registry holds 179 commands (got ${reg.total})`);
+  // 180: Pad square brackets (set.pad-brackets, bindable, in the palette), 2026-10-16.
+  check(reg.total === 180, `registry holds 180 commands (got ${reg.total})`);
   check(reg.unwired.length === 0, 'every palette command has behaviour attached', reg.unwired.join(', '));
   check(reg.chordedUnwired.length === 0,
     'every command that ships a chord has behaviour behind it', reg.chordedUnwired.join(', '));
@@ -72,8 +73,8 @@ try {
   // typed on the line, and the account's commands have no server to work with
   // here. Go Home and Report an Issue (2026-10-02) work everywhere: 106. Cycle
   // start page is the one new preference a static server offers (the six sync
-  // preferences exist only where a server answers): 107.
-  check(pal.rows === 107, `palette shows 107 commands with the rest gated (got ${pal.rows})`);
+  // preferences exist only where a server answers): 107. Pad square brackets: 108.
+  check(pal.rows === 108, `palette shows 108 commands with the rest gated (got ${pal.rows})`);
   check(
     pal.sections.join(',') === 'File,Edit,Navigate,Prover,Run,View,Settings,Tools',
     'the Prover header survives on its two ungated reports',
@@ -128,7 +129,7 @@ try {
     unbound: [...document.querySelectorAll('.jar-kb__chord.is-empty')].length,
   }));
   console.log('  sheet:', JSON.stringify(sheet));
-  check(sheet.rows === 168, `sheet renders every bindable command (got ${sheet.rows})`);
+  check(sheet.rows === 169, `sheet renders every bindable command (got ${sheet.rows})`);
   check(
     sheet.sections.join(',') === 'File,Edit,Motion,Navigate,Prover,Run,View,Settings,Account,Tools',
     'sheet section headers appear once each, in SECTION_ORDER',
@@ -157,8 +158,8 @@ try {
     'and nothing inside it scrolls separately', scrollports.innerScrollports.join(' | '));
   check(scrollports.filterSticky === 'sticky',
     'the command filter sticks as you scroll past it', scrollports.filterSticky);
-  check(/168 commands · 20 bound/.test(sheet.count), 'filter count reads right', sheet.count);
-  check(sheet.unbound === 148, `unbound rows render as empty chords (got ${sheet.unbound})`);
+  check(/169 commands · 20 bound/.test(sheet.count), 'filter count reads right', sheet.count);
+  check(sheet.unbound === 149, `unbound rows render as empty chords (got ${sheet.unbound})`);
   await page.screenshot({ path: path.join(outDir, 'keybindings-sheet.png') });
 
   // ── filtering ───────────────────────────────────────────────────────────────

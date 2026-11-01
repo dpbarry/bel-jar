@@ -1889,15 +1889,41 @@ const global = globalThis;
     // `BUILDS`: a Wasm build needs WasmGC, tail calls and exception handling), named here;
     // tests/test-beluga-builds.mjs holds the two lists together. A stored build that does
     // not work here shows as the one that runs.
+    // The labels are the builds' names; the values, stored on the device, are their ids
+    // (`stable` was "Stable" while "Fast" existed; it is the JS CPS build).
     var BUILD_OPTIONS = [
-      { value: 'stable', label: 'Stable' },
-      { value: 'wasm', label: 'Wasm' },
       { value: 'wasm-cps', label: 'Wasm CPS' },
+      { value: 'wasm', label: 'Wasm direct' },
+      { value: 'stable', label: 'JS CPS' },
     ];
     var client = global.BelugaClient;
     var builds = client && client.availableBuilds ? client.availableBuilds() : ['stable'];
+    // What each build is, for the builds this row offers (docs/wasm-runtime.md has the
+    // measurements). CPS is the word that needs saying: it is why Wasm CPS goes deeper.
+    var BUILD_HELP_BY_BUILD = {
+      'wasm-cps': { head: 'Wasm CPS',
+        body: 'Beluga compiled to WebAssembly in continuation-passing style (CPS). What a call '
+          + 'still has to do waits in memory, not on the stack, so a deeply nested term or a very '
+          + 'long proof still checks. As fast as Wasm in Chrome. The default.' },
+      wasm: { head: 'Wasm direct',
+        body: 'Beluga compiled to WebAssembly in direct style, calling straight through. The fastest '
+          + 'in Firefox, but its stack is short: a deeply nested term or a very long proof can stop '
+          + 'with a stack overflow that Wasm CPS would check.' },
+      stable: { head: 'JS CPS',
+        body: 'Beluga compiled to JavaScript in continuation-passing style, like Wasm CPS. It runs in '
+          + 'any browser, several times slower. Where the browser cannot run WebAssembly, BelJar '
+          + 'uses it whatever is chosen.' },
+    };
+    var BUILD_HELP = {
+      aria: 'Build version details',
+      paragraphs: function () {
+        return BUILD_OPTIONS
+          .filter(function (o) { return builds.indexOf(o.value) >= 0; })
+          .map(function (o) { return BUILD_HELP_BY_BUILD[o.value]; });
+      },
+    };
     addDropdownRow(panelBodies.beluga, 'beluga-mode', 'Build version',
-      'Which build of Beluga checks and runs your files. Where the browser can run them, the Wasm builds are several times faster than Stable, and Wasm CPS handles the deepest proofs.',
+      'Which build of Beluga checks and runs your files.',
       BUILD_OPTIONS.filter(function (o) { return builds.indexOf(o.value) >= 0; }),
       function () {
         var mode = BelugaRun.getBelugaMode();
@@ -1905,7 +1931,8 @@ const global = globalThis;
       },
       function (_p, m) {
         BelugaRun.setBelugaMode(m);
-      }
+      },
+      BUILD_HELP
     );
     addSwitchRow(panelBodies.beluga, 'beluga-cancel-on-edit', 'Cancel load on edit',
       'Abort a pending run or load when the buffer changes.',

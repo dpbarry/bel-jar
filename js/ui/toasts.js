@@ -98,7 +98,7 @@
     // the default, or Stable where Wasm cannot run (tests/test-beluga-builds.mjs). A
     // stored "fast" (retired 2026-10-16) is no longer a value, so it reads as the default.
     // belugaFallbackStable ("Retry with Stable if Fast fails") went with it.
-    { id: "belugaMode", section: "beluga", default: "wasm-cps", values: ["stable", "wasm", "wasm-cps"], sync: false },
+    { id: "belugaMode", section: "beluga", default: "wasm-cps", values: ["wasm-cps", "wasm", "stable"], sync: false },
     { id: "belugaCancelOnEdit", section: "beluga", default: ON },
     { id: "checkAggressiveness", section: "beluga", default: "balanced", values: ["responsive", "balanced", "thorough"] },
     { id: "suiteCheck", section: "beluga", default: "suite", values: ["suite", "active"] },

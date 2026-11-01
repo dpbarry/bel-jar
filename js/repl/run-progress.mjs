@@ -14,9 +14,9 @@ var FADE_OUT_MS = 175;
   // JS build and floored at 1.5 ms a line, so a Wasm run (~0.2) always looked 6-9x
   // longer than it was.
   var BUILD_DEFAULTS = {
-    stable: { baseMs: 120, msPerLine: 1.2 },
-    wasm: { baseMs: 60, msPerLine: 0.4 },
     'wasm-cps': { baseMs: 60, msPerLine: 0.3 },
+    wasm: { baseMs: 60, msPerLine: 0.4 },
+    stable: { baseMs: 120, msPerLine: 1.2 },
   };
   var MIN_MS_PER_LINE = 0.05;
   var MIN_BASE_MS = 20;

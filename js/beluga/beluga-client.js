@@ -9,19 +9,23 @@
   // version offers what availableBuilds() returns, the setting's values and default
   // (settings-schema.mjs) are these keys and DEFAULT_BUILD, and every runtime URL is
   // built from `file` (tests/test-beluga-builds.mjs holds them all to it).
-  //   stable    js_of_ocaml, CPS: the fallback, for a browser that cannot run Wasm
-  //   wasm      wasm_of_ocaml, direct style
-  //   wasm-cps  wasm_of_ocaml, CPS: the default, deeper than stable on every input
-  //             measured and as fast as wasm in Chrome (docs/wasm-runtime.md)
+  //   wasm-cps  "Wasm CPS": wasm_of_ocaml, CPS. The default, deeper than stable on
+  //             every input measured and as fast as wasm in Chrome (docs/wasm-runtime.md)
+  //   wasm      "Wasm direct": wasm_of_ocaml, direct style
+  //   stable    "JS CPS": js_of_ocaml, CPS. The fallback, for a browser that cannot
+  //             run Wasm (the id is from when it was the safe choice beside "Fast")
+  // The ids are stored on every device (the setting, the Run bar's models): the
+  // names people see are settings-ui.mjs's, and only those were ever renamed.
+  // The table's order is the order the row offers them in.
   // Every build runs in workers. "Fast" (the double-translation build, Run and Load on
   // the main thread) was retired on 2026-10-16: a Wasm build in a worker is ~4× faster
   // and never freezes the page.
   // A Wasm build is a loader plus a folder of .wasm beside it; the loader finds
   // the folder from its own URL (beluga-runtime-load.js), so only `file` is named.
   var BUILDS = {
-    stable: { file: 'beluga_web.bc.js', kind: 'js' },
-    wasm: { file: 'beluga_web_wasm.bc.wasm.js', kind: 'wasm' },
     'wasm-cps': { file: 'beluga_web_wasm_cps.bc.wasm.js', kind: 'wasm' },
+    wasm: { file: 'beluga_web_wasm.bc.wasm.js', kind: 'wasm' },
+    stable: { file: 'beluga_web.bc.js', kind: 'js' },
   };
   var DEFAULT_BUILD = 'wasm-cps';
   var FALLBACK_BUILD = 'stable';

@@ -54,4 +54,16 @@ assert.equal(
   'a substitution index is not a padded box',
 );
 
+assert.equal(
+  fmt('rec f : nat = M[];\n', true),
+  'rec f : nat =\n  M[]\n;\n',
+  'nor is an empty one: padding is for an empty pattern, not an index',
+);
+
+assert.equal(
+  fmt('rec f : [g ⊢ tm K[]] → [⊢ nat] = fn x => x;\n', true),
+  'rec f : [ g ⊢ tm K[] ] → [ ⊢ nat ] =\n  fn x => x\n;\n',
+  'an empty LF substitution inside a padded box stays tight',
+);
+
 console.log('OK format pad brackets');

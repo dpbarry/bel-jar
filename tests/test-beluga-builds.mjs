@@ -38,7 +38,7 @@ const schemaValues = schema ? [...schema[2].matchAll(/'([\w-]+)'/g)].map((m) => 
 const ui = read('js/ui/settings-ui.mjs');
 const options = ui.slice(ui.indexOf('var BUILD_OPTIONS = ['), ui.indexOf('];', ui.indexOf('var BUILD_OPTIONS = [')));
 const optionValues = [...options.matchAll(/value: '([\w-]+)'/g)].map((m) => m[1]);
-expect(tableKeys.join() === 'stable,wasm,wasm-cps', `the client's table lists the three builds (${tableKeys})`);
+expect(tableKeys.join() === 'wasm-cps,wasm,stable', `the client's table lists the three builds, the default first (${tableKeys})`);
 expect(clientDefault === 'wasm-cps' && schema && schema[1] === clientDefault, `the default is Wasm CPS, in the client and the setting (${clientDefault}, ${schema && schema[1]})`);
 expect(schemaValues.join() === tableKeys.join(), `the setting's values are the table's builds (${schemaValues})`);
 expect(optionValues.join() === tableKeys.join(), `and so are the dropdown's options (${optionValues})`);
@@ -61,7 +61,7 @@ function loadClient({ base, validate } = {}) {
   return ctx.BelugaClient;
 }
 const local = loadClient();
-expect(local.availableBuilds().join() === 'stable,wasm,wasm-cps', `here (Node ${process.versions.node}) every build works (${local.availableBuilds()})`);
+expect(local.availableBuilds().join() === 'wasm-cps,wasm,stable', `here (Node ${process.versions.node}) every build works (${local.availableBuilds()})`);
 expect(local.getBuild() === 'wasm-cps', `and before anything is chosen, every slot runs the default (${local.getBuild()})`);
 const stamp = /var RUNTIME_VERSION = '(\d{14})'/.exec(clientSrc)[1];
 const files = { stable: 'beluga_web.bc.js', wasm: 'beluga_web_wasm.bc.wasm.js', 'wasm-cps': 'beluga_web_wasm_cps.bc.wasm.js' };
@@ -77,7 +77,7 @@ for (const old of ['fast', 'nonsense']) {
 }
 
 const deployed = loadClient({ base: 'https://beljar-cdn.deanbarry.com/' });
-expect(deployed.availableBuilds().join() === 'stable,wasm,wasm-cps', `a deployed host offers every build: R2 carries them (${deployed.availableBuilds()})`);
+expect(deployed.availableBuilds().join() === 'wasm-cps,wasm,stable', `a deployed host offers every build: R2 carries them (${deployed.availableBuilds()})`);
 expect(deployed.runtimeScriptUrl('wasm-cps') === `https://beljar-cdn.deanbarry.com/beluga_web_wasm_cps.bc.wasm.js?v=${stamp}`, 'and loads them from R2');
 
 const probes = [...clientSrc.matchAll(/^\s*\[(0, 97, 115, 109[^\]]*)\]/gm)].map((m) => m[1].replace(/\s/g, ''));

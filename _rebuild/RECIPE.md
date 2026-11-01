@@ -397,7 +397,7 @@ The build scripts (`rebuild.ps1` / `rebuild.sh`) run `dune build --profile relea
 
 ## Wasm builds
 
-BelJar's default runtime since 2026-10-16 is `beluga_web_wasm_cps`, where the browser can run Wasm; the JS build is the fallback, and Settings > Beluga > Build version chooses (Stable, Wasm, Wasm CPS). Measured in [`docs/wasm-runtime.md`](../docs/wasm-runtime.md).
+BelJar's default runtime since 2026-10-16 is `beluga_web_wasm_cps`, where the browser can run Wasm; the JS build is the fallback, and Settings > Beluga > Build version chooses (Wasm CPS, Wasm direct, JS CPS; their ids, stored on each device, are `wasm-cps`, `wasm` and `stable`). Measured in [`docs/wasm-runtime.md`](../docs/wasm-runtime.md).
 
 **Toolchain** (all four needed; versions as built 2026-10-16):
 

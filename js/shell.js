@@ -5,9 +5,9 @@
   var SMOOTH_K = 8;
   var CREEP_BUDGET_SCALE = 0.5;
   var BUILD_DEFAULTS = {
-    stable: { baseMs: 120, msPerLine: 1.2 },
+    "wasm-cps": { baseMs: 60, msPerLine: 0.3 },
     wasm: { baseMs: 60, msPerLine: 0.4 },
-    "wasm-cps": { baseMs: 60, msPerLine: 0.3 }
+    stable: { baseMs: 120, msPerLine: 1.2 }
   };
   var MIN_MS_PER_LINE = 0.05;
   var MIN_BASE_MS = 20;
@@ -1006,7 +1006,7 @@
     // the default, or Stable where Wasm cannot run (tests/test-beluga-builds.mjs). A
     // stored "fast" (retired 2026-10-16) is no longer a value, so it reads as the default.
     // belugaFallbackStable ("Retry with Stable if Fast fails") went with it.
-    { id: "belugaMode", section: "beluga", default: "wasm-cps", values: ["stable", "wasm", "wasm-cps"], sync: false },
+    { id: "belugaMode", section: "beluga", default: "wasm-cps", values: ["wasm-cps", "wasm", "stable"], sync: false },
     { id: "belugaCancelOnEdit", section: "beluga", default: ON },
     { id: "checkAggressiveness", section: "beluga", default: "balanced", values: ["responsive", "balanced", "thorough"] },
     { id: "suiteCheck", section: "beluga", default: "suite", values: ["suite", "active"] },
@@ -27753,17 +27753,41 @@ ${blocks.join("\n\n")}`;
     });
     keybindingsApi = mountKeybindingsSheet(kbUnit.body);
     var BUILD_OPTIONS = [
-      { value: "stable", label: "Stable" },
-      { value: "wasm", label: "Wasm" },
-      { value: "wasm-cps", label: "Wasm CPS" }
+      { value: "wasm-cps", label: "Wasm CPS" },
+      { value: "wasm", label: "Wasm direct" },
+      { value: "stable", label: "JS CPS" }
     ];
     var client = global43.BelugaClient;
     var builds = client && client.availableBuilds ? client.availableBuilds() : ["stable"];
+    var BUILD_HELP_BY_BUILD = {
+      "wasm-cps": {
+        head: "Wasm CPS",
+        body: "Beluga compiled to WebAssembly in continuation-passing style (CPS). What a call still has to do waits in memory, not on the stack, so a deeply nested term or a very long proof still checks. As fast as Wasm in Chrome. The default."
+      },
+      wasm: {
+        head: "Wasm direct",
+        body: "Beluga compiled to WebAssembly in direct style, calling straight through. The fastest in Firefox, but its stack is short: a deeply nested term or a very long proof can stop with a stack overflow that Wasm CPS would check."
+      },
+      stable: {
+        head: "JS CPS",
+        body: "Beluga compiled to JavaScript in continuation-passing style, like Wasm CPS. It runs in any browser, several times slower. Where the browser cannot run WebAssembly, BelJar uses it whatever is chosen."
+      }
+    };
+    var BUILD_HELP = {
+      aria: "Build version details",
+      paragraphs: function() {
+        return BUILD_OPTIONS.filter(function(o) {
+          return builds.indexOf(o.value) >= 0;
+        }).map(function(o) {
+          return BUILD_HELP_BY_BUILD[o.value];
+        });
+      }
+    };
     addDropdownRow(
       panelBodies.beluga,
       "beluga-mode",
       "Build version",
-      "Which build of Beluga checks and runs your files. Where the browser can run them, the Wasm builds are several times faster than Stable, and Wasm CPS handles the deepest proofs.",
+      "Which build of Beluga checks and runs your files.",
       BUILD_OPTIONS.filter(function(o) {
         return builds.indexOf(o.value) >= 0;
       }),
@@ -27773,7 +27797,8 @@ ${blocks.join("\n\n")}`;
       },
       function(_p, m) {
         BelugaRun.setBelugaMode(m);
-      }
+      },
+      BUILD_HELP
     );
     addSwitchRow(
       panelBodies.beluga,

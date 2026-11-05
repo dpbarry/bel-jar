@@ -1,9 +1,19 @@
 /* -- Tooltips -- */
 
+/* The root is a manual popover (js/ui/tooltips.mjs), so it is drawn in the top
+   layer above an open dialog. Its own box is only a position: the browser's
+   popover box (centred, bordered, padded, scrolling) is undone here. */
 .tooltip-root {
   position: fixed;
-  left: 0;
-  top: 0;
+  inset: 0 auto auto 0;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  overflow: visible;
   z-index: 100000;
   pointer-events: none;
   visibility: hidden;
@@ -22,7 +32,7 @@
 
 .tooltip-root .tooltip-inner {
   --tooltip-bg: light-dark(var(--base-lowest), var(--base-lower));
-  --tooltip-border: light-dark(var(--muted-mid), var(--base-high));
+  --tooltip-border: var(--float-border);
   --tooltip-spout-size: 6px;
   position: relative;
   overflow: visible;
@@ -376,10 +386,11 @@
   margin-top: 0.15rem;
 }
 
-/* In-dialog help popover — modal top layer blocks #tooltip-root; same chrome as .tooltip-inner */
+/* Settings' help popover: inside the dialog, and it takes the pointer, which
+   #tooltip-root never does; the same chrome as .tooltip-inner */
 .jar-setting-info-popover {
   --tooltip-bg: light-dark(var(--base-lowest), var(--base-lower));
-  --tooltip-border: light-dark(var(--muted-mid), var(--base-high));
+  --tooltip-border: var(--float-border);
   --tooltip-spout-size: 6px;
   position: fixed;
   z-index: 20;

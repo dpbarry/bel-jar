@@ -108,6 +108,10 @@ import { wireMenuTrigger } from '../ui/menu-trigger.mjs';
         ...(window.VersionHistory && window.VersionHistory.available()
           ? [{ label: 'Version history', onSelect: () => window.VersionHistory.open() }]
           : []),
+        // Wherever there is a server to keep links; signed out, the window says sign in.
+        ...(window.ShareWindow && window.ShareWindow.available()
+          ? [{ label: 'Share…', onSelect: () => window.ShareWindow.open() }]
+          : []),
         {
           label: 'Download "' + (currentFile ? currentFile.name : 'file') + '"',
           onSelect: downloadCurrentFile,

@@ -339,9 +339,10 @@
   color: var(--ide-status-error);
 }
 
-/* Version history (js/ui/version-history.mjs): the versions down the left, the
-   chosen one beside the project as it is now. A row is a list row: two washes,
-   no mark (beljar-css). */
+/* Version history (js/ui/version-history.mjs): the versions down the left,
+   under their days, the chosen one beside the project as it is now. A row is a
+   list row: two washes, no mark (beljar-css). It says its time, and nothing
+   more unless it is the current one or a deletion. */
 .history {
   display: grid;
   grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
@@ -351,10 +352,14 @@
   color: var(--ui-fg);
 }
 
-.history__list {
+.history__list,
+.history__day {
   display: flex;
   flex-direction: column;
   gap: 1px;
+}
+
+.history__list {
   min-height: 0;
   overflow-y: auto;
   padding: 0.5rem;
@@ -362,12 +367,31 @@
 }
 
 .history__row,
+.history__older,
+.history__day-name {
+  padding: 0.4rem 0.55rem;
+}
+
+/* A day's heading: the strongest text in the list, the times under it lighter,
+   and room above it, so a day reads as a group at a glance. */
+.history__day + .history__day,
+.history__day + .history__older {
+  margin-top: 0.5rem;
+}
+
+.history__day-name {
+  padding-bottom: 0;
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--ui-fg);
+  user-select: none;
+}
+
+.history__row,
 .history__older {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.1rem;
-  padding: 0.4rem 0.55rem;
+  align-items: baseline;
+  justify-content: space-between;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
@@ -378,11 +402,11 @@
 }
 
 .history__when {
-  font-weight: 500;
+  color: var(--ui-fg-muted);
   font-variant-numeric: tabular-nums;
 }
 
-.history__what {
+.history__tag {
   color: var(--ui-fg-muted);
   font-size: 0.72rem;
 }
@@ -392,14 +416,18 @@
   color: var(--search-row-active-fg);
 }
 
-.history__row[aria-selected="true"] .history__what {
+.history__row[aria-selected="true"] .history__when {
+  color: inherit;
+}
+
+.history__row[aria-selected="true"] .history__tag {
   color: inherit;
   opacity: 0.8;
 }
 
 .history__older {
   color: var(--ui-fg-muted);
-  align-items: center;
+  justify-content: center;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -424,25 +452,25 @@
   padding: 0.75rem 0.85rem 0.9rem;
 }
 
+/* The version's time, a size up from the window's text, centred on its buttons. */
 .history__head {
   display: flex;
   align-items: center;
   gap: 0.75rem;
 }
 
-.history__title {
-  display: flex;
-  flex-direction: column;
+.history__stamp {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.history__stamp {
-  font-size: 0.82rem;
+  font-size: 1.02rem;
   font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.history__sub,
 .history__note {
   margin: 0;
   color: var(--ui-fg-muted);
@@ -453,7 +481,13 @@
   flex: 0 0 auto;
 }
 
+/* One column as wide as the longest line, so a line's wash runs the whole
+   width when the diff scrolls sideways. Never shrunk by the column it sits in:
+   squeezed, each diff became a scroll box of its own inside the window's. */
 .review-diff {
+  display: grid;
+  grid-template-columns: minmax(max-content, auto);
+  flex: 0 0 auto;
   font-family: var(--mono);
   font-size: 0.72rem;
   line-height: 1.5;
@@ -463,10 +497,15 @@
   overflow-x: auto;
 }
 
-.review-diff__line {
+/* A line and a run of lines left out are rows of one shape: a mark, then text. */
+.review-diff__line,
+.review-diff__gap {
   display: flex;
   gap: 0.5rem;
   padding: 0 0.6rem;
+}
+
+.review-diff__line {
   white-space: pre;
 }
 
@@ -496,10 +535,423 @@
   color: var(--diff-mine-fg);
 }
 
-.review-diff__gap,
+/* Lines left out are a row like the others: ⋯ where a line's mark goes, the
+   count where its text goes, on a faint band. Both stay in view when the rows
+   scroll sideways (sticky at their own offsets). */
+.review-diff__gap {
+  align-items: baseline;
+  height: 1.5em;
+  background: var(--diff-gap-bg);
+  color: var(--ui-fg-muted);
+  user-select: none;
+}
+
+.review-diff__gap .review-diff__mark {
+  position: sticky;
+  left: 0.6rem;
+}
+
+.review-diff__count {
+  position: sticky;
+  left: 1.7rem;
+  font-family: var(--sans);
+  font-size: 0.66rem;
+}
+
 .review-diff__none {
   padding: 0.1rem 0.6rem 0.1rem 1.7rem;
   font-family: var(--sans);
   font-size: 0.68rem;
   color: var(--ui-fg-muted);
+}
+
+/* Share… (js/ui/share-window.mjs, docs/PERSIST.md §5.12). At the top, who can
+   read the project: a mark, the state, what it means, and Revoke at its end.
+   Under it the slot: Copy link, or the link itself, at one height, so the one
+   becomes the other. Under a hairline, the links to single versions as rows.
+   The link control sits under a version in Version history too. */
+/* Wide enough for a deployed address whole. Named with the prompt's own wrap,
+   or dialogs-aliases.css, loaded after this, keeps every prompt at 24rem. */
+.share-window-wrap.jar-prompt-dialog-wrap .jar-dialog__card.share-window__card {
+  width: min(30rem, calc(100vw - 2rem));
+}
+
+.share-window {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-inline);
+}
+
+.share-glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--share-glyph);
+  height: var(--share-glyph);
+}
+
+.share-glyph svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Who can read it: the mark beside the title and its words, Revoke on the
+   title's line so the words keep the width. */
+.share-access {
+  display: grid;
+  grid-template-columns: var(--share-tile) minmax(0, 1fr) auto;
+  grid-template-areas:
+    "mark title action"
+    "mark words words";
+  align-items: center;
+  column-gap: var(--pad-inline);
+  row-gap: var(--share-gap-2xs);
+}
+
+.share-access__mark {
+  grid-area: mark;
+  width: var(--share-tile);
+  height: var(--share-tile);
+  border-radius: var(--radius-pill);
+  background: var(--share-mark-bg);
+  color: var(--share-mark-fg);
+}
+
+.share-access__mark svg {
+  width: var(--share-glyph);
+  height: var(--share-glyph);
+}
+
+.share-access[data-state="link"] .share-access__mark {
+  background: var(--share-mark-on-bg);
+  color: var(--share-mark-on-fg);
+}
+
+.share-access[data-state="trouble"] .share-access__mark {
+  background: var(--share-mark-bad-bg);
+  color: var(--ide-status-error);
+}
+
+.share-access__title {
+  grid-area: title;
+  align-self: end;
+  min-width: 0;
+  margin: 0;
+  color: var(--base-highest);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.share-access[data-state="looking"] .share-access__title {
+  color: var(--muted-high);
+  font-weight: 500;
+}
+
+.share-access__words {
+  grid-area: words;
+  align-self: start;
+  margin: 0;
+  color: var(--muted-high);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+/* Taller than the title's line, it takes no more room than the line: the
+   words stay under the title. */
+.share-window .share-access__revoke {
+  grid-area: action;
+  width: auto;
+  margin-block: calc(-1 * var(--share-gap-xs));
+  padding-inline: var(--share-gap-sm);
+}
+
+/* The slot: one control, one height. */
+.share-window .share-slot {
+  height: var(--share-control);
+  font-size: 0.8125rem;
+}
+
+.jar-prompt-dialog__btn.has-glyph {
+  gap: var(--share-gap-sm);
+}
+
+.jar-prompt-dialog__btn.has-glyph .share-glyph {
+  width: var(--share-glyph-sm);
+  height: var(--share-glyph-sm);
+}
+
+/* The link: its address, a way to open it, and Copy, joined. */
+.share-link {
+  display: flex;
+  align-items: stretch;
+  box-sizing: border-box;
+  height: var(--share-control);
+  min-width: 0;
+  border: 1px solid var(--muted-lower);
+  border-radius: var(--radius-md);
+  background: var(--base-lowest);
+  overflow: hidden;
+}
+
+.share-link:has(.share-link__address:focus-visible) {
+  box-shadow: var(--focus-ring);
+}
+
+.share-link__address {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+  padding-inline: var(--share-field-pad);
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  cursor: text;
+  outline: none;
+}
+
+/* Short of room, the id gives way, as an address field's end does: where the
+   link goes stays readable. */
+.share-link__host {
+  flex: 0 0 auto;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted-high);
+}
+
+.share-link__id {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--base-highest);
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
+.share-link__open,
+.share-link__copy {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  border: 0;
+  border-left: 1px solid var(--muted-lower);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.share-link__open {
+  width: var(--share-control);
+  background: transparent;
+  color: var(--muted-high);
+}
+
+.share-link__copy {
+  gap: var(--share-gap-xs);
+  min-width: var(--share-copy-w);
+  padding-inline: var(--share-field-pad);
+  background: var(--share-copy-bg);
+  color: var(--share-copy-fg);
+  font-size: 0.75rem;
+  font-weight: 560;
+}
+
+.share-link__open .share-glyph,
+.share-link__copy .share-glyph {
+  width: var(--share-glyph-sm);
+  height: var(--share-glyph-sm);
+}
+
+.share-link__copy.is-copied {
+  color: var(--share-done-fg);
+}
+
+.share-link__open:focus-visible,
+.share-link__copy:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: -2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .share-link__open:hover {
+    background: var(--menu-item-hover-wash);
+    color: var(--base-highest);
+  }
+
+  .share-link__copy:hover {
+    background: var(--share-copy-bg-hover);
+  }
+
+  .share-window .share-access__revoke:hover {
+    background: var(--share-danger-wash);
+    color: var(--ide-status-error);
+  }
+}
+
+/* A line under the link: what it does not show yet, or a problem. */
+.share-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--share-gap-sm);
+  margin: 0;
+  color: var(--muted-high);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.share-line .share-glyph {
+  width: var(--share-glyph-sm);
+  height: 1.4em;
+}
+
+.share-line .share-glyph svg {
+  height: var(--share-glyph-sm);
+}
+
+.share-window__unsynced .share-glyph {
+  color: var(--ide-status-warning);
+}
+
+.share-window__problem {
+  color: var(--ide-status-error);
+}
+
+/* The links to single versions. */
+.share-versions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--share-gap-sm);
+  margin-top: var(--share-gap-xs);
+  padding-top: var(--pad-inline);
+  border-top: 1px solid var(--muted-lower);
+}
+
+.share-versions__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--share-gap-2xs);
+}
+
+.share-versions__title {
+  margin: 0;
+  color: var(--base-higher);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.share-versions__words {
+  margin: 0;
+  color: var(--muted-high);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.share-versions__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0 calc(-1 * var(--share-gap-sm));
+  padding: 0;
+  list-style: none;
+}
+
+.share-version {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: var(--share-gap-sm);
+  padding: var(--share-row-pad) var(--share-gap-sm);
+  border-radius: var(--radius-md);
+}
+
+.share-version__mark {
+  width: var(--share-glyph-sm);
+  height: var(--share-glyph-sm);
+  color: var(--muted-high);
+}
+
+.share-version__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.share-version__when {
+  color: var(--base-highest);
+  font-size: 0.78rem;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+.share-version__address {
+  overflow: hidden;
+  color: var(--muted-high);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-version .share-icon-btn {
+  color: var(--muted-high);
+}
+
+.share-version .share-icon-btn.is-copied {
+  color: var(--share-done-fg);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .share-version:hover {
+    background: var(--menu-item-hover-wash);
+  }
+
+  .share-version .share-version__revoke:hover {
+    color: var(--ide-status-error);
+  }
+
+  .share-version .share-version__revoke:hover::before {
+    background: var(--share-danger-wash);
+  }
+}
+
+/* What changes arrives gently: the link out of the button, and the mark. */
+@media (prefers-reduced-motion: no-preference) {
+  .share-link,
+  .share-access__mark {
+    transition: opacity var(--transition), transform var(--transition);
+  }
+
+  @starting-style {
+    .share-link {
+      opacity: 0;
+      transform: scale(0.985);
+    }
+
+    .share-access__mark {
+      opacity: 0;
+      transform: scale(0.85);
+    }
+  }
+}
+
+.history__shared {
+  margin-bottom: var(--pad-inline);
+}
+
+.history__shared:empty {
+  display: none;
+}
+
+.share-window__inline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--share-gap-xs);
+  margin-top: var(--share-gap-sm);
 }

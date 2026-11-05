@@ -44,7 +44,8 @@ try {
   console.log('  registry:', JSON.stringify(reg));
   // 179: Version History (not bindable) and the three case commands (bindable), 2026-10-05.
   // 180: Pad square brackets (set.pad-brackets, bindable, in the palette), 2026-10-16.
-  check(reg.total === 180, `registry holds 180 commands (got ${reg.total})`);
+  // 181: Share Project… (project.share, in the palette, not bindable), 2026-11-01.
+  check(reg.total === 181, `registry holds 181 commands (got ${reg.total})`);
   check(reg.unwired.length === 0, 'every palette command has behaviour attached', reg.unwired.join(', '));
   check(reg.chordedUnwired.length === 0,
     'every command that ships a chord has behaviour behind it', reg.chordedUnwired.join(', '));
@@ -114,6 +115,52 @@ try {
     return { nav: !!(a && a.matches('.jar-settings__nav-item[aria-selected="true"]')), close: !!(a && a.matches('.jar-dialog__close')) };
   });
   check(settingsFocus.nav && !settingsFocus.close, `Settings opens with focus on the selected category, not its close button (${JSON.stringify(settingsFocus)})`);
+
+  // ⛔ A tooltip in an open dialog is drawn above it. The dialog is in the
+  // browser's top layer, over every z-index; the Share window's Revoke had its
+  // tooltip drawn under the card (2026-11-03). Painted pixels, not boxes: where
+  // the tooltip overlaps the card, the picture must change when it is hidden.
+  // Aliases has one: each alias's Delete alias.
+  const tipAnchor = await page.evaluate(async () => {
+    const nav = [...document.querySelectorAll('.jar-settings__nav-item')].find((n) => n.textContent.trim() === 'Aliases');
+    if (nav) nav.click();
+    await new Promise((r) => setTimeout(r, 300));
+    const a = [...document.querySelectorAll('dialog:modal [data-tooltip]')].find((n) => {
+      const r = n.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    });
+    if (!a) return null;
+    const r = a.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, tip: a.getAttribute('data-tooltip') };
+  });
+  let tipOver = { why: 'no control with a tooltip in Settings' };
+  if (tipAnchor) {
+    await page.mouse.move(tipAnchor.x - 20, tipAnchor.y);
+    await page.mouse.move(tipAnchor.x, tipAnchor.y, { steps: 4 });
+    await new Promise((r) => setTimeout(r, 800));
+    const clip = await page.evaluate(() => {
+      const root = document.getElementById('tooltip-root');
+      const inner = root.querySelector('.tooltip-inner');
+      const card = document.querySelector('dialog:modal .jar-dialog__card');
+      if (root.hidden || !inner || !card) return null;
+      const t = inner.getBoundingClientRect();
+      const c = card.getBoundingClientRect();
+      const x = Math.ceil(Math.max(t.left, c.left)) + 2;
+      const y = Math.ceil(Math.max(t.top, c.top)) + 2;
+      const width = Math.floor(Math.min(t.right, c.right)) - 2 - x;
+      const height = Math.floor(Math.min(t.bottom, c.bottom)) - 2 - y;
+      return width > 2 && height > 2 ? { x, y, width, height, layered: root.matches(':popover-open') } : null;
+    });
+    if (clip) {
+      const area = { x: clip.x, y: clip.y, width: clip.width, height: clip.height };
+      const shown = await page.screenshot({ clip: area });
+      await page.evaluate(() => window.Tooltips.hideImmediate());
+      const hidden = await page.screenshot({ clip: area });
+      tipOver = { tip: tipAnchor.tip, layered: clip.layered, painted: !shown.equals(hidden) };
+    } else tipOver = { tip: tipAnchor.tip, why: 'the tooltip did not show over the card' };
+    await page.mouse.move(5, 5);
+  }
+  check(!!(tipOver.layered && tipOver.painted), `a tooltip in an open dialog is drawn above its card, not under it (${JSON.stringify(tipOver)})`);
   await page.evaluate(() => {
     const item = [...document.querySelectorAll('button, [role="tab"], .jar-settings__rail-item')]
       .find((el) => (el.textContent || '').trim() === 'Keys');

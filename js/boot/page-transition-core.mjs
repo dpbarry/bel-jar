@@ -63,17 +63,20 @@ export function pageOfUrl(url) {
 
 /**
  * What to do with a transition the browser is about to run.
- * @param {{ reduced: boolean, unseen: boolean, here: 'home'|'edit'|'privacy', other: string }} o
+ * @param {{ reduced: boolean, unseen: boolean, here: 'home'|'edit'|'privacy'|'share', other: string }} o
  *   other: the address being gone to (leaving) or come from (arriving)
  * @returns {'skip' | { row: string|null }}  the project whose row takes the names, on home
  *
  * ⛔ Only between home and the editor (docs/UI.md). The page on what BelJar
- * keeps is a document reached by a plain cut: it does not opt in, and a
- * transition left to the browser was aborted with an error in the console.
+ * keeps and the reading page of a link are documents reached by a plain cut:
+ * they do not opt in, and a transition left to the browser was aborted with an
+ * error in the console.
  */
+const DOCUMENTS = new Set(['privacy', 'share']);
+
 export function transitionStep(o) {
   if (o.reduced || o.unseen) return 'skip';
-  if (o.here === 'privacy' || pageOfUrl(o.other) === 'privacy') return 'skip';
+  if (DOCUMENTS.has(o.here) || DOCUMENTS.has(pageOfUrl(o.other))) return 'skip';
   return { row: o.here === 'home' ? projectOfUrl(o.other) : null };
 }
 

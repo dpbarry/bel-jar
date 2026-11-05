@@ -163,3 +163,102 @@ export async function quotaRules({ dean, other }, expect) {
   r = await other.putBlobs('q9', { [h(eleven)]: eleven });
   expect(r.ok, 'while another account stores them under its own limit');
 }
+
+/**
+ * Links anyone can read (docs/PERSIST.md §5.12). `read(id)` is the public
+ * read: what the link shows, or null. `dean` and `other` are two accounts.
+ */
+export async function shareRules({ dean, other, read }, expect, isShareId) {
+  const manifest = (files, name = 'Shared') => ({ v: 1, name, createdAt: 1, files, folders: ['empty'], suites: {} });
+  const fa = (t) => ({ id: 'fa', path: 'a.bel', hash: h(t) });
+  const fb = { id: 'fb', path: 'lib/b.bel', hash: h('bee') };
+  let r = await dean.commit('s1', { id: 's1-1', base: 0, manifest: manifest([fa('one')]), texts: { [h('one')]: 'one' } });
+  expect(r.ok && r.version === 1, 'a project to share');
+  r = await dean.commit('s1', { id: 's1-2', base: 1, manifest: manifest([fa('two'), fb]), texts: { [h('two')]: 'two', [h('bee')]: 'bee' } });
+  expect(r.ok && r.version === 2, 'and its second version');
+  // A text the account holds that no version of s1 names: never reachable through a link of s1.
+  r = await dean.commit('s9', { id: 's9-1', base: 0, manifest: manifest([{ id: 'x', path: 'secret.bel', hash: h('secret') }], 'Private'), texts: { [h('secret')]: 'secret' } });
+  expect(r.ok, 'and another project of the same account');
+
+  const link = await dean.share('s1', {});
+  expect(link.ok && isShareId(link.id) && link.version === 0 && link.createdAt > 0, `the project link: an address of 22 characters (${JSON.stringify(link)})`);
+  const again = await dean.share('s1', { version: 0 });
+  expect(again.ok && again.id === link.id, 'asked again, the same link: a retry never makes two');
+  let seen = await read(link.id);
+  expect(seen && JSON.stringify(Object.keys(seen).sort()) === JSON.stringify(['by', 'files', 'folders', 'follows', 'name', 'suites', 'updatedAt', 'version']),
+    `a reader gets the name, who shared it, the version, when, the files and the active suites: no project id, no account (${seen && Object.keys(seen)})`);
+  expect(seen.name === 'Shared' && seen.version === 2 && seen.follows === true && seen.updatedAt > 0
+    && JSON.stringify(seen.files) === JSON.stringify([{ path: 'a.bel', text: 'two' }, { path: 'lib/b.bel', text: 'bee' }])
+    && JSON.stringify(seen.folders) === '["empty"]',
+    `the project link shows the head, its files in order with their texts (${JSON.stringify(seen)})`);
+  expect(!JSON.stringify(seen).includes('secret') && !JSON.stringify(seen).includes('u_dean'), 'and nothing of another project, nor the account id');
+
+  const fixed = await dean.share('s1', { version: 1 });
+  expect(fixed.ok && isShareId(fixed.id) && fixed.id !== link.id && fixed.version === 1, 'a version link is a link of its own');
+  const v1 = (await dean.versions('s1')).find((v) => v.version === 1);
+  expect(fixed.versionAt === v1.createdAt && link.versionAt === 0, `it says when its version was made (${fixed.versionAt}, ${v1.createdAt})`);
+  expect((await dean.share('s1', { version: 1 })).id === fixed.id, 'one per version');
+  seen = await read(fixed.id);
+  expect(seen && seen.version === 1 && seen.follows === false && JSON.stringify(seen.files) === JSON.stringify([{ path: 'a.bel', text: 'one' }]),
+    'it shows that version, and only its files');
+  const list = await dean.shares('s1');
+  expect(JSON.stringify(list.map((l) => [l.id, l.version])) === JSON.stringify([[link.id, 0], [fixed.id, 1]]) && list.every((l) => l.createdAt > 0) && list[1].versionAt === v1.createdAt,
+    `the project's links: the project link first (${JSON.stringify(list)})`);
+
+  r = await dean.commit('s1', { id: 's1-3', base: 2, manifest: manifest([fa('three'), fb]), texts: { [h('three')]: 'three' } });
+  expect(r.ok && r.version === 3, 'an edit');
+  seen = await read(link.id);
+  expect(seen.version === 3 && seen.files[0].text === 'three', 'the project link follows it');
+  expect((await read(fixed.id)).files[0].text === 'one', 'the version link does not');
+
+  expect((await dean.share('s1', { version: 99 })).error === 'no-version' && (await dean.share('s1', { version: -1 })).error === 'no-version'
+    && (await dean.share('s1', { version: 'x' })).error === 'no-version', 'a version that never was cannot be shared');
+  expect((await dean.share('nothing', {})).error === 'not-found', 'nor a project the cloud does not have');
+  expect(!(await other.shares('s1')).length, 'another account cannot list the links');
+  r = await other.share('s1', {});
+  expect(!r.ok && r.error === 'not-found', 'nor make one: the project reads as not there');
+  expect((await other.unshare('s1', link.id)).ok && (await read(link.id)) && (await dean.shares('s1')).length === 2, 'nor revoke one');
+  const flipped = link.id.replace(/[A-Za-z]/, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
+  expect((await read('nope')) === null && (await read('A'.repeat(22))) === null && (flipped === link.id || (await read(flipped)) === null),
+    'an address that is no link reads as nothing');
+
+  expect((await dean.unshare('s1', link.id)).ok && (await read(link.id)) === null, 'revoked, the link shows nothing at once');
+  expect((await dean.unshare('s1', link.id)).ok, 'and revoking again is fine');
+  expect(JSON.stringify((await dean.shares('s1')).map((l) => l.id)) === JSON.stringify([fixed.id]), 'the version link stays');
+  const fresh = await dean.share('s1', {});
+  expect(fresh.ok && fresh.id !== link.id && (await read(link.id)) === null && (await read(fresh.id)).version === 3,
+    'a new project link is a new address: the revoked one stays dead');
+
+  r = await dean.remove('s1', { id: 's1-d', base: 3 });
+  expect(r.ok && r.version === 4, 'the project deleted');
+  expect((await read(fresh.id)) === null && (await read(fixed.id)) === null && !(await dean.shares('s1')).length, 'takes its links with it');
+  expect((await dean.share('s1', {})).error === 'deleted' && (await dean.share('s1', { version: 4 })).error === 'deleted', 'and a deletion cannot be shared');
+  r = await dean.commit('s1', { id: 's1-5', base: 4, manifest: manifest([fa('three')]) });
+  expect(r.ok && !(await dean.shares('s1')).length && (await read(fixed.id)) === null, 'brought back, it has no links until one is made');
+  const back = await dean.share('s1', { version: 2 });
+  expect(back.ok && (await read(back.id)).files.length === 2, 'an old version can be shared again');
+}
+
+/**
+ * The limits on links, on a server made with { shareLimit: 3, shareBytes: 10 }.
+ */
+export async function shareLimitRules({ dean, read }, expect) {
+  const manifest = (files) => ({ v: 1, name: 'L', createdAt: 1, files, folders: [], suites: {} });
+  const nine = 'n'.repeat(9);
+  const eleven = 'e'.repeat(11);
+  const f = { id: 'f', path: 'f.bel', hash: h(nine) };
+  let r = await dean.commit('l1', { id: 'l1-1', base: 0, manifest: manifest([f]), texts: { [h(nine)]: nine } });
+  for (let v = 2; v <= 4 && r.ok; v++) r = await dean.commit('l1', { id: 'l1-' + v, base: v - 1, manifest: manifest([f, { id: 'g' + v, path: v + '.bel', hash: h(nine) }]) });
+  expect(r.ok, 'a project with four versions');
+  const ids = [];
+  for (const version of [0, 1, 2]) ids.push((await dean.share('l1', { version })).id);
+  expect(ids.every(Boolean), 'three links, the most one project may have');
+  r = await dean.share('l1', { version: 3 });
+  expect(!r.ok && r.error === 'too-many', 'a fourth is refused, and said why');
+  expect((await dean.share('l1', { version: 1 })).id === ids[1], 'one already there is still answered');
+  expect((await read(ids[1])).files.length === 1, 'nine bytes of text: shown');
+  expect((await read(ids[0])).files.length === 2, 'the same text in two files is counted once');
+  r = await dean.commit('l1', { id: 'l1-5', base: 4, manifest: manifest([{ id: 'f', path: 'f.bel', hash: h(eleven) }]), texts: { [h(eleven)]: eleven } });
+  const big = await read(ids[0]);
+  expect(r.ok && big && big.error === 'too-large', `eleven bytes, over the ten a read may carry: said, not served (${JSON.stringify(big)})`);
+}

@@ -10,7 +10,7 @@
  * A project made here while offline has no cloud version, so it only goes up:
  * dropping it would be deleting it.
  */
-import { lineDiff, compactDiff } from './review-differences.mjs';
+import { diffNode } from './review-differences.mjs';
 import { actionButton } from './prompt-dialog.mjs';
 
 const g = typeof window !== 'undefined' ? window : globalThis;
@@ -55,21 +55,6 @@ function el(tag, cls, text) {
   if (cls) n.className = cls;
   if (text != null) n.textContent = text;
   return n;
-}
-
-function diffNode(theirs, mine) {
-  const box = el('div', 'review-diff');
-  for (const r of compactDiff(lineDiff(theirs || '', mine || ''), 1)) {
-    if (r.kind === 'gap') {
-      box.appendChild(el('div', 'review-diff__gap', r.count === 1 ? '1 unchanged line' : r.count + ' unchanged lines'));
-      continue;
-    }
-    const line = el('div', 'review-diff__line is-' + r.kind);
-    line.appendChild(el('span', 'review-diff__mark', r.kind === 'theirs' ? '−' : r.kind === 'mine' ? '+' : ''));
-    line.appendChild(el('span', 'review-diff__text', r.text || ' '));
-    box.appendChild(line);
-  }
-  return box;
 }
 
 let win = null;

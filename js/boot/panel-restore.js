@@ -361,10 +361,13 @@
   var EDIT_SHORT = /(?:^|\/)edit\/?$/;
   var EDIT_ANY = /(?:^|\/)edit(?:\.html)?\/?$/;
   var PRIVACY_ANY = /(?:^|\/)privacy(?:\.html)?\/?$/;
+  var SHARE_PATH = /(?:^|\/)s\/([^/]*)\/?$/;
+  var SHARE_PAGE = /(?:^|\/)share(?:\.html)?\/?$/;
+  var SHARE_ID = /^[A-Za-z0-9_-]{22}$/;
   function short() {
     if (g.BELJAR_DEPLOYED) return true;
     const path = g.location && typeof g.location.pathname === "string" ? g.location.pathname : "";
-    return EDIT_SHORT.test(path);
+    return EDIT_SHORT.test(path) || SHARE_PATH.test(path);
   }
   function query(pairs) {
     const parts = [];
@@ -382,6 +385,7 @@
   function homeUrl(opts) {
     const base = short() ? "/" : "index.html";
     if (opts && opts.open) return base + query([["open", opts.open]]);
+    if (opts && opts.copy) return base + query([["copy", opts.copy]]);
     return base + (startsOnLast() ? "?home" : "");
   }
   function editUrl(pid) {
@@ -389,6 +393,15 @@
   }
   function privacyUrl() {
     return short() ? "/privacy" : "privacy.html";
+  }
+  function shareUrl(id, absolute) {
+    const rel = short() ? "/s/" + encodeURIComponent(id) : "share.html" + query([["s", id]]);
+    if (!absolute) return rel;
+    try {
+      return new URL(rel, g.location && g.location.href ? g.location.href : "https://beljar.deanbarry.com/").href;
+    } catch (_) {
+      return rel;
+    }
   }
   function signInUrl(loc) {
     const l = loc || g.location;
@@ -398,6 +411,7 @@
   function pageOf(loc) {
     const p = String(loc && loc.pathname || "");
     if (EDIT_ANY.test(p)) return "edit";
+    if (SHARE_PATH.test(p) || SHARE_PAGE.test(p)) return "share";
     return PRIVACY_ANY.test(p) ? "privacy" : "home";
   }
   function projectParam(loc, name) {
@@ -417,6 +431,36 @@
   }
   function projectOf(loc) {
     return pageOf(loc) === "edit" ? projectParam(loc, "p") : null;
+  }
+  function param(loc, name) {
+    for (const pair of String(loc && loc.search || "").replace(/^\?/, "").split("&")) {
+      const eq = pair.indexOf("=");
+      if (eq === -1 || pair.slice(0, eq) !== name) continue;
+      try {
+        return decodeURIComponent(pair.slice(eq + 1));
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+  function shareOf(loc) {
+    if (pageOf(loc) !== "share") return null;
+    const m = SHARE_PATH.exec(String(loc.pathname || ""));
+    let id = m ? m[1] : param(loc, "s");
+    if (m) {
+      try {
+        id = decodeURIComponent(id);
+      } catch (_) {
+        return null;
+      }
+    }
+    return id && SHARE_ID.test(id) ? id : null;
+  }
+  function copyOf(loc) {
+    if (pageOf(loc) !== "home") return null;
+    const id = param(loc, "copy");
+    return id && SHARE_ID.test(id) ? id : null;
   }
   function pendingOf(loc) {
     return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
@@ -446,15 +490,19 @@
   }
   var Routes = {
     PROJECT_ID,
+    SHARE_ID,
     ISSUES_URL,
     CONTACT_URL,
     homeUrl,
     editUrl,
     privacyUrl,
+    shareUrl,
     signInUrl,
     pageOf,
     projectOf,
     pendingOf,
+    shareOf,
+    copyOf,
     go,
     settle,
     nameProject,

@@ -198,6 +198,9 @@
     0 6px 10px -5px light-dark(hsla(222, 18%, 12%, 0.14), hsla(0, 0%, 0%, 0.72)),
     0 18px 32px -22px light-dark(hsla(222, 18%, 12%, 0.22), hsla(0, 0%, 0%, 0.86));
   --floating-window-shadow: var(--shadow-panel);
+  /* The edge of anything that floats over the page: dialogs, floating windows,
+     hints, tooltips. Strong enough to hold a dialog against its backdrop. */
+  --float-border: light-dark(var(--muted-mid), var(--base-high));
   --surface-highlight: light-dark(
     hsla(0, 0%, 100%, 0.78),
     hsla(0, 0%, 100%, 0.08)
@@ -314,6 +317,35 @@
   /* The palette: the space under its input, which is also the space above the
      list's first heading (command-palette.css). */
   --palette-list-gap: 0.16rem;
+  /* Sharing (docs/PERSIST.md §5.12): the reading page of a link (share.css) and
+     the Share window (account.css). */
+  --share-gap: 1rem;
+  --share-gap-sm: 0.5rem;
+  --share-gap-xs: 0.3rem;
+  --share-section-gap: 1.25rem;
+  --share-code-pad: 0.75rem;
+  --share-code-end: 1.5rem;
+  --share-note-top: clamp(2rem, 12vh, 6rem);
+  /* The Share window: the mark that says who can read, and the slot under it
+     (Copy link, then the link itself), one height for both so one becomes the other. */
+  --share-gap-2xs: 0.125rem;
+  --share-tile: 2.25rem;
+  --share-control: 2.25rem;
+  --share-field-pad: 0.6rem;
+  --share-copy-w: 5.25rem;
+  --share-glyph: 1rem;
+  --share-glyph-sm: 0.875rem;
+  --share-row-pad: 0.35rem;
+  --share-mark-bg: color-mix(in oklab, var(--muted-low) 32%, transparent);
+  --share-mark-fg: var(--muted-high);
+  --share-mark-on-bg: color-mix(in oklab, var(--accent-mid) 16%, transparent);
+  --share-mark-on-fg: var(--accent-high);
+  --share-mark-bad-bg: color-mix(in oklab, var(--ide-status-error) 14%, transparent);
+  --share-copy-bg: color-mix(in oklab, var(--accent-mid) 12%, transparent);
+  --share-copy-bg-hover: color-mix(in oklab, var(--accent-mid) 20%, transparent);
+  --share-copy-fg: var(--accent-high);
+  --share-done-fg: var(--ide-status-clean);
+  --share-danger-wash: color-mix(in oklab, var(--ide-status-error) 12%, transparent);
 
   /* Editor autocomplete — restrained; avoid saturated fill on single-item lists. */
   --editor-ac-radius: 2px;
@@ -472,6 +504,8 @@
   --diff-theirs-fg: light-dark(hsl(8, 55%, 42%), hsl(8, 70%, 72%));
   --diff-mine-bg: light-dark(hsla(150, 50%, 42%, 0.1), hsla(150, 45%, 55%, 0.12));
   --diff-mine-fg: light-dark(hsl(150, 45%, 30%), hsl(150, 45%, 68%));
+  /* The row standing for lines left out (⋯ 27 lines): a band, no hue. */
+  --diff-gap-bg: light-dark(hsla(220, 14%, 40%, 0.06), hsla(220, 14%, 70%, 0.05));
   /* ⛔ The record light, and deliberately NOT red. Red, amber and green are
      spoken for on the status strip — errors, warnings, a clean check — and a
      recording is none of those: it is a state you are IN, not a verdict on your

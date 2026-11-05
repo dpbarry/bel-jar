@@ -6,7 +6,9 @@ building or changing a surface.
 
 ## 0. Two pages
 
-**Home** (`/`) is the projects and the account. **The editor** (`/edit?p=ID`) is one project. A
+**Home** (`/`) is the projects and the account. **The editor** (`/edit?p=ID`) is one project.
+(Two documents to read sit beside them, reached by a plain cut: what BelJar keeps, and the reading
+page of a link, `/s/ID`, which shows a shared project to anyone: PERSIST §5.12.) A
 thing belongs to the page where a person looks for it: which projects there are, and who is signed
 in, on home; everything about the open project in the editor. The brand reloads the page, on home and in the editor.
 
@@ -169,10 +171,29 @@ The vocabulary:
 - The strip's segments (`js/status-strip/status-strip-segments.mjs`) and its message slot.
 - `PromptDialog` and its `buildActions`.
 - `.icon-btn`.
+- `ScrollFade` (`js/ui/scroll-fade.mjs`): a pane that scrolls fades at an edge with more beyond
+  it (the bell's list, both panes of Version history).
+- A diff is `diffNode` (`js/ui/review-differences.mjs`): Review differences, Changes made offline
+  and Version history draw the same rows. A run of lines left out is a row too, `⋯ 27 lines`
+  on a faint band: on 4 November Dean found "27 unchanged lines" floating as loose text among
+  rows. Rows run the longest line's width, so a wash follows the line when the diff scrolls
+  sideways, and a diff is never squeezed into a scroll box of its own (`probe:kit`).
+- A list grouped under headings (Version history's days) gives the heading the strongest text in
+  the list, the rows under it lighter, and room above it. In the menu's quiet section voice, beside
+  muted lines in the rows, the days were invisible (Dean, 4 November). `probe:kit` measures the
+  weight, the contrast against the ground, and the space.
 - The tokens in `css/tokens.css`: `--menu-*`, `--muted-*`, `--accent-*`, `--radius-*`, `--ease-out`.
 
 A new component takes its values from those tokens and works in both themes from its first
 version. A value retyped in a second place is a token that is missing.
+
+Anything that floats over the page (a dialog, a floating window, a hint, a tooltip) takes its edge
+from `--float-border`, strong enough to hold a dialog against its backdrop: on 3 November Dean
+found the dialog's and the floating window's edges too faint. In the dark theme the backdrop
+behind a dialog, and behind the palette, is black with no hue. ⛔ An open dialog is in the
+browser's top layer, above every z-index, so anything that must be drawn over it goes into the
+top layer too, as a popover shown after it: the toasts, and the tooltips, shown afresh for each
+control (`probe:app` checks a tooltip in Settings in painted pixels).
 
 ⛔ The retyped values only go down (`tests/test-css-tokens.mjs`, plan v6 phase 02, u3): per CSS
 file, the colours, radii and spacing written as literals, and the uppercase styling, are counted
@@ -210,7 +231,8 @@ every box measured, and drawn half a pixel high at every scale from 1x to 3x, it
 baseline: that is what people saw. `scratch/probes/probe-cloud.mjs` reads the screenshot.
 
 **The kit page** (`dev/kit.html`, never uploaded) is every component on one page: both headers,
-buttons, the cloud in each state, a menu, dialogs, home's column with projects and without, toasts. ⛔ Each
+buttons, the cloud in each state, a menu, dialogs, the Share window in each of its states, home's column with projects and without, toasts,
+Version history on a stand-in cloud. ⛔ Each
 specimen is drawn by the app's own modules and stylesheets; the kit's stylesheet may frame and
 place a specimen, never restyle one (`tests/test-kit.mjs`). `npm run probe:kit` writes
 `scripts/.shots/kit-dark.png` and `kit-light.png`. A new component goes on it as it is built; the

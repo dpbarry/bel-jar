@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <!-- A project someone shared (docs/PERSIST.md §5.12): /s/ID on the site,
+       share.html?s=ID on a static server. Read only: no editor, no Beluga, no
+       account, and its own small script (js/share.js; tests/test-share-page.mjs).
+       Served at /s/ID by the Worker, so every address here is from the root. -->
+  <meta name="robots" content="noindex, nofollow">
+  <script>
+    (function () {
+      var h = location.hostname;
+      window.BELJAR_DEPLOYED = ['deanbarry.com', 'workers.dev', 'pages.dev'].some(function (d) {
+        return h === d || h.endsWith('.' + d);
+      });
+    })();
+  </script>
+  <script src="/js/boot/early-boot.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BelJar</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.png">
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/source-hl.css">
+  <link rel="stylesheet" href="/css/share.css">
+</head>
+
+<body class="share-page">
+  <header class="share-head">
+    <a class="share-home" id="share-home" href="/?home" aria-label="BelJar">
+      <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M 25 65 Q 37.5 50, 50 60 T 75 55 V 80 H 25 Z" fill="currentColor" fill-opacity="0.2" stroke="none" />
+        <path d="M 25 72 Q 40 60, 55 68 T 75 62 V 80 H 25 Z" fill="currentColor" fill-opacity="0.15" stroke="none" />
+        <path d="M 25 65 Q 37.5 50, 50 60 T 75 55" stroke-width="3" />
+        <path d="M 44 20 V 14 C 44 9, 56 9, 56 14 V 20 Z" fill="currentColor" fill-opacity="0.15" />
+        <path d="M 25 80 V 45 A 25 25 0 0 1 75 45 V 80" />
+        <path d="M 33 45 A 17 17 0 0 1 42 30" stroke-width="4" opacity="0.4" />
+        <path d="M 18 80 V 86 C 18 94, 30 96, 50 96 C 70 96, 82 94, 82 86 V 80 Z" fill="currentColor" fill-opacity="0.15" />
+        <circle cx="58" cy="44" r="3.5" stroke-width="2.5" />
+      </svg>
+      <span>BelJar</span>
+    </a>
+    <div class="share-title">
+      <h1 id="share-name"></h1>
+      <p class="share-meta" id="share-meta"></p>
+    </div>
+    <button type="button" class="share-open" id="share-open" hidden>Open in BelJar</button>
+  </header>
+
+  <main class="share-body" id="share-body" hidden>
+    <nav class="share-rail" aria-label="Files">
+      <ul class="share-files" id="share-files"></ul>
+      <section class="share-outline" id="share-outline" aria-label="Outline"></section>
+    </nav>
+    <section class="share-code" id="share-code" tabindex="0" aria-label="File"></section>
+  </main>
+
+  <section class="share-note" id="share-note" hidden>
+    <p class="share-note__text" id="share-note-text"></p>
+    <a class="share-note__link" id="share-note-link" href="/?home">Go to BelJar</a>
+  </section>
+
+  <script src="/js/share.js"></script>
+</body>
+
+</html>

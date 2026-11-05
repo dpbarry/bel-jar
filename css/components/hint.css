@@ -2,7 +2,7 @@
 
 .hint-root {
   --hint-bg: light-dark(var(--base-lowest), var(--base-lower));
-  --hint-border: light-dark(var(--muted-mid), var(--base-high));
+  --hint-border: var(--float-border);
   --hint-spout-size: 7px;
   --hint-duration: 10s;
   position: fixed;

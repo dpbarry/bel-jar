@@ -24,4 +24,5 @@ import './ui/notifications.mjs';
 import './frame/frame.mjs';
 import './account/account.mjs';
 import './account/sync-ui.mjs';
+import './ui/share-window.mjs';
 import './home/home.mjs';

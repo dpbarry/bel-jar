@@ -1,43 +1,12 @@
 // Full-file Beluga source → jar-hl-* highlighted DOM (read-only preview).
 
-import { highlightTree, tagHighlighter, tags as t } from '@lezer/highlight';
+import { highlightTree } from '@lezer/highlight';
 import { syntaxTree } from '@codemirror/language';
-import { belugaLanguage, holeTag } from '../language.mjs';
+import { belugaLanguage } from '../language.mjs';
+import { SOURCE_HIGHLIGHTER } from '../highlight-tags.mjs';
 
 import { maybeExpandBelAliases } from '../aliases.mjs';
 
-const SOURCE_HIGHLIGHTER = tagHighlighter([
-  { tag: holeTag, class: 'jar-hl-hole' },
-  { tag: t.keyword, class: 'jar-hl-keyword' },
-  { tag: t.controlKeyword, class: 'jar-hl-control' },
-  { tag: t.typeOperator, class: 'jar-hl-arrow' },
-  { tag: t.operator, class: 'jar-hl-op' },
-  { tag: t.definitionOperator, class: 'jar-hl-op' },
-  { tag: t.arithmeticOperator, class: 'jar-hl-op' },
-  { tag: t.special(t.typeName), class: 'jar-hl-metatype' },
-  { tag: t.special(t.variableName), class: 'jar-hl-meta' },
-  { tag: t.definition(t.special(t.typeName)), class: 'jar-hl-metatype' },
-  { tag: t.definition(t.special(t.variableName)), class: 'jar-hl-meta' },
-  { tag: t.definition(t.typeName), class: 'jar-hl-type-def' },
-  { tag: t.definition(t.variableName), class: 'jar-hl-var-def' },
-  { tag: t.definition(t.function(t.variableName)), class: 'jar-hl-ctor' },
-  { tag: t.definition(t.local(t.variableName)), class: 'jar-hl-local' },
-  { tag: t.definition(t.local(t.typeName)), class: 'jar-hl-meta' },
-  { tag: t.function(t.variableName), class: 'jar-hl-ctor' },
-  { tag: t.local(t.variableName), class: 'jar-hl-local' },
-  { tag: t.local(t.typeName), class: 'jar-hl-local' },
-  { tag: t.typeName, class: 'jar-hl-type' },
-  { tag: t.variableName, class: 'jar-hl-var' },
-  { tag: t.namespace, class: 'jar-hl-prop' },
-  { tag: t.number, class: 'jar-hl-number' },
-  { tag: t.atom, class: 'jar-hl-atom' },
-  { tag: t.propertyName, class: 'jar-hl-prop' },
-  { tag: t.meta, class: 'jar-hl-meta-pragma' },
-  { tag: t.modifier, class: 'jar-hl-meta-pragma' },
-  { tag: [t.lineComment, t.blockComment], class: 'jar-hl-comment' },
-  { tag: [t.punctuation, t.paren, t.squareBracket, t.brace, t.angleBracket, t.separator],
-    class: 'jar-hl-punct' },
-]);
 
 function normalizeSource(text) {
   if (text == null) return '';

@@ -1091,7 +1091,8 @@ const global = globalThis;
     };
     var aria = spec.aria || 'More information';
     btn.setAttribute('aria-label', aria);
-    // Modal <dialog> sits in the top layer — body-level #tooltip-root cannot paint over it.
+    // Its own element inside the dialog, not #tooltip-root: it stays open while
+    // the pointer moves onto it, which the tooltip (pointer-events: none) never does.
     var pop = null;
     var hideTimer = null;
 

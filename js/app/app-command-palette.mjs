@@ -113,6 +113,7 @@ import { attachSharedCommands } from '../commands/shared-commands.mjs';
       on('file.download', downloadCurrentFile);
       on('project.download', () => downloadProject(), () => (Persist.listFiles() || []).length > 0);
       on('project.history', () => window.VersionHistory.open(), () => !!window.VersionHistory && window.VersionHistory.available());
+      on('project.share', () => window.ShareWindow.open(), () => !!window.ShareWindow && window.ShareWindow.available());
 
       on('tab.next', () => stepTab(1), () => openTabIds().length > 1);
       on('tab.prev', () => stepTab(-1), () => openTabIds().length > 1);

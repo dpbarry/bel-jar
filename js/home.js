@@ -5,10 +5,13 @@
   var EDIT_SHORT = /(?:^|\/)edit\/?$/;
   var EDIT_ANY = /(?:^|\/)edit(?:\.html)?\/?$/;
   var PRIVACY_ANY = /(?:^|\/)privacy(?:\.html)?\/?$/;
+  var SHARE_PATH = /(?:^|\/)s\/([^/]*)\/?$/;
+  var SHARE_PAGE = /(?:^|\/)share(?:\.html)?\/?$/;
+  var SHARE_ID = /^[A-Za-z0-9_-]{22}$/;
   function short() {
     if (g.BELJAR_DEPLOYED) return true;
     const path = g.location && typeof g.location.pathname === "string" ? g.location.pathname : "";
-    return EDIT_SHORT.test(path);
+    return EDIT_SHORT.test(path) || SHARE_PATH.test(path);
   }
   function query(pairs) {
     const parts = [];
@@ -26,6 +29,7 @@
   function homeUrl(opts) {
     const base = short() ? "/" : "index.html";
     if (opts && opts.open) return base + query([["open", opts.open]]);
+    if (opts && opts.copy) return base + query([["copy", opts.copy]]);
     return base + (startsOnLast() ? "?home" : "");
   }
   function editUrl(pid) {
@@ -33,6 +37,15 @@
   }
   function privacyUrl() {
     return short() ? "/privacy" : "privacy.html";
+  }
+  function shareUrl(id, absolute) {
+    const rel = short() ? "/s/" + encodeURIComponent(id) : "share.html" + query([["s", id]]);
+    if (!absolute) return rel;
+    try {
+      return new URL(rel, g.location && g.location.href ? g.location.href : "https://beljar.deanbarry.com/").href;
+    } catch (_) {
+      return rel;
+    }
   }
   function signInUrl(loc) {
     const l = loc || g.location;
@@ -42,6 +55,7 @@
   function pageOf(loc) {
     const p = String(loc && loc.pathname || "");
     if (EDIT_ANY.test(p)) return "edit";
+    if (SHARE_PATH.test(p) || SHARE_PAGE.test(p)) return "share";
     return PRIVACY_ANY.test(p) ? "privacy" : "home";
   }
   function projectParam(loc, name) {
@@ -61,6 +75,36 @@
   }
   function projectOf(loc) {
     return pageOf(loc) === "edit" ? projectParam(loc, "p") : null;
+  }
+  function param(loc, name) {
+    for (const pair of String(loc && loc.search || "").replace(/^\?/, "").split("&")) {
+      const eq = pair.indexOf("=");
+      if (eq === -1 || pair.slice(0, eq) !== name) continue;
+      try {
+        return decodeURIComponent(pair.slice(eq + 1));
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+  function shareOf(loc) {
+    if (pageOf(loc) !== "share") return null;
+    const m = SHARE_PATH.exec(String(loc.pathname || ""));
+    let id = m ? m[1] : param(loc, "s");
+    if (m) {
+      try {
+        id = decodeURIComponent(id);
+      } catch (_) {
+        return null;
+      }
+    }
+    return id && SHARE_ID.test(id) ? id : null;
+  }
+  function copyOf(loc) {
+    if (pageOf(loc) !== "home") return null;
+    const id = param(loc, "copy");
+    return id && SHARE_ID.test(id) ? id : null;
   }
   function pendingOf(loc) {
     return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
@@ -90,15 +134,19 @@
   }
   var Routes = {
     PROJECT_ID,
+    SHARE_ID,
     ISSUES_URL,
     CONTACT_URL,
     homeUrl,
     editUrl,
     privacyUrl,
+    shareUrl,
     signInUrl,
     pageOf,
     projectOf,
     pendingOf,
+    shareOf,
+    copyOf,
     go,
     settle,
     nameProject,
@@ -1326,9 +1374,9 @@
     }
     function removeAccountProjects(uid, keep) {
       if (!uid) return 0;
-      const open6 = pinned || device.get("activeProject");
-      const wasTheirs = peekProjects().some((p) => p.id === open6 && p.owner === uid);
-      setResume(String(uid), wasTheirs ? open6 : "");
+      const open7 = pinned || device.get("activeProject");
+      const wasTheirs = peekProjects().some((p) => p.id === open7 && p.owner === uid);
+      setResume(String(uid), wasTheirs ? open7 : "");
       let n = 0;
       for (const p of peekProjects()) {
         if (p.owner !== uid || keep && keep.has(p.id)) continue;
@@ -1775,9 +1823,9 @@
       return i === -1 ? "" : name.slice(0, i);
     }
     function notifyProjectTreeChanged(kind) {
-      var g20 = typeof window !== "undefined" ? window : null;
-      if (g20 && typeof g20.dispatchEvent === "function") {
-        g20.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
+      var g22 = typeof window !== "undefined" ? window : null;
+      if (g22 && typeof g22.dispatchEvent === "function") {
+        g22.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
       }
     }
     function listFiles() {
@@ -2005,14 +2053,14 @@
     function getOpenFileIds() {
       var files2 = work2.peekTree().files;
       if (!files2.length) return [];
-      var open6 = work2.peekSession().open;
-      if (open6 === null) {
+      var open7 = work2.peekSession().open;
+      if (open7 === null) {
         var active = getActiveFileId();
         return active ? [active] : [];
       }
       var valid = {};
       for (var i = 0; i < files2.length; i++) valid[files2[i].id] = true;
-      return open6.filter(function(id) {
+      return open7.filter(function(id) {
         return valid[id];
       });
     }
@@ -2306,9 +2354,9 @@
       return t && t.charAt(0) !== "%" && isCfgEntryToken2(t);
     }
     function cfgTextForRewrite(fileId) {
-      var g20 = typeof window !== "undefined" ? window : null;
-      if (g20) {
-        var ed = g20.CurrentEditor;
+      var g22 = typeof window !== "undefined" ? window : null;
+      if (g22) {
+        var ed = g22.CurrentEditor;
         if (fileId === getActiveFileId() && ed && typeof ed.getValue === "function") {
           return String(ed.getValue() ?? "");
         }
@@ -2317,9 +2365,9 @@
     }
     function notifyCfgRewritten(fileIds) {
       if (!fileIds.length) return;
-      var g20 = typeof window !== "undefined" ? window : null;
-      if (g20 && typeof g20.dispatchEvent === "function") {
-        g20.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
+      var g22 = typeof window !== "undefined" ? window : null;
+      if (g22 && typeof g22.dispatchEvent === "function") {
+        g22.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
       }
     }
     function rewriteCfgBody(text, cfgDir, oldName, newName) {
@@ -2329,14 +2377,14 @@
       var oldDir = dirOf2(oldName);
       var newDir = newName != null ? dirOf2(newName) : null;
       for (var i = 0; i < lines.length; i++) {
-        var line = lines[i];
-        var t = line.trim();
+        var line2 = lines[i];
+        var t = line2.trim();
         if (!isCfgEntryLine(t)) {
-          out.push(line);
+          out.push(line2);
           continue;
         }
         if (resolveCfgEntryPath(cfgDir, t) !== oldName) {
-          out.push(line);
+          out.push(line2);
           continue;
         }
         if (newName == null) {
@@ -2344,16 +2392,16 @@
           continue;
         }
         if (oldDir !== newDir) {
-          out.push(line);
+          out.push(line2);
           continue;
         }
         var rel = relToCfgDir(cfgDir, newName);
         if (rel == null || rel === "") {
-          out.push(line);
+          out.push(line2);
           continue;
         }
         changed = true;
-        out.push(line.slice(0, line.indexOf(t)) + rel);
+        out.push(line2.slice(0, line2.indexOf(t)) + rel);
       }
       return changed ? out.join("\n") : null;
     }
@@ -2730,9 +2778,9 @@
     var work2 = deps.work;
     var settings2 = deps.settings;
     var files2 = deps.files || null;
-    var open6 = /* @__PURE__ */ new Set();
+    var open7 = /* @__PURE__ */ new Set();
     work2.onFileChange(function(e) {
-      open6.forEach(function(doc2) {
+      open7.forEach(function(doc2) {
         doc2.noteFileChange(e);
       });
     });
@@ -2828,9 +2876,9 @@
         if (providers2 && typeof providers2.applyExternalText === "function") providers2.applyExternalText(text);
       }
       function announceConflict(source) {
-        var g20 = typeof window !== "undefined" ? window : null;
-        if (g20 && typeof g20.dispatchEvent === "function" && typeof CustomEvent === "function") {
-          g20.dispatchEvent(new CustomEvent("beljar:text-conflict", { detail: { fileId: documentId, source } }));
+        var g22 = typeof window !== "undefined" ? window : null;
+        if (g22 && typeof g22.dispatchEvent === "function" && typeof CustomEvent === "function") {
+          g22.dispatchEvent(new CustomEvent("beljar:text-conflict", { detail: { fileId: documentId, source } }));
         }
       }
       function reconcile() {
@@ -3012,7 +3060,7 @@
         return { ok: true, copyId };
       }
       var handle = { noteFileChange, flushIfDirty: flushCheckpointIfDirty };
-      open6.add(handle);
+      open7.add(handle);
       return {
         getEditorText: function() {
           return state2.editor.text;
@@ -3042,12 +3090,12 @@
         /** Stop listening for changes underneath (tests; a page never closes its document). */
         dispose: function() {
           cancelPendingSave();
-          open6.delete(handle);
+          open7.delete(handle);
         }
       };
     }
     function flushPending() {
-      open6.forEach(function(doc2) {
+      open7.forEach(function(doc2) {
         try {
           if (doc2.flushIfDirty) doc2.flushIfDirty();
         } catch (_) {
@@ -3301,6 +3349,7 @@
   // js/persist/sync/protocol.mjs
   var MANIFEST_VERSION = 1;
   var QUOTA = { projects: 1e3, textBytes: 1024 * 1024 * 1024 };
+  var SHARE_BYTES = 8 * 1024 * 1024;
   function canonicalJson(value) {
     if (value === null || typeof value !== "object") return JSON.stringify(value);
     if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
@@ -3335,14 +3384,14 @@
         const s1 = (y >>> 17 | y << 15) ^ (y >>> 19 | y << 13) ^ y >>> 10;
         w[t] = w[t - 16] + s0 + w[t - 7] + s1 | 0;
       }
-      let a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g20 = h[6], k = h[7];
+      let a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g22 = h[6], k = h[7];
       for (let t = 0; t < 64; t++) {
         const S1 = (e >>> 6 | e << 26) ^ (e >>> 11 | e << 21) ^ (e >>> 25 | e << 7);
-        const t1 = k + S1 + (e & f ^ ~e & g20) + SHA_K[t] + w[t] | 0;
+        const t1 = k + S1 + (e & f ^ ~e & g22) + SHA_K[t] + w[t] | 0;
         const S0 = (a >>> 2 | a << 30) ^ (a >>> 13 | a << 19) ^ (a >>> 22 | a << 10);
         const t2 = S0 + (a & b ^ a & c ^ b & c) | 0;
-        k = g20;
-        g20 = f;
+        k = g22;
+        g22 = f;
         f = e;
         e = d + t1 | 0;
         d = c;
@@ -3356,7 +3405,7 @@
       h[3] += d;
       h[4] += e;
       h[5] += f;
-      h[6] += g20;
+      h[6] += g22;
       h[7] += k;
     }
     let s = "";
@@ -3973,9 +4022,9 @@
       const sent = [];
       let left = budget == null ? Infinity : budget;
       const tombs = work2.readTombstones();
-      const open6 = typeof work2.pinnedProject === "function" ? work2.pinnedProject() : null;
+      const open7 = typeof work2.pinnedProject === "function" ? work2.pinnedProject() : null;
       const mine = work2.allProjects().filter((x) => x.owner === account && !tombs[x.id]);
-      mine.sort((a, b) => a.id === open6 ? -1 : b.id === open6 ? 1 : 0);
+      mine.sort((a, b) => a.id === open7 ? -1 : b.id === open7 ? 1 : 0);
       for (const { id: pid } of mine) {
         try {
           const rec = readRecord2(pid);
@@ -4971,9 +5020,9 @@
     treeNoticeQueued = true;
     Promise.resolve().then(function() {
       treeNoticeQueued = false;
-      var g20 = typeof window !== "undefined" ? window : null;
-      if (g20 && typeof g20.dispatchEvent === "function" && typeof CustomEvent === "function") {
-        g20.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
+      var g22 = typeof window !== "undefined" ? window : null;
+      if (g22 && typeof g22.dispatchEvent === "function" && typeof CustomEvent === "function") {
+        g22.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
       }
     });
   }
@@ -5347,6 +5396,17 @@
       return syncEngine ? syncEngine.readVersion(pid, n) : Promise.resolve(null);
     },
     restoreVersion,
+    // Links anyone can read (docs/PERSIST.md §5.12, js/ui/share-window.mjs):
+    // signed in only, null otherwise. They are the server's: nothing is stored here.
+    shareLinks: function(pid) {
+      return syncTransport ? syncTransport.shares(pid) : Promise.resolve(null);
+    },
+    makeShare: function(pid, version2) {
+      return syncTransport ? syncTransport.share(pid, { version: version2 || 0 }) : Promise.resolve(null);
+    },
+    revokeShare: function(pid, id) {
+      return syncTransport ? syncTransport.unshare(pid, id) : Promise.resolve(null);
+    },
     useCloud: function(pid) {
       return syncEngine ? syncEngine.useCloud(pid) : Promise.resolve(false);
     },
@@ -5482,8 +5542,8 @@
   }
   function separatedFromAnchor(x, y, w, h, anchor, gap) {
     const tr = anchor;
-    const g20 = gap;
-    return x + w <= tr.left - g20 || x >= tr.right + g20 || y + h <= tr.top - g20 || y >= tr.bottom + g20;
+    const g22 = gap;
+    return x + w <= tr.left - g22 || x >= tr.right + g22 || y + h <= tr.top - g22 || y >= tr.bottom + g22;
   }
   function overlapAreaWithAnchor(x, y, w, h, anchor) {
     const tr = anchor;
@@ -5499,15 +5559,15 @@
     const y2 = Math.min(vh - m, y + h) - Math.max(m, y);
     return Math.max(0, x2) * Math.max(0, y2);
   }
-  function computePointMenuPlacement(tw, th, vw, vh, m, g20, tr) {
-    let x = tr.left + g20;
-    let y = tr.top + g20;
-    if (x + tw > vw - m) x = tr.left - g20 - tw;
-    if (y + th > vh - m) y = tr.top - g20 - th;
+  function computePointMenuPlacement(tw, th, vw, vh, m, g22, tr) {
+    let x = tr.left + g22;
+    let y = tr.top + g22;
+    if (x + tw > vw - m) x = tr.left - g22 - tw;
+    if (y + th > vh - m) y = tr.top - g22 - th;
     const c = clampToViewport(x, y, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "menu" };
   }
-  function computeSideMenuPlacement(tw, th, vw, vh, m, g20, tr, side, align) {
+  function computeSideMenuPlacement(tw, th, vw, vh, m, g22, tr, side, align) {
     const ah = tr.bottom - tr.top;
     const aw = tr.right - tr.left;
     const alignY = () => {
@@ -5523,34 +5583,34 @@
     let x;
     let y;
     if (side === "right") {
-      x = tr.right + g20;
-      if (x + tw > vw - m) x = tr.left - g20 - tw;
+      x = tr.right + g22;
+      if (x + tw > vw - m) x = tr.left - g22 - tw;
       y = alignY();
       y = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
     } else if (side === "left") {
-      x = tr.left - g20 - tw;
-      if (x < m) x = tr.right + g20;
+      x = tr.left - g22 - tw;
+      if (x < m) x = tr.right + g22;
       y = alignY();
       y = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
     } else if (side === "bottom") {
-      y = tr.bottom + g20;
-      if (y + th > vh - m) y = tr.top - g20 - th;
+      y = tr.bottom + g22;
+      if (y + th > vh - m) y = tr.top - g22 - th;
       x = alignX();
       x = Math.min(Math.max(m, x), Math.max(m, vw - m - tw));
     } else {
-      y = tr.top - g20 - th;
-      if (y < m) y = tr.bottom + g20;
+      y = tr.top - g22 - th;
+      if (y < m) y = tr.bottom + g22;
       x = alignX();
       x = Math.min(Math.max(m, x), Math.max(m, vw - m - tw));
     }
     const c = clampToViewport(x, y, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "menu" };
   }
-  function computeMenuPlacementFull(opts, tw, th, vw, vh, m, g20, tr) {
+  function computeMenuPlacementFull(opts, tw, th, vw, vh, m, g22, tr) {
     const side = opts.side;
     const align = opts.align ?? "start";
-    if (!side) return computePointMenuPlacement(tw, th, vw, vh, m, g20, tr);
-    return computeSideMenuPlacement(tw, th, vw, vh, m, g20, tr, side, align);
+    if (!side) return computePointMenuPlacement(tw, th, vw, vh, m, g22, tr);
+    return computeSideMenuPlacement(tw, th, vw, vh, m, g22, tr, side, align);
   }
   function computePosition(opts) {
     const tw = opts.width;
@@ -5561,14 +5621,14 @@
     const gap = opts.gap ?? DEFAULT_GAP;
     const tr = normalizeAnchor(opts.anchor);
     const m = margin;
-    const g20 = gap;
+    const g22 = gap;
     if (opts.mode === "menu") {
-      return computeMenuPlacementFull(opts, tw, th, vw, vh, m, g20, tr);
+      return computeMenuPlacementFull(opts, tw, th, vw, vh, m, g22, tr);
     }
     const preferPlacement = opts.preferPlacement ?? PREFERENCE_TOOLTIP;
     const requireSeparation = opts.requireSeparation !== false;
     const fits = (x, y) => fitsViewport(x, y, tw, th, vw, vh, m);
-    const sep = (x, y) => !requireSeparation || separatedFromAnchor(x, y, tw, th, tr, g20);
+    const sep = (x, y) => !requireSeparation || separatedFromAnchor(x, y, tw, th, tr, g22);
     const clampY = (x, y) => {
       const iy = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
       return { x, y: iy };
@@ -5580,28 +5640,28 @@
     function tryPlacement(side) {
       switch (side) {
         case "right": {
-          const x = tr.right + g20;
+          const x = tr.right + g22;
           if (x + tw > vw - m) return null;
           const { y } = clampY(x, tr.top + (tr.bottom - tr.top) / 2 - th / 2);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "left": {
-          const x = tr.left - g20 - tw;
+          const x = tr.left - g22 - tw;
           if (x < m) return null;
           const { y } = clampY(x, tr.top + (tr.bottom - tr.top) / 2 - th / 2);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "bottom": {
-          const y = tr.bottom + g20;
+          const y = tr.bottom + g22;
           if (y + th > vh - m) return null;
           const { x } = clampX(tr.left + (tr.right - tr.left) / 2 - tw / 2, y);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "top": {
-          const y = tr.top - g20 - th;
+          const y = tr.top - g22 - th;
           if (y < m) return null;
           const { x } = clampX(tr.left + (tr.right - tr.left) / 2 - tw / 2, y);
           if (!fits(x, y) || !sep(x, y)) return null;
@@ -5616,10 +5676,10 @@
       if (pos) return pos;
     }
     const emergency = [
-      () => ({ x: m, y: tr.bottom + g20 }),
-      () => ({ x: vw - m - tw, y: tr.bottom + g20 }),
-      () => ({ x: tr.left - g20 - tw, y: vh - m - th }),
-      () => ({ x: tr.right + g20, y: vh - m - th }),
+      () => ({ x: m, y: tr.bottom + g22 }),
+      () => ({ x: vw - m - tw, y: tr.bottom + g22 }),
+      () => ({ x: tr.left - g22 - tw, y: vh - m - th }),
+      () => ({ x: tr.right + g22, y: vh - m - th }),
       () => ({ x: m, y: m })
     ];
     let best = null;
@@ -5640,7 +5700,7 @@
       }
     }
     if (best) return best;
-    const c = clampToViewport(tr.right + g20, tr.bottom + g20, tw, th, vw, vh, m);
+    const c = clampToViewport(tr.right + g22, tr.bottom + g22, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "fallback" };
   }
   var FloatingRectPlacement = {
@@ -5692,24 +5752,24 @@
     if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? "left" : "right";
     return dy > 0 ? "above" : "below";
   }
-  function clearSpout(tip) {
-    for (let i = 0; i < SPOUT_CLASSES.length; i++) tip.classList.remove(SPOUT_CLASSES[i]);
-    tip.style.removeProperty("--tooltip-arrow-x");
-    tip.style.removeProperty("--tooltip-arrow-y");
+  function clearSpout(tip2) {
+    for (let i = 0; i < SPOUT_CLASSES.length; i++) tip2.classList.remove(SPOUT_CLASSES[i]);
+    tip2.style.removeProperty("--tooltip-arrow-x");
+    tip2.style.removeProperty("--tooltip-arrow-y");
   }
-  function applySpout(tip, anchor, placement, x, y, tw, th, tr, arrowBox = null) {
-    clearSpout(tip);
+  function applySpout(tip2, anchor, placement, x, y, tw, th, tr, arrowBox = null) {
+    clearSpout(tip2);
     if (anchor.hasAttribute("data-tooltip-no-spout")) {
-      tip.classList.add("tooltip-spout-none");
+      tip2.classList.add("tooltip-spout-none");
       return;
     }
     let side = PLACEMENT_SPOUT[placement];
     if (!side && placement === "fallback") side = inferSpoutSide(x, y, tw, th, tr);
     if (!side) {
-      tip.classList.add("tooltip-spout-none");
+      tip2.classList.add("tooltip-spout-none");
       return;
     }
-    tip.classList.add(`tooltip-spout-${side}`);
+    tip2.classList.add(`tooltip-spout-${side}`);
     const cx = tr.left + tr.width / 2;
     const cy = tr.top + tr.height / 2;
     const min = TOOLTIP_ARROW_MIN;
@@ -5718,9 +5778,9 @@
     const aw = arrowBox?.width ?? tw;
     const ah = arrowBox?.height ?? th;
     if (side === "above" || side === "below") {
-      tip.style.setProperty("--tooltip-arrow-x", `${clamp(cx - ax, min, aw - min)}px`);
+      tip2.style.setProperty("--tooltip-arrow-x", `${clamp(cx - ax, min, aw - min)}px`);
     } else {
-      tip.style.setProperty("--tooltip-arrow-y", `${clamp(cy - ay, min, ah - min)}px`);
+      tip2.style.setProperty("--tooltip-arrow-y", `${clamp(cy - ay, min, ah - min)}px`);
     }
   }
   var tooltipRoot = null;
@@ -5731,6 +5791,24 @@
   var tooltipAnchor = null;
   var touchShowTimer = null;
   var tooltipSuppressLeaveUntilPointerUp = null;
+  function tooltipLayered() {
+    return !!(tooltipRoot && typeof tooltipRoot.showPopover === "function" && tooltipRoot.hasAttribute("popover"));
+  }
+  function raiseTooltipLayer() {
+    if (!tooltipLayered()) return;
+    try {
+      if (tooltipRoot.matches(":popover-open")) tooltipRoot.hidePopover();
+      tooltipRoot.showPopover();
+    } catch (_) {
+    }
+  }
+  function lowerTooltipLayer() {
+    if (!tooltipLayered()) return;
+    try {
+      if (tooltipRoot.matches(":popover-open")) tooltipRoot.hidePopover();
+    } catch (_) {
+    }
+  }
   function prepareOverflow(el5) {
     if (!el5._belOverflowTipBound) return;
     const getText = el5._belOverflowGetText;
@@ -5793,9 +5871,9 @@
     if (!anchor) return false;
     return !!(anchor.getAttribute("data-tooltip") || anchor.getAttribute("data-tooltip-tone") || anchor.hasAttribute("data-tooltip-head") || anchor.hasAttribute("data-tooltip-rich") && typeof anchor._belTooltipRich === "function" || parseLintErrors(anchor));
   }
-  function fillDiagnosticTooltip(tip, message, severity) {
-    tip.classList.add("tooltip-inner--diagnostic", `tooltip-inner--${severity}`);
-    tip.replaceChildren();
+  function fillDiagnosticTooltip(tip2, message, severity) {
+    tip2.classList.add("tooltip-inner--diagnostic", `tooltip-inner--${severity}`);
+    tip2.replaceChildren();
     const frame = document.createElement("div");
     frame.className = `cm-diagnostic cm-diagnostic-${severity}`;
     const head = document.createElement("div");
@@ -5808,14 +5886,14 @@
     body.className = "beljar-tip-body";
     body.textContent = message || "";
     frame.append(head, body);
-    tip.appendChild(frame);
+    tip2.appendChild(frame);
   }
-  function fillTooltipContent(tip, anchor) {
+  function fillTooltipContent(tip2, anchor) {
     const text = anchor.getAttribute("data-tooltip");
     const tone = anchor.getAttribute("data-tooltip-tone");
     const items = parseLintErrors(anchor);
     const headed = anchor.hasAttribute("data-tooltip-head");
-    tip.classList.remove(
+    tip2.classList.remove(
       "tooltip-inner--lint-errors",
       "tooltip-inner--diagnostic",
       "tooltip-inner--error",
@@ -5823,29 +5901,29 @@
       "tooltip-inner--rich"
     );
     if (anchor.hasAttribute("data-tooltip-rich") && typeof anchor._belTooltipRich === "function") {
-      tip.classList.add("tooltip-inner--rich");
-      tip.replaceChildren();
+      tip2.classList.add("tooltip-inner--rich");
+      tip2.replaceChildren();
       let frag = null;
       try {
         frag = anchor._belTooltipRich(anchor);
       } catch (_) {
         frag = null;
       }
-      if (frag) tip.appendChild(frag);
-      else if (text) tip.textContent = text;
+      if (frag) tip2.appendChild(frag);
+      else if (text) tip2.textContent = text;
       return;
     }
     if (tone === "error" || tone === "warning") {
-      fillDiagnosticTooltip(tip, text, tone);
+      fillDiagnosticTooltip(tip2, text, tone);
       return;
     }
     if (headed) {
-      tip.classList.add("tooltip-inner--lint-errors");
-      tip.replaceChildren();
+      tip2.classList.add("tooltip-inner--lint-errors");
+      tip2.replaceChildren();
       const head = document.createElement("div");
       head.className = "tooltip-lint-head";
       head.textContent = text || "Errors detected";
-      tip.appendChild(head);
+      tip2.appendChild(head);
       if (items) {
         const body = document.createElement("div");
         body.className = "tooltip-lint-body";
@@ -5855,22 +5933,22 @@
           const li = document.createElement("li");
           li.className = "tooltip-lint-item" + (item.kind === "warning" ? " tooltip-lint-item--warning" : "");
           const loc = item.prefix ? `${item.prefix}${item.line ?? "?"}` : String(item.line ?? "?");
-          const line = document.createElement("span");
-          line.className = "tooltip-lint-line";
-          line.textContent = loc;
+          const line2 = document.createElement("span");
+          line2.className = "tooltip-lint-line";
+          line2.textContent = loc;
           const msg = document.createElement("span");
           msg.className = "tooltip-lint-msg";
           msg.textContent = item.msg || item.message || "Error";
-          li.append(line, msg);
+          li.append(line2, msg);
           list3.appendChild(li);
         }
         body.appendChild(list3);
-        tip.appendChild(body);
+        tip2.appendChild(body);
       }
       return;
     }
     if (!text) return;
-    tip.textContent = text;
+    tip2.textContent = text;
   }
   function tooltipPreferPlacement(anchor) {
     const raw = (anchor.getAttribute("data-tooltip-placement") || "").trim().toLowerCase();
@@ -5903,11 +5981,11 @@
     const stack = document.createElement("div");
     stack.className = "tooltip-stack";
     for (const item of items) {
-      const tip = document.createElement("div");
-      tip.className = "tooltip-inner";
+      const tip2 = document.createElement("div");
+      tip2.className = "tooltip-inner";
       const severity = item.kind === "warning" ? "warning" : "error";
-      fillDiagnosticTooltip(tip, item.msg || item.message || "", severity);
-      stack.appendChild(tip);
+      fillDiagnosticTooltip(tip2, item.msg || item.message || "", severity);
+      stack.appendChild(tip2);
     }
     tooltipRoot.appendChild(stack);
     return stack;
@@ -5965,17 +6043,17 @@
     }
     if (!anchorHasTooltip(anchor) || tooltipRoot.hidden) return;
     const stacked = isStackedLintErrors(anchor);
-    let tip;
-    if (stacked) tip = buildStackedDiagnosticTooltips(anchor);
+    let tip2;
+    if (stacked) tip2 = buildStackedDiagnosticTooltips(anchor);
     else {
-      tip = tooltipRoot.querySelector(".tooltip-inner");
-      if (!tip) {
+      tip2 = tooltipRoot.querySelector(".tooltip-inner");
+      if (!tip2) {
         ensureTooltipInner();
-        tip = tooltipRoot.querySelector(".tooltip-inner");
+        tip2 = tooltipRoot.querySelector(".tooltip-inner");
       }
-      fillTooltipContent(tip, anchor);
+      fillTooltipContent(tip2, anchor);
     }
-    if (!tip) return;
+    if (!tip2) return;
     tooltipRoot.classList.add("is-measuring");
     const tw = tooltipRoot.offsetWidth;
     const th = tooltipRoot.offsetHeight;
@@ -5991,8 +6069,8 @@
     tooltipRoot.classList.remove("is-measuring");
     tooltipRoot.style.left = `${pos.x}px`;
     tooltipRoot.style.top = `${pos.y}px`;
-    if (stacked) applyStackSpout(tip, anchor, pos.placement, pos.x, pos.y, tw, th, tr);
-    else applySpout(tip, anchor, pos.placement, pos.x, pos.y, tw, th, tr);
+    if (stacked) applyStackSpout(tip2, anchor, pos.placement, pos.x, pos.y, tw, th, tr);
+    else applySpout(tip2, anchor, pos.placement, pos.x, pos.y, tw, th, tr);
     tooltipRoot.classList.add("is-visible");
   }
   function isPlainTextTooltip(anchor) {
@@ -6015,10 +6093,10 @@
       return;
     }
     if (isPlainTextTooltip(target) && !tooltipRoot.querySelector(".tooltip-stack")) {
-      const tip = tooltipRoot.querySelector(".tooltip-inner");
-      if (tip) {
+      const tip2 = tooltipRoot.querySelector(".tooltip-inner");
+      if (tip2) {
         const text = target.getAttribute("data-tooltip") || "";
-        if (tip.textContent !== text) tip.textContent = text;
+        if (tip2.textContent !== text) tip2.textContent = text;
         return;
       }
     }
@@ -6047,6 +6125,7 @@
     tooltipRoot.classList.remove("is-leaving");
     tooltipAnchor = anchor;
     tooltipRoot.hidden = false;
+    raiseTooltipLayer();
     layoutTooltip(anchor);
   }
   function hideTooltip() {
@@ -6060,12 +6139,13 @@
     if (!inner) {
       tooltipRoot.classList.remove("is-visible", "is-measuring", "is-leaving");
       tooltipRoot.hidden = true;
+      lowerTooltipLayer();
       tooltipRoot.style.left = "";
       tooltipRoot.style.top = "";
       return;
     }
     if (inner.classList.contains("tooltip-stack")) {
-      for (const tip of inner.querySelectorAll(".tooltip-inner")) clearSpout(tip);
+      for (const tip2 of inner.querySelectorAll(".tooltip-inner")) clearSpout(tip2);
     } else clearSpout(inner);
     tooltipRoot.classList.remove("is-visible", "is-measuring");
     tooltipRoot.classList.add("is-leaving");
@@ -6079,6 +6159,7 @@
       tooltipHideFallbackTimer = null;
       tooltipRoot.classList.remove("is-leaving");
       tooltipRoot.hidden = true;
+      lowerTooltipLayer();
       tooltipRoot.style.left = "";
       tooltipRoot.style.top = "";
     };
@@ -6096,10 +6177,11 @@
     cancelTooltipHideAnim();
     const inner = tooltipAnimatedEl();
     if (inner?.classList.contains("tooltip-stack")) {
-      for (const tip of inner.querySelectorAll(".tooltip-inner")) clearSpout(tip);
+      for (const tip2 of inner.querySelectorAll(".tooltip-inner")) clearSpout(tip2);
     } else if (inner) clearSpout(inner);
     tooltipRoot.classList.remove("is-visible", "is-measuring", "is-leaving");
     tooltipRoot.hidden = true;
+    lowerTooltipLayer();
     tooltipRoot.style.left = "";
     tooltipRoot.style.top = "";
   }
@@ -6210,15 +6292,15 @@
     if (!el5 || el5.nodeType !== 1) return;
     opts = opts || {};
     el5.removeAttribute("title");
-    const tip = text != null ? String(text).trim() : "";
-    if (!tip) {
+    const tip2 = text != null ? String(text).trim() : "";
+    if (!tip2) {
       el5.removeAttribute("data-tooltip");
       if (opts.ariaLabel !== false) el5.removeAttribute("aria-label");
       return;
     }
     const prev = el5.getAttribute("data-tooltip");
-    if (prev !== tip) el5.setAttribute("data-tooltip", tip);
-    if (opts.ariaLabel !== false) el5.setAttribute("aria-label", tip);
+    if (prev !== tip2) el5.setAttribute("data-tooltip", tip2);
+    if (opts.ariaLabel !== false) el5.setAttribute("aria-label", tip2);
     bindTooltipEl(el5);
   }
   function setRichTooltip(el5, buildFragment, ariaText) {
@@ -6277,6 +6359,9 @@
   function installTooltips() {
     if (typeof document === "undefined") return;
     tooltipRoot = document.getElementById("tooltip-root");
+    if (tooltipRoot && typeof tooltipRoot.showPopover === "function" && !tooltipRoot.hasAttribute("popover")) {
+      tooltipRoot.setAttribute("popover", "manual");
+    }
     bindTooltips();
   }
   if (typeof document !== "undefined") {
@@ -7320,7 +7405,7 @@
         focusMenuItem(menuEl, 0);
       });
     }
-    function open6(opts) {
+    function open7(opts) {
       closeOtherControllers();
       const items = opts.items;
       const anchor = opts.anchor;
@@ -7362,7 +7447,7 @@
     function openContext(opts) {
       const x = opts.x;
       const y = opts.y;
-      open6({
+      open7({
         anchor: { left: x, right: x, top: y, bottom: y },
         side: opts.side || "bottom",
         align: opts.align || "start",
@@ -7413,7 +7498,7 @@
       if (activeController === controller) setActiveController(null);
       forceCloseSync();
     }
-    controller.open = open6;
+    controller.open = open7;
     controller.openContext = openContext;
     controller.bindContextMenu = bindContextMenu;
     controller.closeAll = closeAll2;
@@ -7492,9 +7577,9 @@
   function wireMenuTrigger(btn, menuOpts) {
     if (!btn) return;
     let suppressNextClick = false;
-    function setOpen2(open6) {
-      btn.classList.toggle("is-active", open6);
-      btn.setAttribute("aria-expanded", open6 ? "true" : "false");
+    function setOpen2(open7) {
+      btn.classList.toggle("is-active", open7);
+      btn.setAttribute("aria-expanded", open7 ? "true" : "false");
     }
     function quietTooltip() {
       if (!g4.Tooltips) return;
@@ -7580,12 +7665,12 @@
         const btn = makeEl("button", "floating-window-action");
         btn.type = "button";
         btn.innerHTML = act2.icon || "";
-        const tip = (on) => on && act2.labelOn ? act2.labelOn : act2.label;
+        const tip2 = (on) => on && act2.labelOn ? act2.labelOn : act2.label;
         if (act2.toggle) {
           const setPressed = (on) => {
             btn.classList.toggle("is-on", !!on);
             btn.setAttribute("aria-pressed", on ? "true" : "false");
-            const t = tip(on);
+            const t = tip2(on);
             if (t) btn.setAttribute("aria-label", t);
             if (global3.Tooltips?.set) global3.Tooltips.set(btn, t);
           };
@@ -7781,9 +7866,9 @@
   }
   function capturingSearchInput() {
     if (typeof document === "undefined") return null;
-    const open6 = document.querySelectorAll("dialog." + DIALOG_ROOT_CLASS + "[open]:not(.is-leaving)");
-    for (let i = open6.length - 1; i >= 0; i--) {
-      const input = findSurfaceSearchInput(open6[i]);
+    const open7 = document.querySelectorAll("dialog." + DIALOG_ROOT_CLASS + "[open]:not(.is-leaving)");
+    for (let i = open7.length - 1; i >= 0; i--) {
+      const input = findSurfaceSearchInput(open7[i]);
       if (input) return input;
     }
     const palette = document.querySelector(".jar-palette.is-open");
@@ -8928,16 +9013,16 @@
     const l = rec && rec.links;
     if (!l || !l.fileId) return null;
     const from = Number.isFinite(l.from) ? l.from : null;
-    const line = Number.isFinite(l.line) && l.line >= 1 ? Math.floor(l.line) : null;
-    if (from == null && line == null) return null;
+    const line2 = Number.isFinite(l.line) && l.line >= 1 ? Math.floor(l.line) : null;
+    if (from == null && line2 == null) return null;
     const path = l.path != null ? String(l.path) : "";
     const base = path ? path.slice(path.lastIndexOf("/") + 1) : String(l.fileId);
     return {
       fileId: String(l.fileId),
       from,
       to: Number.isFinite(l.to) ? l.to : from,
-      line,
-      label: line != null ? base + ":" + line : base
+      line: line2,
+      label: line2 != null ? base + ":" + line2 : base
     };
   }
   function createMemoryAdapter(seed) {
@@ -9166,12 +9251,12 @@
     const out = [];
     let rest = src;
     while (rest) {
-      const open6 = rest.indexOf("`");
-      if (open6 < 0) break;
-      const close2 = rest.indexOf("`", open6 + 1);
+      const open7 = rest.indexOf("`");
+      if (open7 < 0) break;
+      const close2 = rest.indexOf("`", open7 + 1);
       if (close2 < 0) break;
-      if (open6 > 0) out.push({ code: false, text: rest.slice(0, open6) });
-      const code = rest.slice(open6 + 1, close2);
+      if (open7 > 0) out.push({ code: false, text: rest.slice(0, open7) });
+      const code = rest.slice(open7 + 1, close2);
       if (code) out.push({ code: true, text: code });
       rest = rest.slice(close2 + 1);
     }
@@ -9818,7 +9903,22 @@
   }
 
   // js/persist/sync/http-transport.mjs
-  var METHODS = ["heads", "head", "blobs", "missing", "putBlobs", "commit", "remove", "settings", "commitSettings", "versions", "version"];
+  var METHODS = [
+    "heads",
+    "head",
+    "blobs",
+    "missing",
+    "putBlobs",
+    "commit",
+    "remove",
+    "settings",
+    "commitSettings",
+    "versions",
+    "version",
+    "shares",
+    "share",
+    "unshare"
+  ];
   var TIMEOUT_MS = 3e4;
   var TEXTS_TIMEOUT_MS = 12e4;
   var CARRIES_TEXTS = /* @__PURE__ */ new Set(["blobs", "putBlobs"]);
@@ -10466,6 +10566,10 @@
   function lineDiff(theirs, mine) {
     const a = splitLines(theirs);
     const b = splitLines(mine);
+    if (a[a.length - 1] === "" && b[b.length - 1] === "") {
+      a.pop();
+      b.pop();
+    }
     const match = lcsMatch(a, b);
     const rows = [];
     let j = 0;
@@ -10521,33 +10625,39 @@
   }
   function sidesOf(c) {
     const App = g11.App;
-    const open6 = App && typeof App.openConflictSides === "function" ? App.openConflictSides(c.pid, c.fid) : null;
-    return open6 || g11.Persist.conflictSides(c.pid, c.fid);
+    const open7 = App && typeof App.openConflictSides === "function" ? App.openConflictSides(c.pid, c.fid) : null;
+    return open7 || g11.Persist.conflictSides(c.pid, c.fid);
   }
   function resolveDifference(c, choice) {
     const App = g11.App;
-    const open6 = App && typeof App.resolveOpenConflict === "function" ? App.resolveOpenConflict(c.pid, c.fid, choice) : null;
-    if (open6 !== null && open6 !== void 0) return open6;
+    const open7 = App && typeof App.resolveOpenConflict === "function" ? App.resolveOpenConflict(c.pid, c.fid, choice) : null;
+    if (open7 !== null && open7 !== void 0) return open7;
     return g11.Persist.resolveStoredConflict(c.pid, c.fid, choice);
   }
-  function diffNode(sides) {
-    const pre = el2("div", "review-diff");
-    const rows = compactDiff(lineDiff(sides.theirs, sides.mine), 1);
-    if (!rows.length) {
-      pre.appendChild(el2("div", "review-diff__none", "Both sides are the same now. Either choice keeps it."));
-      return pre;
+  function gapWords(count) {
+    return count === 1 ? "1 line" : count + " lines";
+  }
+  function diffNode(theirs, mine, none) {
+    const box = el2("div", "review-diff");
+    const rows = compactDiff(lineDiff(theirs || "", mine || ""), 1);
+    if (!rows.length && none) {
+      box.appendChild(el2("div", "review-diff__none", none));
+      return box;
     }
     for (const r of rows) {
       if (r.kind === "gap") {
-        pre.appendChild(el2("div", "review-diff__gap", r.count === 1 ? "1 unchanged line" : r.count + " unchanged lines"));
+        const gap = el2("div", "review-diff__gap");
+        gap.setAttribute("aria-label", r.count === 1 ? "1 unchanged line" : r.count + " unchanged lines");
+        gap.append(el2("span", "review-diff__mark", "\u22EF"), el2("span", "review-diff__count", gapWords(r.count)));
+        box.appendChild(gap);
         continue;
       }
-      const line = el2("div", "review-diff__line is-" + r.kind);
-      line.appendChild(el2("span", "review-diff__mark", r.kind === "theirs" ? "\u2212" : r.kind === "mine" ? "+" : ""));
-      line.appendChild(el2("span", "review-diff__text", r.text || " "));
-      pre.appendChild(line);
+      const line2 = el2("div", "review-diff__line is-" + r.kind);
+      line2.appendChild(el2("span", "review-diff__mark", r.kind === "theirs" ? "\u2212" : r.kind === "mine" ? "+" : ""));
+      line2.appendChild(el2("span", "review-diff__text", r.text || " "));
+      box.appendChild(line2);
     }
-    return pre;
+    return box;
   }
   var win = null;
   function render2(body) {
@@ -10587,7 +10697,7 @@
       }
       head.appendChild(actions);
       section.appendChild(head);
-      section.appendChild(diffNode(sides));
+      section.appendChild(diffNode(sides.theirs, sides.mine, "Both sides are the same now. Either choice keeps it."));
       body.appendChild(section);
     }
     if (files2.length > 1) {
@@ -10677,20 +10787,6 @@
     if (text != null) n.textContent = text;
     return n;
   }
-  function diffNode2(theirs, mine) {
-    const box = el3("div", "review-diff");
-    for (const r of compactDiff(lineDiff(theirs || "", mine || ""), 1)) {
-      if (r.kind === "gap") {
-        box.appendChild(el3("div", "review-diff__gap", r.count === 1 ? "1 unchanged line" : r.count + " unchanged lines"));
-        continue;
-      }
-      const line = el3("div", "review-diff__line is-" + r.kind);
-      line.appendChild(el3("span", "review-diff__mark", r.kind === "theirs" ? "\u2212" : r.kind === "mine" ? "+" : ""));
-      line.appendChild(el3("span", "review-diff__text", r.text || " "));
-      box.appendChild(line);
-    }
-    return box;
-  }
   var win2 = null;
   var busy = false;
   var problem = null;
@@ -10713,13 +10809,13 @@
     head.appendChild(actions);
     section.appendChild(head);
     for (const f of p.files) {
-      const line = el3("div", "review__change");
-      line.appendChild(el3("span", "review__path", f.path));
-      line.appendChild(el3("span", "review__kind", CHANGE_WORDS[f.change]));
-      section.appendChild(line);
+      const line2 = el3("div", "review__change");
+      line2.appendChild(el3("span", "review__path", f.path));
+      line2.appendChild(el3("span", "review__kind", CHANGE_WORDS[f.change]));
+      section.appendChild(line2);
       const theirs = side.texts && side.texts[f.fid];
       if (f.change === "edited" && typeof theirs === "string") {
-        section.appendChild(diffNode2(theirs, P.projectFileText(p.pid, f.fid)));
+        section.appendChild(diffNode(theirs, P.projectFileText(p.pid, f.fid)));
       }
     }
     return section;
@@ -10832,11 +10928,11 @@
     return state2 === "offline" ? "offline" : "synced";
   }
   function cloudSvg(look) {
-    const open6 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+    const open7 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
     if (look === "offline") {
-      return open6 + '<mask id="sync-cloud-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/><path d="' + SLASH + '" stroke="#000" stroke-width="5"/></mask><path d="' + CLOUD + '" mask="url(#sync-cloud-cut)"/><path class="sync-cloud__mark" d="' + SLASH + '"/></svg>';
+      return open7 + '<mask id="sync-cloud-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/><path d="' + SLASH + '" stroke="#000" stroke-width="5"/></mask><path d="' + CLOUD + '" mask="url(#sync-cloud-cut)"/><path class="sync-cloud__mark" d="' + SLASH + '"/></svg>';
     }
-    return open6 + '<path d="' + CLOUD + '"/>' + (MARKS[look] || MARKS.synced) + "</svg>";
+    return open7 + '<path d="' + CLOUD + '"/>' + (MARKS[look] || MARKS.synced) + "</svg>";
   }
 
   // js/account/sync-watch.mjs
@@ -10940,10 +11036,10 @@
       btn.innerHTML = cloudSvg(look);
       shownLook = look;
     }
-    const tip = cloudWords(s).tip;
-    btn.setAttribute("aria-label", tip);
-    if (g13.Tooltips && typeof g13.Tooltips.set === "function") g13.Tooltips.set(btn, tip);
-    else btn.setAttribute("data-tooltip", tip);
+    const tip2 = cloudWords(s).tip;
+    btn.setAttribute("aria-label", tip2);
+    if (g13.Tooltips && typeof g13.Tooltips.set === "function") g13.Tooltips.set(btn, tip2);
+    else btn.setAttribute("data-tooltip", tip2);
     if (g13.Menu && g13.Menu.update && g13.Menu.rootAnchor && g13.Menu.rootAnchor() === btn) g13.Menu.update(btn, menuItems2());
   }
   function menuItems2() {
@@ -11073,6 +11169,412 @@
     else go2();
   }
 
+  // js/ui/when.mjs
+  function midnightOf(ms) {
+    const d = new Date(ms);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  }
+  function daysAgo(ms, now) {
+    const today = new Date(now);
+    if (ms >= midnightOf(now)) return 0;
+    return ms >= new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1).getTime() ? 1 : 2;
+  }
+  function dayWords(ms, now = Date.now()) {
+    const ago2 = daysAgo(ms, now);
+    if (ago2 === 0) return "Today";
+    if (ago2 === 1) return "Yesterday";
+    const at = new Date(ms);
+    const opts = at.getFullYear() === new Date(now).getFullYear() ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" };
+    return at.toLocaleDateString([], opts);
+  }
+  function clockTime(ms, seconds = false) {
+    const opts = seconds ? { hour: "numeric", minute: "2-digit", second: "2-digit" } : { hour: "numeric", minute: "2-digit" };
+    return new Date(ms).toLocaleTimeString([], opts);
+  }
+  function versionTime(ms, now = Date.now()) {
+    return dayWords(ms, now) + " " + clockTime(ms, true);
+  }
+  function whenWords(ms, now = Date.now()) {
+    const ago2 = daysAgo(ms, now);
+    const time = clockTime(ms);
+    if (ago2 === 0) return "today at " + time;
+    if (ago2 === 1) return "yesterday at " + time;
+    return "on " + dayWords(ms, now) + " at " + time;
+  }
+
+  // js/ui/share-window.mjs
+  var g14 = typeof window !== "undefined" ? window : globalThis;
+  var PROJECT_LINK_WORDS = "Can read the project, including changes you make later. It isn\u2019t listed anywhere.";
+  var NO_LINK_WORDS = "Anyone you send a link to can read the project, including changes you make later.";
+  var VERSION_LINKS_WORDS = "Each shows the project as it was then.";
+  function versionLinkWords(at, now = Date.now()) {
+    return "Anyone with this link can read this version, as it was " + whenWords(at, now) + ". It isn\u2019t listed anywhere.";
+  }
+  function shareProblem(error) {
+    if (error === "not-found") return "This project isn\u2019t in the cloud yet. Try again once it has synced.";
+    if (error === "deleted") return "This project was deleted in the cloud, so it can\u2019t be shared.";
+    if (error === "no-version") return "That version can\u2019t be shared.";
+    if (error === "too-many") return "This project has as many links as it can have. Revoke one to make another.";
+    return "Couldn\u2019t reach the cloud. Try again.";
+  }
+  var SIGNED_OUT_WORDS = "Links are kept in the cloud. Sign in to make one.";
+  var UNSYNCED_WORDS = "Some changes here aren\u2019t in the cloud yet, so the link doesn\u2019t show them.";
+  var ACCESS = {
+    looking: { glyph: "link", title: "Looking for a link\u2026", words: "" },
+    none: { glyph: "lock", title: "Only you", words: NO_LINK_WORDS },
+    // Links to single versions, and none to the project: "Only you" would not be true.
+    versions: { glyph: "link", title: "No link to the project yet", words: NO_LINK_WORDS },
+    link: { glyph: "globe", title: "Anyone with the link", words: PROJECT_LINK_WORDS },
+    out: { glyph: "lock", title: "Only you", words: SIGNED_OUT_WORDS },
+    trouble: { glyph: "alert", title: "Couldn\u2019t reach the cloud", words: "" }
+  };
+  var GLYPHS = {
+    link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+    globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+    lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    open: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+    history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+    unlink: '<path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><path d="M8 2v3"/><path d="M2 8h3"/><path d="M16 19v3"/><path d="M19 16h3"/>',
+    alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>'
+  };
+  var GLYPH_NAMES = Object.keys(GLYPHS);
+  function svgOf(name) {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + GLYPHS[name] + "</svg>";
+  }
+  function glyph(name, className) {
+    const span = el("span", "share-glyph" + (className ? " " + className : ""));
+    span.dataset.glyph = name;
+    span.innerHTML = svgOf(name);
+    return span;
+  }
+  function glyphButton(label, action, variant, name) {
+    const btn = actionButton(label, action, variant);
+    btn.classList.add("has-glyph");
+    btn.replaceChildren(glyph(name), el("span", "share-label", label));
+    return btn;
+  }
+  function tip(node, text) {
+    const T = g14.Tooltips;
+    if (T && typeof T.set === "function") T.set(node, text);
+    else node.setAttribute("aria-label", text);
+  }
+  function linkAddress(id) {
+    const R = g14.Routes;
+    return R && typeof R.shareUrl === "function" ? R.shareUrl(id, true) : "/s/" + id;
+  }
+  function addressParts(href, id) {
+    const shown = String(href).replace(/^https?:\/\//, "");
+    const cut = id && shown.endsWith(id) ? shown.length - id.length : shown.lastIndexOf("/") + 1;
+    return { host: shown.slice(0, cut), id: shown.slice(cut) };
+  }
+  function selectAll(node) {
+    const sel = typeof g14.getSelection === "function" ? g14.getSelection() : null;
+    if (!sel || typeof document === "undefined") return;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+  async function copyText(text, field) {
+    try {
+      const nav = g14.navigator;
+      if (nav && nav.clipboard && typeof nav.clipboard.writeText === "function") {
+        await nav.clipboard.writeText(text);
+        return true;
+      }
+    } catch (_) {
+    }
+    if (field) {
+      if (typeof field.focus === "function") field.focus();
+      if (typeof field.select === "function") field.select();
+      else selectAll(field);
+    }
+    return false;
+  }
+  function copied(btn, label, words, done) {
+    const mark = btn.querySelector(".share-glyph");
+    if (mark) mark.replaceWith(glyph("check"));
+    else btn.innerHTML = svgOf("check");
+    btn.classList.add("is-copied");
+    if (label) label.textContent = done;
+    clearTimeout(btn._copiedTimer);
+    btn._copiedTimer = setTimeout(() => {
+      const now = btn.querySelector(".share-glyph");
+      if (now) now.replaceWith(glyph("copy"));
+      else btn.innerHTML = svgOf("copy");
+      btn.classList.remove("is-copied");
+      if (label) label.textContent = words;
+    }, 1600);
+  }
+  function linkRow(id, opts = {}) {
+    const href = linkAddress(id);
+    const parts = addressParts(href, id);
+    const row = el("div", "share-link");
+    const field = el("div", "share-link__address share-window__address");
+    field.tabIndex = 0;
+    field.dataset.link = href;
+    field.setAttribute("role", "textbox");
+    field.setAttribute("aria-readonly", "true");
+    field.setAttribute("aria-label", "Link");
+    field.append(el("span", "share-link__host", parts.host), el("span", "share-link__id", parts.id));
+    field.addEventListener("focus", () => selectAll(field));
+    field.addEventListener("copy", (e) => {
+      if (!e.clipboardData) return;
+      e.clipboardData.setData("text/plain", href);
+      e.preventDefault();
+    });
+    const open7 = el("a", "share-link__open");
+    open7.href = href;
+    open7.target = "_blank";
+    open7.rel = "noopener";
+    open7.appendChild(glyph("open"));
+    tip(open7, "Open link");
+    const copy = el("button", "share-link__copy share-window__copy");
+    copy.type = "button";
+    copy.dataset.action = "copy";
+    const label = el("span", "share-label", "Copy");
+    copy.append(glyph("copy"), label);
+    async function doCopy() {
+      const ok = await copyText(href, field);
+      if (ok) copied(copy, label, "Copy", "Copied");
+      if (typeof opts.onCopy === "function") opts.onCopy(ok);
+      return ok;
+    }
+    copy.addEventListener("click", doCopy);
+    row.append(field, open7, copy);
+    row.copy = doCopy;
+    return row;
+  }
+  function iconButton(name, words, className) {
+    const btn = el("button", "icon-btn share-icon-btn " + className);
+    btn.type = "button";
+    btn.innerHTML = svgOf(name);
+    tip(btn, words);
+    return btn;
+  }
+  function versionRow(link, onRevoke) {
+    const href = linkAddress(link.id);
+    const item = el("li", "share-version share-window__version");
+    item.dataset.version = String(link.version);
+    item.appendChild(glyph("history", "share-version__mark"));
+    const text = el("div", "share-version__text");
+    text.appendChild(el("span", "share-version__when", versionTime(link.versionAt || link.createdAt)));
+    const address = el("span", "share-version__address share-window__address", "/s/" + link.id);
+    address.dataset.link = href;
+    text.appendChild(address);
+    item.appendChild(text);
+    const copy = iconButton("copy", "Copy link", "share-version__copy");
+    copy.addEventListener("click", async () => {
+      if (await copyText(href, address)) copied(copy, null, "", "");
+    });
+    const off = iconButton("unlink", "Revoke link", "share-version__revoke share-window__revoke");
+    off.addEventListener("click", () => onRevoke(link.id, off));
+    item.append(copy, off);
+    return item;
+  }
+  function accessRow(kind, action) {
+    const A = ACCESS[kind];
+    const box = el("div", "share-access");
+    box.dataset.state = kind;
+    box.appendChild(glyph(A.glyph, "share-access__mark"));
+    box.appendChild(el("p", "share-access__title", A.title));
+    if (action) box.appendChild(action);
+    if (A.words) box.appendChild(el("p", "share-access__words share-window__words", A.words));
+    return box;
+  }
+  function line(text, kind) {
+    const p = el("p", "share-line share-window__" + kind);
+    p.append(glyph("alert"), el("span", "", text));
+    return p;
+  }
+  var open5 = null;
+  async function openShareWindow(pid, name) {
+    const P = g14.Persist;
+    const A = g14.Account;
+    if (!P) return false;
+    if (!pid) pid = P.getActiveProjectId();
+    if (!name) {
+      const p = (typeof P.projects === "function" ? P.projects() : []).find((x) => x.id === pid);
+      name = p ? p.name : P.getProjectName();
+    }
+    if (open5) requestDialogClose(open5);
+    const body = el("div", "share-window");
+    const dialogEl = createDialog({
+      ariaLabel: "Share " + name,
+      title: "Share \u201C" + name + "\u201D",
+      content: body,
+      className: WRAP_CLASS + " share-window-wrap",
+      cardClass: CARD_CLASS + " share-window__card",
+      removeOnClose: true
+    });
+    dialogEl.addEventListener("close", () => {
+      if (open5 === dialogEl) open5 = null;
+    });
+    open5 = dialogEl;
+    openDialog(dialogEl);
+    let busy2 = false;
+    let synced = null;
+    let links = [];
+    function slotButton(label, action, variant, glyphName) {
+      const btn = glyphName ? glyphButton(label, action, variant, glyphName) : actionButton(label, action, variant);
+      btn.classList.add("share-slot");
+      return btn;
+    }
+    function signedOut() {
+      const parts = [accessRow("out")];
+      if (A && typeof A.signIn === "function") {
+        const sign = slotButton("Sign in with GitHub", "sign-in", "primary");
+        sign.addEventListener("click", () => {
+          requestDialogClose(dialogEl);
+          A.signIn();
+        });
+        parts.push(sign);
+      }
+      body.replaceChildren(...parts);
+    }
+    function trouble() {
+      const again = slotButton("Try again", "retry", "secondary");
+      again.addEventListener("click", () => load());
+      body.replaceChildren(accessRow("trouble"), again);
+    }
+    function looking() {
+      const wait = slotButton("Copy link", "make", "primary", "link");
+      wait.disabled = true;
+      body.replaceChildren(accessRow("looking"), wait);
+    }
+    async function make() {
+      if (busy2) return null;
+      busy2 = true;
+      let res;
+      try {
+        res = await P.makeShare(pid, 0);
+      } catch (_) {
+        res = { ok: false, error: "network" };
+      }
+      busy2 = false;
+      if (res === null) {
+        signedOut();
+        return null;
+      }
+      return res;
+    }
+    async function revoke(id, btn) {
+      if (busy2) return;
+      busy2 = true;
+      btn.disabled = true;
+      try {
+        await P.revokeShare(pid, id);
+      } catch (_) {
+        busy2 = false;
+        btn.disabled = false;
+        draw(shareProblem("network"));
+        return;
+      }
+      busy2 = false;
+      await load(true);
+    }
+    function draw(problem2) {
+      const project = links.find((l) => !l.version);
+      const parts = [];
+      if (project) {
+        const off = actionButton("Revoke", "revoke", "ghost");
+        off.classList.add("share-access__revoke", "share-window__revoke");
+        off.addEventListener("click", () => revoke(project.id, off));
+        parts.push(accessRow("link", off), linkRow(project.id));
+      } else {
+        const make1 = slotButton("Copy link", "make", "primary", "link");
+        make1.classList.add("share-window__make");
+        make1.addEventListener("click", async () => {
+          make1.disabled = true;
+          const res = await make();
+          if (!res) return;
+          if (!res.ok) {
+            draw(shareProblem(res.error));
+            return;
+          }
+          links = [{ id: res.id, version: 0, createdAt: res.createdAt, versionAt: 0 }].concat(links.filter((l) => l.version));
+          draw();
+          const row = body.querySelector(".share-link");
+          if (row && row.copy) row.copy();
+        });
+        parts.push(accessRow(links.length ? "versions" : "none"), make1);
+      }
+      if (problem2) parts.push(line(problem2, "problem"));
+      if (synced === false) parts.push(line(UNSYNCED_WORDS, "unsynced"));
+      const fixed = links.filter((l) => l.version);
+      if (fixed.length) {
+        const versions = el("section", "share-versions");
+        const head = el("div", "share-versions__head");
+        head.append(el("h3", "share-versions__title", "Links to one version"), el("p", "share-versions__words", VERSION_LINKS_WORDS));
+        const list3 = el("ul", "share-versions__list");
+        for (const l of fixed) list3.appendChild(versionRow(l, revoke));
+        versions.append(head, list3);
+        parts.push(versions);
+      }
+      body.replaceChildren(...parts);
+    }
+    async function load(quiet) {
+      if (!A || typeof A.user !== "function" || !A.user()) {
+        signedOut();
+        return;
+      }
+      if (!quiet) looking();
+      if (synced == null) {
+        try {
+          const s = await P.confirmSynced();
+          synced = !!(s && s.ok);
+        } catch (_) {
+          synced = false;
+        }
+      }
+      let got;
+      try {
+        got = await P.shareLinks(pid);
+      } catch (_) {
+        got = void 0;
+      }
+      if (open5 !== dialogEl) return;
+      if (got === null) return signedOut();
+      if (!got) return trouble();
+      links = got;
+      draw();
+    }
+    await load();
+    return true;
+  }
+  function shareAvailable() {
+    const A = g14.Account;
+    return !!A && typeof A.available === "function" && A.available();
+  }
+  async function shareVersion(pid, version2, at, into) {
+    const P = g14.Persist;
+    let res;
+    try {
+      res = await P.makeShare(pid, version2);
+    } catch (_) {
+      res = { ok: false, error: "network" };
+    }
+    const box = el("div", "share-window__inline");
+    if (!res) {
+      box.appendChild(el("p", "history__note", SIGNED_OUT_WORDS));
+    } else if (!res.ok) {
+      box.appendChild(el("p", "review__problem", shareProblem(res.error)));
+    } else {
+      const row = linkRow(res.id);
+      box.appendChild(row);
+      box.appendChild(el("p", "history__note share-window__words", versionLinkWords(res.versionAt || at)));
+      into.replaceChildren(box);
+      await row.copy();
+      return res;
+    }
+    into.replaceChildren(box);
+    return res;
+  }
+  var ShareWindow = { open: openShareWindow, available: shareAvailable, shareVersion };
+  g14.ShareWindow = ShareWindow;
+
   // js/editor-src/project-paths.mjs
   function fileBase(name) {
     const s = String(name || "");
@@ -11129,8 +11631,8 @@
   }
   function parseCfg(text) {
     const out = [];
-    for (const line of String(text || "").split("\n")) {
-      const t = line.trim();
+    for (const line2 of String(text || "").split("\n")) {
+      const t = line2.trim();
       if (!t || t.charAt(0) === "%") continue;
       out.push(t);
     }
@@ -11267,8 +11769,8 @@
   }
   function defaultActiveCfgForDir(dir) {
     const d = dir != null ? String(dir) : "";
-    const g20 = typeof globalThis !== "undefined" ? globalThis : {};
-    const P = g20.Persist;
+    const g22 = typeof globalThis !== "undefined" ? globalThis : {};
+    const P = g22.Persist;
     if (P && typeof P.getActiveCfgForDir === "function") {
       const path = P.getActiveCfgForDir(d);
       if (path) {
@@ -11293,8 +11795,8 @@
   }
   function defaultActiveCfgsForDir(dir) {
     const d = dir != null ? String(dir) : "";
-    const g20 = typeof globalThis !== "undefined" ? globalThis : {};
-    const P = g20.Persist;
+    const g22 = typeof globalThis !== "undefined" ? globalThis : {};
+    const P = g22.Persist;
     if (P && typeof P.getActiveCfgsForDir === "function") {
       const list3 = P.getActiveCfgsForDir(d);
       if (list3?.length) {
@@ -11468,11 +11970,11 @@
     }
     return { code: parts.join("\n\n"), spans };
   }
-  function mapLine(spans, line) {
-    if (!spans || !isFinite(line)) return null;
+  function mapLine(spans, line2) {
+    if (!spans || !isFinite(line2)) return null;
     for (const s of spans) {
-      if (line >= s.startLine && line <= s.endLine) {
-        return { id: s.id, name: s.name, line: line - s.startLine + 1 };
+      if (line2 >= s.startLine && line2 <= s.endLine) {
+        return { id: s.id, name: s.name, line: line2 - s.startLine + 1 };
       }
     }
     return null;
@@ -11482,8 +11984,8 @@
     let out = String(text);
     out = out.replace(
       /File\s+"([^"]*)"\s*,\s*line\s+(\d+)/g,
-      (whole, _fname, line) => {
-        const hit = mapLine(spans, +line);
+      (whole, _fname, line2) => {
+        const hit = mapLine(spans, +line2);
         if (!hit) return whole;
         return `File "${hit.name}", line ${hit.line}`;
       }
@@ -11504,8 +12006,8 @@
     );
     out = out.replace(
       /(^|\n)(\s*)at line\s+(\d+),(\s*characters?\s+\d+(?:-\d+)?)/g,
-      (whole, lead, ws, line, rest) => {
-        const hit = mapLine(spans, +line);
+      (whole, lead, ws, line2, rest) => {
+        const hit = mapLine(spans, +line2);
         if (!hit) return whole;
         return `${lead}${ws}in ${hit.name}, at line ${hit.line},${rest}`;
       }
@@ -11748,8 +12250,8 @@
     for (const f of files2) {
       const peeled = peelGlobalFilePragmas(String(f.text != null ? f.text : ""));
       if (peeled.hoisted) {
-        for (const line of peeled.hoisted.split("\n")) {
-          if (line && hoistedLines.indexOf(line) === -1) hoistedLines.push(line);
+        for (const line2 of peeled.hoisted.split("\n")) {
+          if (line2 && hoistedLines.indexOf(line2) === -1) hoistedLines.push(line2);
         }
       }
       stripped.push({ id: f.id, name: f.name, text: peeled.rest });
@@ -11796,18 +12298,18 @@
       offsetLines: last.endLine + 1
     };
   }
-  function preludeFileAt(spans, line) {
+  function preludeFileAt(spans, line2) {
     for (const s of spans) {
-      if (line >= s.startLine && line <= s.endLine) {
-        return { name: s.name, line: line - s.startLine + 1 };
+      if (line2 >= s.startLine && line2 <= s.endLine) {
+        return { name: s.name, line: line2 - s.startLine + 1 };
       }
     }
     return null;
   }
   function messageAfter(text, index) {
     const lines = String(text).slice(index, index + 400).split("\n");
-    for (const line of lines) {
-      const t = line.trim().replace(/^(Error|Warning):\s*/i, "");
+    for (const line2 of lines) {
+      const t = line2.trim().replace(/^(Error|Warning):\s*/i, "");
       if (t && !/^[-^~\s]+$/.test(t)) return t.slice(0, 160);
     }
     return "";
@@ -11824,8 +12326,8 @@
       issues.push({ name: hit.name, line: hit.line, message: messageAfter(src, index) });
     }
     let out = String(text);
-    out = out.replace(/File\s+"([^"]*)"\s*,\s*line\s+(\d+)/g, (whole, fname, line, idx, src) => {
-      const L = +line;
+    out = out.replace(/File\s+"([^"]*)"\s*,\s*line\s+(\d+)/g, (whole, fname, line2, idx, src) => {
+      const L = +line2;
       if (L > offset) return `File "${fname}", line ${L - offset}`;
       const hit = preludeFileAt(prelude.spans, L);
       if (hit) noteIssue(hit, src, idx + whole.length);
@@ -11847,8 +12349,8 @@
     );
     out = out.replace(
       /(^|\n)(\s*)at line\s+(\d+),(\s*characters?\s+\d+(?:-\d+)?)/g,
-      (whole, lead, ws, line, rest, idx, src) => {
-        const L = +line;
+      (whole, lead, ws, line2, rest, idx, src) => {
+        const L = +line2;
         if (L > offset) return `${lead}${ws}at line ${L - offset},${rest}`;
         const hit = preludeFileAt(prelude.spans, L);
         if (hit) noteIssue(hit, src, idx + whole.length);
@@ -11946,12 +12448,12 @@
     shiftCheckerOutput,
     scanProjectText
   };
-  var g14 = typeof window !== "undefined" ? window : globalThis;
-  g14.ProjectSource = ProjectSource2;
-  g14.BelJarProjectSource = g14.ProjectSource;
+  var g15 = typeof window !== "undefined" ? window : globalThis;
+  g15.ProjectSource = ProjectSource2;
+  g15.BelJarProjectSource = g15.ProjectSource;
 
   // js/workspace/import-project.mjs
-  var g15 = typeof window !== "undefined" ? window : globalThis;
+  var g16 = typeof window !== "undefined" ? window : globalThis;
   function relPathFromPickerFile(file, opts) {
     const rel = file.webkitRelativePath || file.name;
     const parts = rel.split("/");
@@ -12010,15 +12512,15 @@
     };
   }
   function createImportedProject(plan) {
-    const P = g15.Persist;
+    const P = g16.Persist;
     const made = P.createProjectWithFiles(plan.name, plan.entries, {
       projectName: plan.name,
       activeCfgByDir: plan.activeCfgByDir || void 0
     });
     if (!made || !made.projectId) return null;
-    const open6 = plan.activePath || plan.firstBel;
-    if (open6) {
-      const created = P.listFiles().find((f) => f.name === open6);
+    const open7 = plan.activePath || plan.firstBel;
+    if (open7) {
+      const created = P.listFiles().find((f) => f.name === open7);
       if (created) P.setActiveFileId(created.id);
     }
     return made.projectId;
@@ -12031,7 +12533,7 @@
     folderAsProject,
     createImportedProject
   };
-  g15.ImportProject = ImportProject;
+  g16.ImportProject = ImportProject;
 
   // js/commands/command-settings.mjs
   var ROWS = [
@@ -12436,6 +12938,8 @@
     { id: "project.download", title: "Download Project", section: "File", scope: "global", palette: true },
     // Every version the cloud keeps, and Restore (js/ui/version-history.mjs): signed in only.
     { id: "project.history", title: "Version History", section: "File", scope: "global", palette: true },
+    // A link anyone can read, and taking it back (js/ui/share-window.mjs): where a server keeps links.
+    { id: "project.share", title: "Share Project\u2026", section: "File", scope: "global", palette: true },
     { id: "tab.next", title: "Next Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bn"] },
     { id: "tab.prev", title: "Previous Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bp"] },
     { id: "tab.close", title: "Close Tab", section: "File", scope: "global", palette: true, keybindable: true },
@@ -14307,10 +14811,10 @@
   function parseLineQuery(query2) {
     const m = String(query2 || "").match(/^(\d+)(?::(\d+))?$/);
     if (!m) return null;
-    const line = parseInt(m[1], 10);
+    const line2 = parseInt(m[1], 10);
     const col = m[2] != null ? parseInt(m[2], 10) : 1;
-    if (!Number.isFinite(line) || line < 1) return null;
-    return { line, col: Number.isFinite(col) && col >= 1 ? col : 1 };
+    if (!Number.isFinite(line2) || line2 < 1) return null;
+    return { line: line2, col: Number.isFinite(col) && col >= 1 ? col : 1 };
   }
   var HELP_CATALOG = [
     { mode: "anywhere", title: "Anywhere", detail: "Go to files & symbols", prefix: "", commandId: "nav.anywhere" },
@@ -14544,7 +15048,7 @@
         shortcut,
         section: "Modes",
         run: () => {
-          open5({ mode: h.mode });
+          open6({ mode: h.mode });
         }
       };
     });
@@ -14565,8 +15069,8 @@
         const view = ed.getView();
         if (!view) return;
         const doc2 = view.state.doc;
-        const line = Math.min(Math.max(1, parsed.line), doc2.lines);
-        const lineObj = doc2.line(line);
+        const line2 = Math.min(Math.max(1, parsed.line), doc2.lines);
+        const lineObj = doc2.line(line2);
         const col = Math.min(Math.max(1, parsed.col), lineObj.length + 1);
         const pos = Math.min(lineObj.from + col - 1, lineObj.to);
         if (typeof ed.jumpToRange === "function") ed.jumpToRange({ from: pos, to: pos });
@@ -14749,7 +15253,7 @@
       }
     }
   }
-  function open5(opts) {
+  function open6(opts) {
     let mode = "anywhere";
     if (opts && opts.mode && MODE_PREFIX[opts.mode] != null && modeAvailable(opts.mode)) mode = opts.mode;
     if (!ui) buildUi();
@@ -14779,12 +15283,12 @@
   }
   function toggle2(opts) {
     if (isOpen) close();
-    else open5(opts);
+    else open6(opts);
   }
   function runCommandEntry() {
     var style = Settings.get("keymapStyle");
-    var line = typeof StatusStrip !== "undefined" && StatusStrip.openCommandLine;
-    if (!line) return toggle2({ mode: "commands" });
+    var line2 = typeof StatusStrip !== "undefined" && StatusStrip.openCommandLine;
+    if (!line2) return toggle2({ mode: "commands" });
     if (style === "emacs") return StatusStrip.openCommandLine("", { prompt: "M-x" });
     return StatusStrip.openCommandLine("");
   }
@@ -14854,7 +15358,7 @@
     setProvider,
     setModeMeta,
     modeAvailable,
-    open: open5,
+    open: open6,
     close,
     toggle: toggle2,
     runCommandEntry,
@@ -15024,37 +15528,37 @@
   if (typeof document !== "undefined") init4();
 
   // js/commands/shared-commands.mjs
-  var g16 = globalThis;
+  var g17 = globalThis;
   function attachSharedCommands(page) {
     const say3 = page && typeof page.say === "function" ? page.say : () => {
     };
     const applied = page && typeof page.applied === "function" ? page.applied : () => {
     };
     const on = (id, run3, when) => Commands.attach(id, when ? { run: run3, when } : { run: run3 });
-    const account = () => g16.Account || null;
-    const sync = () => g16.Persist && typeof g16.Persist.syncSummary === "function" ? g16.Persist.syncSummary() : null;
+    const account = () => g17.Account || null;
+    const sync = () => g17.Persist && typeof g17.Persist.syncSummary === "function" ? g17.Persist.syncSummary() : null;
     on("account.sign-in", () => account().signIn(), () => !!account() && account().available() && !account().user());
     on("account.sign-out", () => account().signOut(), () => !!account() && !!account().user());
-    on("sync.now", () => g16.Persist.confirmSynced(), () => {
+    on("sync.now", () => g17.Persist.confirmSynced(), () => {
       const s = sync();
       return !!s && s.signedIn && s.state !== "offline" && s.state !== "held";
     });
-    on("sync.review", () => g16.SyncUI.review(), () => {
+    on("sync.review", () => g17.SyncUI.review(), () => {
       const s = sync();
       return !!s && s.differs.length > 0;
     });
-    on("sync.review-offline", () => g16.SyncUI.reviewOffline(), () => {
+    on("sync.review-offline", () => g17.SyncUI.reviewOffline(), () => {
       const s = sync();
       return !!s && s.state === "held";
     });
-    on("view.theme", () => g16.Frame.toggleTheme());
+    on("view.theme", () => g17.Frame.toggleTheme());
     on("app.report-issue", () => Routes.reportIssue());
-    on("tools.palette", () => g16.CommandPalette.open());
+    on("tools.palette", () => g17.CommandPalette.open());
     for (const spec of SETTINGS2) {
       const id = settingId(spec.slug);
       if (!Commands.runsHere(id)) continue;
       on(id, () => {
-        const res = applyValue(g16.Settings, spec, void 0);
+        const res = applyValue(g17.Settings, spec, void 0);
         if (res.applied) applied(spec);
         say3(res.message);
         return res.ok;
@@ -15063,15 +15567,15 @@
   }
 
   // js/home/home-commands.mjs
-  var g17 = globalThis;
+  var g18 = globalThis;
   function attachHomeCommands(home) {
-    const palette = g17.CommandPalette;
+    const palette = g18.CommandPalette;
     palette.init();
     attachSharedCommands({ say: home.say });
     const on = (id, run3, when) => Commands.attach(id, when ? { run: run3, when } : { run: run3 });
     on("project.new", () => home.newProject());
     on("file.import-folder", () => home.pickFolder());
-    on("app.reload", () => g17.location.reload());
+    on("app.reload", () => g18.location.reload());
     palette.setProvider("files", () => home.projects().map((p) => ({
       title: p.name,
       detail: p.detail,
@@ -15087,7 +15591,7 @@
   }
 
   // js/home/preload-editor.mjs
-  var g18 = typeof window !== "undefined" ? window : globalThis;
+  var g19 = typeof window !== "undefined" ? window : globalThis;
   function scriptsOf(html) {
     return [...String(html || "").replace(/<!--[\s\S]*?-->/g, "").matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]);
   }
@@ -15096,10 +15600,10 @@
     return !(c && c.saveData);
   }
   async function preloadEditor(env) {
-    const doc2 = env && env.document || g18.document;
-    const fetchFn = env && env.fetch || g18.fetch;
-    const nav = env && env.navigator || g18.navigator;
-    const base = env && env.base || g18.location && g18.location.href;
+    const doc2 = env && env.document || g19.document;
+    const fetchFn = env && env.fetch || g19.fetch;
+    const nav = env && env.navigator || g19.navigator;
+    const base = env && env.base || g19.location && g19.location.href;
     if (!doc2 || typeof fetchFn !== "function" || !base || !mayPreload(nav)) return [];
     let html;
     let at;
@@ -15133,12 +15637,34 @@
     const run3 = () => {
       preloadEditor();
     };
-    if (typeof g18.requestIdleCallback === "function") g18.requestIdleCallback(run3, { timeout: 3e3 });
+    if (typeof g19.requestIdleCallback === "function") g19.requestIdleCallback(run3, { timeout: 3e3 });
     else setTimeout(run3, 1200);
   }
 
+  // js/share/share-fetch.mjs
+  var g20 = typeof window !== "undefined" ? window : globalThis;
+  async function fetchShare(id, doFetch = (...a) => g20.fetch(...a)) {
+    if (!id) return { why: "gone" };
+    let res;
+    try {
+      res = await doFetch("/api/share/" + encodeURIComponent(id), { cache: "no-store", credentials: "omit" });
+    } catch (_) {
+      return { why: "network" };
+    }
+    if (res.status === 404) return { why: "gone" };
+    if (res.status === 413) return { why: "too-large" };
+    if (res.status !== 200) return { why: "network" };
+    try {
+      const view = await res.json();
+      if (!view || !Array.isArray(view.files)) return { why: "network" };
+      return { view };
+    } catch (_) {
+      return { why: "network" };
+    }
+  }
+
   // js/home/home.mjs
-  var g19 = typeof window !== "undefined" ? window : globalThis;
+  var g21 = typeof window !== "undefined" ? window : globalThis;
   var OPEN_WAIT_MS = 8e3;
   function orderProjects(projects, last, statsOf) {
     const at = new Map(projects.map((p) => [p.id, statsOf(p.id).editedAt || 0]));
@@ -15222,19 +15748,19 @@
     return n;
   }
   function toast2(message, kind) {
-    const T = g19.Toasts;
+    const T = g21.Toasts;
     if (!T) return;
     if (kind === "warn" && typeof T.warn === "function") T.warn(message);
     else if (typeof T.show === "function") T.show(message);
   }
   function conflictsByProject() {
     const out = /* @__PURE__ */ new Map();
-    for (const c of g19.Persist.listConflicts()) out.set(c.pid, (out.get(c.pid) || 0) + 1);
+    for (const c of g21.Persist.listConflicts()) out.set(c.pid, (out.get(c.pid) || 0) + 1);
     return out;
   }
   async function newProject() {
-    const P = g19.Persist;
-    const NP = g19.NamePrompt;
+    const P = g21.Persist;
+    const NP = g21.NamePrompt;
     const name = await NP.open({
       ariaLabel: "New project",
       message: "New project",
@@ -15251,6 +15777,33 @@
       return;
     }
     Routes.go(Routes.editUrl(pid));
+  }
+  function copyProblem(why) {
+    if (why === "gone") return "That link no longer works, so there is nothing to copy.";
+    if (why === "too-large") return "That project is too big to copy from its link.";
+    if (why === "storage") return "Couldn\u2019t copy the project: storage is full.";
+    return "Couldn\u2019t copy the shared project. Try again from its link.";
+  }
+  async function copyShared(id) {
+    const P = g21.Persist;
+    say2("Copying the shared project\u2026");
+    const got = await fetchShare(id);
+    const fail = (why) => {
+      Routes.settle(Routes.homeUrl());
+      toast2(copyProblem(why), "warn");
+    };
+    if (!got.view) return fail(got.why);
+    const v = got.view;
+    const bel = v.files.find((f) => /\.bel$/i.test(f.path));
+    const pid = createImportedProject({
+      name: v.name || P.DEFAULT_PROJECT_NAME,
+      entries: v.files.map((f) => ({ name: f.path, text: f.text })),
+      activeCfgByDir: v.suites && Object.keys(v.suites).length ? v.suites : void 0,
+      activePath: bel ? bel.path : void 0
+    });
+    if (!pid) return fail("storage");
+    for (const folder of v.folders || []) P.addEmptyFolder(folder);
+    Routes.go(Routes.editUrl(pid), { replace: true });
   }
   function pickFolder() {
     if (!folderInput) {
@@ -15279,7 +15832,7 @@
     folderInput.click();
   }
   async function renameProject(p) {
-    const NP = g19.NamePrompt;
+    const NP = g21.NamePrompt;
     const next = await NP.open({
       ariaLabel: "Rename project",
       message: "Rename project",
@@ -15289,19 +15842,19 @@
       confirmLabel: "Save"
     });
     if (next !== null && next !== p.name) {
-      g19.Persist.renameProject(p.id, next);
+      g21.Persist.renameProject(p.id, next);
       render4();
     }
     afterDialog(() => focusRow(p.id));
   }
   function downloadProject(p) {
-    const src = g19.Persist.projectFiles(p.id);
-    if (!src || !g19.DownloadZip) return;
-    const archive = g19.DownloadZip.projectArchive(src.name, src.files, src.folders);
-    g19.DownloadZip.downloadZip(archive.entries, archive.fileName);
+    const src = g21.Persist.projectFiles(p.id);
+    if (!src || !g21.DownloadZip) return;
+    const archive = g21.DownloadZip.projectArchive(src.name, src.files, src.folders);
+    g21.DownloadZip.downloadZip(archive.entries, archive.fileName);
   }
   async function deleteProject(p) {
-    const yes = await g19.ConfirmDialog.confirm({
+    const yes = await g21.ConfirmDialog.confirm({
       subject: p.name,
       message: "Delete this project and all of its files?",
       ariaLabel: "Delete project"
@@ -15311,7 +15864,7 @@
       return;
     }
     const at = rowLinks().findIndex((a) => a.closest(".home-row").dataset.pid === p.id);
-    g19.Persist.removeProject(p.id);
+    g21.Persist.removeProject(p.id);
     render4();
     afterDialog(() => {
       const left = rowLinks();
@@ -15324,6 +15877,8 @@
       { label: "Open", onSelect: () => Routes.go(Routes.editUrl(p.id)) },
       { label: "Rename\u2026", onSelect: () => renameProject(p) },
       { label: "Download", onSelect: () => downloadProject(p) },
+      // A link anyone can read (js/ui/share-window.mjs), wherever a server keeps links.
+      ...g21.ShareWindow && g21.ShareWindow.available() ? [{ label: "Share\u2026", onSelect: () => g21.ShareWindow.open(p.id, p.name) }] : [],
       { type: "separator" },
       { label: "Delete\u2026", onSelect: () => deleteProject(p) }
     ];
@@ -15386,9 +15941,9 @@
   }
   function emptyRow() {
     const li = el4("li", "home-row home-row--empty");
-    const line = el4("span", "home-row__open");
-    line.appendChild(el4("span", "home-row__name", "No projects"));
-    li.appendChild(line);
+    const line2 = el4("span", "home-row__open");
+    line2.appendChild(el4("span", "home-row__name", "No projects"));
+    li.appendChild(line2);
     return li;
   }
   function startNodes() {
@@ -15396,10 +15951,10 @@
       const btn = el4("button", "home-tile");
       btn.type = "button";
       btn.dataset.action = s.id;
-      const glyph = el4("span", "home-tile__icon");
-      glyph.setAttribute("aria-hidden", "true");
-      glyph.innerHTML = ICONS[s.icon];
-      btn.append(glyph, el4("span", "home-tile__label", s.label));
+      const glyph2 = el4("span", "home-tile__icon");
+      glyph2.setAttribute("aria-hidden", "true");
+      glyph2.innerHTML = ICONS[s.icon];
+      btn.append(glyph2, el4("span", "home-tile__label", s.label));
       btn.addEventListener("click", s.run);
       return btn;
     });
@@ -15428,17 +15983,17 @@
   function drawFind() {
     const btn = document.getElementById("home-find");
     if (!btn) return;
-    btn.hidden = !g19.CommandPalette;
+    btn.hidden = !g21.CommandPalette;
     if (btn.hidden) return;
-    const KB = g19.Keybindings;
+    const KB = g21.Keybindings;
     const chord = KB && typeof KB.labelFor === "function" && KB.labelFor("nav.anywhere") || "";
     if (btn.childElementCount && btn.dataset.chord === chord) return;
     btn.dataset.chord = chord;
     btn.replaceChildren(...findNodes(chord));
   }
   function offerSignInHint() {
-    const A = g19.Account;
-    const Hint = g19.Hint;
+    const A = g21.Account;
+    const Hint = g21.Hint;
     const eligible = signInHintDue({
       accountKnown,
       available: !!(A && A.available()),
@@ -15470,16 +16025,16 @@
   function drawRisk() {
     const note = document.getElementById("home-risk");
     if (!note) return;
-    const P = g19.Persist;
+    const P = g21.Persist;
     const atRisk = !!(P.durabilityStatus && P.durabilityStatus().atRisk);
     note.hidden = !atRisk;
     if (atRisk) {
-      const A = g19.Account;
+      const A = g21.Account;
       note.textContent = A && A.available() && !A.user() ? "Safari deletes this site\u2019s data after 7 days without a visit. Sign in, or download your projects, to keep them." : "Safari deletes this site\u2019s data after 7 days without a visit. Download your projects to keep a copy.";
     }
   }
   function render4() {
-    const P = g19.Persist;
+    const P = g21.Persist;
     const main = document.getElementById("home");
     const list3 = document.getElementById("home-list");
     if (!P || !main || !list3) return;
@@ -15497,7 +16052,7 @@
       arriving: listArriving({
         count: projects.length,
         accountKnown,
-        signedIn: !!(g19.Account && g19.Account.user()),
+        signedIn: !!(g21.Account && g21.Account.user()),
         state: sync.state,
         lastSync: sync.lastSync,
         timedOut: Date.now() - mountedAt >= (accountKnown ? OPEN_WAIT_MS : ACCOUNT_WAIT_MS)
@@ -15529,7 +16084,7 @@
     renderQueued = true;
     setTimeout(() => {
       renderQueued = false;
-      if (g19.Menu && g19.Menu.isOpen() || document.querySelector("dialog[open]")) {
+      if (g21.Menu && g21.Menu.isOpen() || document.querySelector("dialog[open]")) {
         setTimeout(queueRender, 300);
         return;
       }
@@ -15538,8 +16093,8 @@
   }
   function settlePending() {
     if (!pending || pending.gaveUp) return;
-    const P = g19.Persist;
-    const A = g19.Account;
+    const P = g21.Persist;
+    const A = g21.Account;
     const signedIn = !!(A && A.user());
     if (signedIn && !pending.asked) {
       pending.asked = true;
@@ -15578,7 +16133,7 @@
     }
   }
   function keymapStyle() {
-    return g19.Settings ? g19.Settings.get("keymapStyle") : "default";
+    return g21.Settings ? g21.Settings.get("keymapStyle") : "default";
   }
   function onListKey(e) {
     const link = e.target && e.target.closest ? e.target.closest(".home-row__open") : null;
@@ -15586,7 +16141,7 @@
     const links = rowLinks();
     const at = links.indexOf(link);
     const row = link.closest(".home-row");
-    const p = g19.Persist.projects().find((x) => x.id === row.dataset.pid);
+    const p = g21.Persist.projects().find((x) => x.id === row.dataset.pid);
     const move = listMove(e, keymapStyle());
     if (move) {
       e.preventDefault();
@@ -15621,25 +16176,25 @@
       row.querySelector(".home-row__more").click();
       return;
     }
-    if (plain && findsByTyping(e.key) && g19.CommandPalette) {
+    if (plain && findsByTyping(e.key) && g21.CommandPalette) {
       e.preventDefault();
-      g19.CommandPalette.open({ query: e.key });
+      g21.CommandPalette.open({ query: e.key });
     }
   }
   var NEWS_MS = 4e3;
   var newsTimer = null;
   function say2(text) {
-    const line = document.getElementById("home-news");
-    if (!line || !text) return;
-    line.textContent = String(text);
-    line.hidden = false;
+    const line2 = document.getElementById("home-news");
+    if (!line2 || !text) return;
+    line2.textContent = String(text);
+    line2.hidden = false;
     clearTimeout(newsTimer);
     newsTimer = setTimeout(() => {
-      line.hidden = true;
+      line2.hidden = true;
     }, NEWS_MS);
   }
   function paletteProjects() {
-    const P = g19.Persist;
+    const P = g21.Persist;
     const projects = P.projects();
     const stats = new Map(projects.map((p) => [p.id, P.projectStats(p.id)]));
     return orderProjects(projects, P.lastProjectId(), (id) => stats.get(id)).map((p) => ({
@@ -15654,15 +16209,15 @@
     else focusFirstAction();
   }
   function mount2() {
-    const P = g19.Persist;
+    const P = g21.Persist;
     if (!P || !document.getElementById("home-list")) return;
-    if (g19.BELJAR_LEAVING) return;
-    if (g19.Frame) g19.Frame.mount();
+    if (g21.BELJAR_LEAVING) return;
+    if (g21.Frame) g21.Frame.mount();
     attachHomeCommands({ newProject, pickFolder, projects: paletteProjects, say: say2 });
     const accountBtn = document.getElementById("btn-account");
     if (accountBtn) {
       const hideSignInHint = () => {
-        if (g19.Hint && g19.Hint.isVisible && g19.Hint.isVisible(SIGN_IN_HINT)) g19.Hint.dismiss(SIGN_IN_HINT);
+        if (g21.Hint && g21.Hint.isVisible && g21.Hint.isVisible(SIGN_IN_HINT)) g21.Hint.dismiss(SIGN_IN_HINT);
       };
       accountBtn.addEventListener("pointerdown", hideSignInHint);
       accountBtn.addEventListener("click", hideSignInHint);
@@ -15670,14 +16225,16 @@
     wireMenuTrigger(accountBtn, {
       side: "bottom",
       align: "end",
-      items: () => g19.Account ? g19.Account.menuItems() : []
+      items: () => g21.Account ? g21.Account.menuItems() : []
     });
     wireMenuTrigger(document.getElementById("btn-sync"), {
       side: "bottom",
       align: "end",
-      items: () => g19.SyncUI ? g19.SyncUI.menuItems() : []
+      items: () => g21.SyncUI ? g21.SyncUI.menuItems() : []
     });
-    const wanted = Routes.pendingOf(g19.location);
+    const copying = Routes.copyOf(g21.location);
+    if (copying) copyShared(copying);
+    const wanted = Routes.pendingOf(g21.location);
     if (wanted) pending = { pid: wanted, since: Date.now(), gaveUp: false, asked: false, roundDone: false };
     mountedAt = Date.now();
     render4();
@@ -15687,7 +16244,7 @@
     setTimeout(render4, OPEN_WAIT_MS + 50);
     const find = document.getElementById("home-find");
     if (find) find.addEventListener("click", () => {
-      if (g19.CommandPalette) g19.CommandPalette.open();
+      if (g21.CommandPalette) g21.CommandPalette.open();
     });
     const home = document.getElementById("home");
     document.addEventListener("keydown", () => {
@@ -15707,7 +16264,7 @@
     });
     P.onProjectsChange(queueRender);
     P.onSyncSummary(queueRender);
-    g19.addEventListener("beljar:account", () => {
+    g21.addEventListener("beljar:account", () => {
       accountKnown = true;
       queueRender();
     });
@@ -15718,7 +16275,7 @@
     preloadEditorWhenIdle();
   }
   var Home = { mount: mount2, render: render4, say: say2 };
-  g19.Home = Home;
+  g21.Home = Home;
   if (typeof document !== "undefined") {
     if (document.getElementById("home-list")) mount2();
     else document.addEventListener("DOMContentLoaded", mount2, { once: true });

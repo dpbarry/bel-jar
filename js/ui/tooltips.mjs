@@ -87,6 +87,30 @@ let tooltipAnchor = null;
 let touchShowTimer = null;
 let tooltipSuppressLeaveUntilPointerUp = null;
 
+// ⛔ An open modal dialog is drawn in the browser's top layer, above every
+// z-index, so a tooltip for a button inside it was drawn under the dialog
+// (the Share window's Revoke, 2026-11-03). The root is a manual popover and
+// goes into the top layer too, shown afresh for each anchor: the latest shown
+// is drawn highest, so it lands above a dialog opened since the last one.
+function tooltipLayered() {
+  return !!(tooltipRoot && typeof tooltipRoot.showPopover === 'function' && tooltipRoot.hasAttribute('popover'));
+}
+
+function raiseTooltipLayer() {
+  if (!tooltipLayered()) return;
+  try {
+    if (tooltipRoot.matches(':popover-open')) tooltipRoot.hidePopover();
+    tooltipRoot.showPopover();
+  } catch (_) {}
+}
+
+function lowerTooltipLayer() {
+  if (!tooltipLayered()) return;
+  try {
+    if (tooltipRoot.matches(':popover-open')) tooltipRoot.hidePopover();
+  } catch (_) {}
+}
+
 function prepareOverflow(el) {
   if (!el._belOverflowTipBound) return;
   const getText = el._belOverflowGetText;
@@ -443,6 +467,7 @@ function showTooltip(anchor, opts) {
   tooltipRoot.classList.remove('is-leaving');
   tooltipAnchor = anchor;
   tooltipRoot.hidden = false;
+  raiseTooltipLayer();
   layoutTooltip(anchor);
 }
 
@@ -458,6 +483,7 @@ function hideTooltip() {
   if (!inner) {
     tooltipRoot.classList.remove('is-visible', 'is-measuring', 'is-leaving');
     tooltipRoot.hidden = true;
+    lowerTooltipLayer();
     tooltipRoot.style.left = '';
     tooltipRoot.style.top = '';
     return;
@@ -479,6 +505,7 @@ function hideTooltip() {
     tooltipHideFallbackTimer = null;
     tooltipRoot.classList.remove('is-leaving');
     tooltipRoot.hidden = true;
+    lowerTooltipLayer();
     tooltipRoot.style.left = '';
     tooltipRoot.style.top = '';
   };
@@ -501,6 +528,7 @@ function hideTooltipImmediate() {
   } else if (inner) clearSpout(inner);
   tooltipRoot.classList.remove('is-visible', 'is-measuring', 'is-leaving');
   tooltipRoot.hidden = true;
+  lowerTooltipLayer();
   tooltipRoot.style.left = '';
   tooltipRoot.style.top = '';
 }
@@ -719,6 +747,9 @@ export const Tooltips = {
 export function installTooltips() {
   if (typeof document === 'undefined') return;
   tooltipRoot = document.getElementById('tooltip-root');
+  if (tooltipRoot && typeof tooltipRoot.showPopover === 'function' && !tooltipRoot.hasAttribute('popover')) {
+    tooltipRoot.setAttribute('popover', 'manual');
+  }
   bindTooltips();
 }
 

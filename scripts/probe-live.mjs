@@ -271,6 +271,16 @@ try {
   const privacy = await hit('/privacy');
   const privacyText = privacy.status === 200 ? await privacy.text() : '';
   check(/<title>What BelJar keeps<\/title>/.test(privacyText), `the page on what BelJar keeps is live at /privacy (${privacy.status})`);
+  // Links anyone can read (docs/PERSIST.md §5.12): the reading page at /s/<id>, and the one public read.
+  const nobody = 'AAAAAAAAAAAAAAAAAAAAAA';
+  const reading = await hit('/s/' + nobody);
+  const readingText = reading.status === 200 ? await reading.text() : '';
+  check(/js\/share\.js/.test(readingText) && /noindex/.test(reading.headers.get('x-robots-tag') || '') && reading.headers.get('cache-control') === 'no-store',
+    `the reading page answers at /s/<id>, never cached or indexed (${reading.status}, ${reading.headers.get('x-robots-tag')})`);
+  const shareRead = await hit('/api/share/' + nobody);
+  check(shareRead.status === 404 && /noindex/.test(shareRead.headers.get('x-robots-tag') || ''), `a link that is not there reads as nothing (${shareRead.status})`);
+  check((await hit('/api/sync/shares', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"args":["p"]}' })).status === 401,
+    'and links are listed and made for the signed in only');
   for (const p of ['/.git/config', '/.git/HEAD', '/wrangler.jsonc', '/server/worker.mjs', '/server/.dev.vars', '/package.json', '/AGENTS.md']) {
     const r = await hit(p);
     check(r.status === 404, `${p} is not served (${r.status})`);

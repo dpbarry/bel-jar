@@ -14,14 +14,21 @@
  *   - texts are pooled per account, never across accounts: a shared pool
  *     would tell one account that another holds the same file;
  *   - an account may hold so many projects that are not deleted, and so much
- *     text (protocol.mjs QUOTA): past either, the server refuses, and says which.
+ *     text (protocol.mjs QUOTA): past either, the server refuses, and says which;
+ *   - a link (docs/PERSIST.md §5.12) shows the one version it names, the head's
+ *     for the project link, to anyone; nothing else is reachable through it, and
+ *     deleting the project deletes its links.
  */
-import { sha256, normalizeManifest, isHash, versionsLimit, versionSummary, QUOTA } from './protocol.mjs';
+import {
+  sha256, normalizeManifest, isHash, versionsLimit, versionSummary, QUOTA,
+  SHARE_LIMIT, SHARE_BYTES, isShareId, newShareId, shareVersion, shareOrder, shareView,
+} from './protocol.mjs';
 
 const copy = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
 
 /**
- * @param {{ hash?: (text: string) => Promise<string>, now?: () => number, quota?: object }} [opts]
+ * @param {{ hash?: (text: string) => Promise<string>, now?: () => number, quota?: object,
+ *   handleOf?: (account: string) => string | null, shareId?: () => string, shareBytes?: number, shareLimit?: number }} [opts]
  */
 export function createMemoryServer(opts = {}) {
   const hash = opts.hash || sha256;
@@ -48,6 +55,22 @@ export function createMemoryServer(opts = {}) {
   const projects = new Map(); // pid → { owner, versions: [{ version, deleted, manifest, commit, base }], commits: Map }
   const pools = new Map(); // account → Map(hash → text)
   const settings = new Map(); // account → { versions: [{ version, values, commit }], commits: Map }
+  const shares = new Map(); // id → { project, owner, version, createdAt }
+  const handleOf = opts.handleOf || (() => null);
+  const makeShareId = opts.shareId || newShareId;
+  const shareBytes = opts.shareBytes || SHARE_BYTES;
+  const shareLimit = opts.shareLimit || SHARE_LIMIT;
+
+  function linksOf(pid) {
+    const out = [];
+    const p = projects.get(pid);
+    for (const [id, s] of shares) {
+      if (s.project !== pid) continue;
+      const v = s.version && p ? p.versions.find((x) => x.version === s.version) : null;
+      out.push({ id, version: s.version, createdAt: s.createdAt, versionAt: v ? v.createdAt : 0 });
+    }
+    return out.sort(shareOrder);
+  }
 
   function pool(account) {
     if (!pools.has(account)) pools.set(account, new Map());
@@ -153,7 +176,38 @@ export function createMemoryServer(opts = {}) {
         if (!top(p).deleted) used(account).projects = Math.max(0, used(account).projects - 1);
         p.versions.push({ version, deleted: true, manifest: null, commit: req.id, base: req.base, createdAt: now() });
         p.commits.set(req.id, version);
+        // Deleting the project deletes its links, with the deletion.
+        for (const l of linksOf(pid)) shares.delete(l.id);
         return { ok: true, version };
+      },
+
+      async shares(pid) {
+        const p = projects.get(pid);
+        return p && p.owner === account ? linksOf(pid) : [];
+      },
+
+      async share(pid, o) {
+        const p = projects.get(pid);
+        if (!p || p.owner !== account) return { ok: false, error: 'not-found' };
+        const version = shareVersion(o);
+        if (version == null) return { ok: false, error: 'no-version' };
+        const v = version ? p.versions.find((x) => x.version === version) : top(p);
+        if (!v) return { ok: false, error: 'no-version' };
+        if (v.deleted) return { ok: false, error: 'deleted' };
+        const links = linksOf(pid);
+        const there = links.find((l) => l.version === version);
+        if (there) return { ok: true, ...there };
+        if (links.length >= shareLimit) return { ok: false, error: 'too-many' };
+        const id = makeShareId();
+        const createdAt = now();
+        shares.set(id, { project: pid, owner: account, version, createdAt });
+        return { ok: true, id, version, createdAt, versionAt: version ? v.createdAt : 0 };
+      },
+
+      async unshare(pid, id) {
+        const s = shares.get(id);
+        if (s && s.owner === account && s.project === pid) shares.delete(id);
+        return { ok: true };
       },
 
       async versions(pid, o) {
@@ -197,8 +251,30 @@ export function createMemoryServer(opts = {}) {
     };
   }
 
+  /** What a link shows, to anyone (protocol.mjs `readShare`): null when there is no such link. */
+  async function readShare(id) {
+    if (!isShareId(id)) return null;
+    const s = shares.get(id);
+    if (!s) return null;
+    const p = projects.get(s.project);
+    if (!p || p.owner !== s.owner) return null;
+    const v = s.version ? p.versions.find((x) => x.version === s.version) : top(p);
+    if (!v || v.deleted) return null;
+    const b = pool(s.owner);
+    const texts = {};
+    let size = 0;
+    for (const f of v.manifest.files) {
+      if (texts[f.hash] != null || !b.has(f.hash)) continue;
+      texts[f.hash] = b.get(f.hash);
+      size += bytes(texts[f.hash]);
+    }
+    if (size > shareBytes) return { error: 'too-large' };
+    return shareView({ manifest: v.manifest, version: v.version, createdAt: v.createdAt, follows: !s.version, by: handleOf(s.owner) }, texts);
+  }
+
   return {
     transport,
+    readShare,
 
     /** For tests: every version of a project, oldest first (copies), and who owns it. */
     history(pid) {

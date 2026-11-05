@@ -441,36 +441,4 @@ body.tree-dnd-active.tree-dnd-invalid .explorer-tree-root-pad {
   opacity: 0.3;
 }
 
-/* Syntax-highlight classes for rendered type strings (jar-type-render.mjs).
-   Mirrors the editor's defaultBelugaHighlightStyle palette (jar-language.mjs),
-   theme-aware via light-dark(). */
-/* `html *` sets --sans with SELECTOR specificity, which beats plain inheritance —
-   without this, every jar-hl-* token silently renders in Inter while the bare
-   text nodes between them (spaces, brackets) take the container's mono, giving
-   mixed-font types whose spacing shifts with the DOM shape. Tokens and the
-   .jar-type-text host must always take the surrounding container's font. */
-.jar-type-text,
-[class^='jar-hl-'],
-[class*=' jar-hl-'] { font-family: inherit; }
-.jar-hl-keyword  { color: light-dark(hsl(221, 82%, 34%), var(--accent-mid)); font-weight: 600; }
-.jar-hl-control  { color: light-dark(hsl(34, 82%, 36%), hsl(36, 76%, 68%)); font-weight: 600; }
-.jar-hl-arrow    { color: light-dark(hsl(34, 82%, 36%), hsl(36, 76%, 68%)); }
-.jar-hl-op       { color: light-dark(hsl(194, 72%, 33%), hsl(190, 68%, 72%)); }
-.jar-hl-type     { color: light-dark(hsl(268, 70%, 37%), hsl(264, 78%, 74%)); }
-.jar-hl-type-def { color: light-dark(hsl(270, 78%, 32%), hsl(264, 88%, 78%)); font-weight: 600; }
-.jar-hl-metatype { color: light-dark(hsl(195, 64%, 30%), hsl(190, 70%, 74%)); font-weight: 600; }
-.jar-hl-meta     { color: light-dark(hsl(194, 70%, 32%), hsl(190, 76%, 76%)); }
-.jar-hl-var      { color: var(--base-highest); }
-.jar-hl-var-def  { color: light-dark(hsl(220, 88%, 30%), hsl(215, 92%, 82%)); font-weight: 600; }
-.jar-hl-local    { color: light-dark(hsl(272, 64%, 38%), hsl(280, 50%, 80%)); }
-.jar-hl-local-def { color: light-dark(hsl(276, 82%, 33%), hsl(280, 80%, 80%)); font-weight: 600; }
-.jar-hl-ctor     { color: light-dark(hsl(221, 84%, 31%), hsl(215, 92%, 82%)); }
-.jar-hl-number   { color: light-dark(hsl(26, 88%, 35%), hsl(30, 88%, 72%)); }
-.jar-hl-atom     { color: light-dark(hsl(26, 88%, 35%), hsl(30, 88%, 72%)); }
-.jar-hl-hole     { color: var(--ide-hole-border); font-weight: 700; }
-.jar-hl-prop     { color: light-dark(hsl(213, 82%, 34%), hsl(210, 78%, 72%)); }
-.jar-hl-meta-pragma { color: light-dark(hsl(194, 72%, 33%), hsl(190, 68%, 72%)); }
-.jar-hl-punct    { color: light-dark(var(--muted-higher), var(--muted-highest)); }
-.jar-hl-comment  { color: light-dark(hsl(221, 10%, 40%), var(--muted-high)); font-style: italic; }
-
-.jar-hl-source--elf { color: light-dark(hsl(221, 8%, 38%), var(--muted-higher)); }
+/* The jar-hl-* syntax classes are in source-hl.css (the reading page loads them too). */

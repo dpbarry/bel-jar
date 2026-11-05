@@ -158,8 +158,9 @@ expect(findsByTyping('t') && findsByTyping('T') && findsByTyping('7') && findsBy
 
   const built = fs.readFileSync(path.join(ROOT, 'js', 'home.js'), 'utf8');
   const editor = fs.statSync(path.join(ROOT, 'js', 'editor-cm.bundle.js')).size + fs.statSync(path.join(ROOT, 'js', 'shell.js')).size;
-  // Held at the size it ships with. 560 KB until the sign-in coachmark joined home (2026-10-08).
-  expect(built.length < 580 * 1024, `home's script is under 580 KB (${Math.round(built.length / 1024)} KB; the editor's is ${Math.round(editor / 1024)} KB)`);
+  // Held at the size it ships with. 560 KB until the sign-in coachmark joined home (2026-10-08);
+  // 580 KB until Share… and Open in BelJar's copy joined it (2026-11-01, 590 KB then).
+  expect(built.length < 600 * 1024, `home's script is under 600 KB (${Math.round(built.length / 1024)} KB; the editor's is ${Math.round(editor / 1024)} KB)`);
   expect(built.length < editor / 5, 'and under a fifth of the editor\'s');
   expect(!/new Worker\(|beluga_web|BelugaClient\.|importScripts\(/.test(built), 'it starts no worker and names no Beluga runtime');
 

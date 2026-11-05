@@ -4,6 +4,7 @@
  *   home     /            index.html     your projects and the account
  *   editor   /edit?p=ID   edit.html      one project, named by its address
  *   privacy  /privacy     privacy.html   what BelJar keeps (a page to read)
+ *   share    /s/ID        share.html     a project someone shared (share.html?s=ID on a static server)
  *
  * The deployed site answers the short forms (Cloudflare serves `edit.html` at
  * `/edit`). A plain static server (Live Server, the probes) has only the files,
@@ -27,16 +28,22 @@ export const PROJECT_ID = /^p_[0-9a-hjkmnp-tv-z]{26}$/;
 const EDIT_SHORT = /(?:^|\/)edit\/?$/;
 const EDIT_ANY = /(?:^|\/)edit(?:\.html)?\/?$/;
 const PRIVACY_ANY = /(?:^|\/)privacy(?:\.html)?\/?$/;
+const SHARE_PATH = /(?:^|\/)s\/([^/]*)\/?$/;
+const SHARE_PAGE = /(?:^|\/)share(?:\.html)?\/?$/;
+
+/** A link's address as protocol.mjs makes them (SHARE_ID): 22 base64url characters. */
+export const SHARE_ID = /^[A-Za-z0-9_-]{22}$/;
 
 /**
  * The site answers `/edit`: a deployed host (each document sets
  * `BELJAR_DEPLOYED` from its host name), or the page is itself being served
- * there (`npm run dev`).
+ * there or at `/s/ID` (`npm run dev`).
  */
 function short() {
   if (g.BELJAR_DEPLOYED) return true;
   const path = g.location && typeof g.location.pathname === 'string' ? g.location.pathname : '';
-  return EDIT_SHORT.test(path);
+  // The reading page at /s/ID is served by the Worker too: relative files would land under /s/.
+  return EDIT_SHORT.test(path) || SHARE_PATH.test(path);
 }
 
 function query(pairs) {
@@ -67,6 +74,7 @@ function startsOnLast() {
 export function homeUrl(opts) {
   const base = short() ? '/' : 'index.html';
   if (opts && opts.open) return base + query([['open', opts.open]]);
+  if (opts && opts.copy) return base + query([['copy', opts.copy]]);
   return base + (startsOnLast() ? '?home' : '');
 }
 
@@ -78,6 +86,20 @@ export function editUrl(pid) {
 /** What BelJar keeps: the page home's foot links to. */
 export function privacyUrl() {
   return short() ? '/privacy' : 'privacy.html';
+}
+
+/**
+ * The reading page of link `id` (docs/PERSIST.md §5.12). `absolute`: the whole
+ * address, to copy and send.
+ */
+export function shareUrl(id, absolute) {
+  const rel = short() ? '/s/' + encodeURIComponent(id) : 'share.html' + query([['s', id]]);
+  if (!absolute) return rel;
+  try {
+    return new URL(rel, g.location && g.location.href ? g.location.href : 'https://beljar.deanbarry.com/').href;
+  } catch (_) {
+    return rel;
+  }
 }
 
 /** Where sign-in starts, coming back to the page it was asked from. */
@@ -95,6 +117,7 @@ export function signInUrl(loc) {
 export function pageOf(loc) {
   const p = String((loc && loc.pathname) || '');
   if (EDIT_ANY.test(p)) return 'edit';
+  if (SHARE_PATH.test(p) || SHARE_PAGE.test(p)) return 'share';
   return PRIVACY_ANY.test(p) ? 'privacy' : 'home';
 }
 
@@ -114,6 +137,34 @@ function projectParam(loc, name) {
 /** The project an editor address names, or null (none, or not a project id). */
 export function projectOf(loc) {
   return pageOf(loc) === 'edit' ? projectParam(loc, 'p') : null;
+}
+
+/** The first `name=` in the query, raw, or null. */
+function param(loc, name) {
+  for (const pair of String((loc && loc.search) || '').replace(/^\?/, '').split('&')) {
+    const eq = pair.indexOf('=');
+    if (eq === -1 || pair.slice(0, eq) !== name) continue;
+    try { return decodeURIComponent(pair.slice(eq + 1)); } catch (_) { return null; }
+  }
+  return null;
+}
+
+/** The link a reading page's address names (`/s/ID`, `share.html?s=ID`), or null. */
+export function shareOf(loc) {
+  if (pageOf(loc) !== 'share') return null;
+  const m = SHARE_PATH.exec(String(loc.pathname || ''));
+  let id = m ? m[1] : param(loc, 's');
+  if (m) {
+    try { id = decodeURIComponent(id); } catch (_) { return null; }
+  }
+  return id && SHARE_ID.test(id) ? id : null;
+}
+
+/** The link home was asked to copy into this browser (`?copy=ID`, Open in BelJar), or null. */
+export function copyOf(loc) {
+  if (pageOf(loc) !== 'home') return null;
+  const id = param(loc, 'copy');
+  return id && SHARE_ID.test(id) ? id : null;
 }
 
 /** The project a home address is waiting to open (`?open=ID`), or null. */
@@ -161,7 +212,8 @@ export function nameProject(pid) {
 }
 
 export const Routes = {
-  PROJECT_ID, ISSUES_URL, CONTACT_URL, homeUrl, editUrl, privacyUrl, signInUrl, pageOf, projectOf, pendingOf, go, settle, nameProject, reportIssue,
+  PROJECT_ID, SHARE_ID, ISSUES_URL, CONTACT_URL, homeUrl, editUrl, privacyUrl, shareUrl, signInUrl, pageOf, projectOf, pendingOf, shareOf, copyOf,
+  go, settle, nameProject, reportIssue,
 };
 
 g.Routes = Routes;

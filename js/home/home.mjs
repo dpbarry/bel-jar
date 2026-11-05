@@ -25,6 +25,7 @@ import { wireMenuTrigger } from '../ui/menu-trigger.mjs';
 import { folderAsProject, createImportedProject } from '../workspace/import-project.mjs';
 import { attachHomeCommands } from './home-commands.mjs';
 import { preloadEditorWhenIdle } from './preload-editor.mjs';
+import { fetchShare } from '../share/share-fetch.mjs';
 
 const g = typeof window !== 'undefined' ? window : globalThis;
 
@@ -203,6 +204,42 @@ async function newProject() {
   Routes.go(Routes.editUrl(pid));
 }
 
+/** What home says when Open in BelJar could not make the copy. */
+export function copyProblem(why) {
+  if (why === 'gone') return 'That link no longer works, so there is nothing to copy.';
+  if (why === 'too-large') return 'That project is too big to copy from its link.';
+  if (why === 'storage') return 'Couldn’t copy the project: storage is full.';
+  return 'Couldn’t copy the shared project. Try again from its link.';
+}
+
+/**
+ * Open in BelJar, from the reading page of a link (`?copy=ID`, docs/PERSIST.md
+ * §5.12): a copy of what the link shows, made here and opened. The one project
+ * home ever makes, and only at that click. Signed in, it joins the account as
+ * every project here does; the original is never touched.
+ */
+async function copyShared(id) {
+  const P = g.Persist;
+  say('Copying the shared project…');
+  const got = await fetchShare(id);
+  const fail = (why) => {
+    Routes.settle(Routes.homeUrl());
+    toast(copyProblem(why), 'warn');
+  };
+  if (!got.view) return fail(got.why);
+  const v = got.view;
+  const bel = v.files.find((f) => /\.bel$/i.test(f.path));
+  const pid = createImportedProject({
+    name: v.name || P.DEFAULT_PROJECT_NAME,
+    entries: v.files.map((f) => ({ name: f.path, text: f.text })),
+    activeCfgByDir: v.suites && Object.keys(v.suites).length ? v.suites : undefined,
+    activePath: bel ? bel.path : undefined,
+  });
+  if (!pid) return fail('storage');
+  for (const folder of v.folders || []) P.addEmptyFolder(folder);
+  Routes.go(Routes.editUrl(pid), { replace: true });
+}
+
 function pickFolder() {
   if (!folderInput) {
     folderInput = document.createElement('input');
@@ -280,6 +317,8 @@ function rowMenu(p) {
     { label: 'Open', onSelect: () => Routes.go(Routes.editUrl(p.id)) },
     { label: 'Rename…', onSelect: () => renameProject(p) },
     { label: 'Download', onSelect: () => downloadProject(p) },
+    // A link anyone can read (js/ui/share-window.mjs), wherever a server keeps links.
+    ...(g.ShareWindow && g.ShareWindow.available() ? [{ label: 'Share…', onSelect: () => g.ShareWindow.open(p.id, p.name) }] : []),
     { type: 'separator' },
     { label: 'Delete…', onSelect: () => deleteProject(p) },
   ];
@@ -712,6 +751,9 @@ function mount() {
   wireMenuTrigger(document.getElementById('btn-sync'), {
     side: 'bottom', align: 'end', items: () => (g.SyncUI ? g.SyncUI.menuItems() : []),
   });
+
+  const copying = Routes.copyOf(g.location);
+  if (copying) copyShared(copying);
 
   const wanted = Routes.pendingOf(g.location);
   if (wanted) pending = { pid: wanted, since: Date.now(), gaveUp: false, asked: false, roundDone: false };

@@ -50,6 +50,7 @@ import './harpoon/harpoon-ui.mjs';
 import './beluga/beluga-run-boot.mjs';
 import './account/account.mjs';
 import './account/sync-ui.mjs';
+import './ui/share-window.mjs';
 import './ui/version-history.mjs';
 import './app/app.mjs';
 import './ui/clipboard-read-dialog.mjs';

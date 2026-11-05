@@ -123,6 +123,13 @@
   font-size: 0.8125rem;
 }
 
+/* Version history's link, as wide as the pane it sits in there, at the size
+   of the window's words (the card sets it, and the kit has no card). */
+.kit-share-inline {
+  width: 30rem;
+  font-size: 0.8125rem;
+}
+
 /* The kit's own sample, inside a window it did not make: room around its words. */
 .kit-window-body {
   padding: 0.75rem;

@@ -43,6 +43,8 @@ const ROWS = [
   { id: 'project.download', title: 'Download Project', section: 'File', scope: 'global', palette: true },
   // Every version the cloud keeps, and Restore (js/ui/version-history.mjs): signed in only.
   { id: 'project.history', title: 'Version History', section: 'File', scope: 'global', palette: true },
+  // A link anyone can read, and taking it back (js/ui/share-window.mjs): where a server keeps links.
+  { id: 'project.share', title: 'Share Project…', section: 'File', scope: 'global', palette: true },
   { id: 'tab.next', title: 'Next Tab', section: 'File', scope: 'global', palette: true, keybindable: true, ex: ['bn'] },
   { id: 'tab.prev', title: 'Previous Tab', section: 'File', scope: 'global', palette: true, keybindable: true, ex: ['bp'] },
   { id: 'tab.close', title: 'Close Tab', section: 'File', scope: 'global', palette: true, keybindable: true },

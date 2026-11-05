@@ -85,6 +85,37 @@ for (const bad of ['?p=', '?p=main', '?p=p_short', '?p=' + A + 'x', '?q=' + A, '
 expect(Routes.pendingOf(at('/', '?open=' + A)) === A && Routes.pendingOf(at('/edit', '?open=' + A)) === null
   && Routes.pendingOf(at('/', '?open=nonsense')) === null, 'home reads the project it is waiting for; the editor has none');
 
+// ── 2b. the reading page of a link, and the copy home makes of it (docs/PERSIST.md §5.12) ──
+{
+  const S = 'r7g6ClOMMP2I2G-ZjlwKwQ';
+  on(at('/'), true, () => {
+    expect(Routes.shareUrl(S) === '/s/' + S, 'a link on the deployed site is /s/ and its id');
+    expect(Routes.homeUrl({ copy: S }) === '/?copy=' + S, 'Open in BelJar goes home to make the copy');
+  });
+  on({ pathname: '/', search: '', hash: '', href: 'https://beljar.deanbarry.com/' }, true, () => {
+    expect(Routes.shareUrl(S, true) === 'https://beljar.deanbarry.com/s/' + S, 'the address to send is whole');
+  });
+  on(at('/index.html'), false, () => {
+    expect(Routes.shareUrl(S) === 'share.html?s=' + S, 'on a static server, the file and the id');
+  });
+  on(at('/s/' + S), false, () => {
+    expect(Routes.homeUrl({ copy: S }) === '/?copy=' + S && Routes.editUrl() === '/edit',
+      'a reading page at /s/ is on a server that answers the short forms (npm run dev): its links never land under /s/');
+  });
+  for (const p of ['/s/' + S, '/s/' + S + '/', '/bel-jar/s/' + S]) {
+    expect(Routes.pageOf(at(p)) === 'share' && Routes.shareOf(at(p)) === S, `${p} is the reading page of that link`);
+  }
+  expect(Routes.pageOf(at('/share.html', '?s=' + S)) === 'share' && Routes.shareOf(at('/share.html', '?s=' + S)) === S
+    && Routes.shareOf(at('/share', '?s=' + S)) === S, 'and so is share.html?s=, in both forms');
+  for (const bad of ['/s/', '/s/short', '/s/' + S + 'x', '/s/' + S.slice(1) + '=', '/s/%E0%A4%A']) {
+    expect(Routes.pageOf(at(bad)) === 'share' && Routes.shareOf(at(bad)) === null, `${bad} is the reading page, of no link`);
+  }
+  expect(Routes.pageOf(at('/s/a/b')) === 'home' && Routes.pageOf(at('/shared')) === 'home', 'nothing else is');
+  expect(Routes.copyOf(at('/', '?copy=' + S)) === S && Routes.copyOf(at('/', '?copy=nope')) === null && Routes.copyOf(at('/edit', '?copy=' + S)) === null,
+    'home reads the link it is to copy; the editor never does');
+  expect(Routes.shareOf(at('/', '?s=' + S)) === null, 'and home is no reading page');
+}
+
 // ── 3. the address is made to say where the page is ─────────────────────────
 {
   const calls = [];

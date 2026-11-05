@@ -10,7 +10,8 @@ import { getPlatformProxy } from 'wrangler';
 import { createHttpTransport } from '../js/persist/sync/http-transport.mjs';
 import { createSyncStore } from '../server/sync-store.mjs';
 import worker from '../server/worker.mjs';
-import { serverRules, quotaRules } from './_sync-protocol-suite.mjs';
+import { serverRules, quotaRules, shareRules, shareLimitRules } from './_sync-protocol-suite.mjs';
+import { isShareId } from '../js/persist/sync/protocol.mjs';
 import { makeDevice, sha256Now, projectState, addFile, fileId } from './_sync-env.mjs';
 import { startWorker, testConfig, ROOT as root } from './_worker-env.mjs';
 
@@ -51,6 +52,42 @@ const transport = (account) => createHttpTransport({ base: `${URL_}/api/sync`, h
 
 // ── the reference server's rules, over HTTP, on D1 and R2 ────────────────────
 await serverRules({ dean: transport('u_dean'), other: transport('u_other') }, expect);
+
+// ── links anyone can read (docs/PERSIST.md §5.12): the rules, and the read over HTTP ──
+const readOverHttp = async (id) => {
+  const res = await fetch(`${URL_}/api/share/${encodeURIComponent(id)}`);
+  if (res.status === 404) return null;
+  const body = await res.json();
+  if (res.status === 413) return body;
+  if (res.status !== 200) throw new Error('share read answered ' + res.status);
+  return body;
+};
+await shareRules({ dean: transport('u_dean'), other: transport('u_other'), read: readOverHttp }, expect, isShareId);
+{
+  const t = transport('u_dean');
+  const link = await t.share('s1', { version: 2 });
+  const res = await fetch(`${URL_}/api/share/${link.id}`);
+  expect(res.status === 200 && res.headers.get('cache-control') === 'no-store' && /noindex/.test(res.headers.get('x-robots-tag') || ''),
+    `the read is never cached, never indexed (${res.headers.get('cache-control')}, ${res.headers.get('x-robots-tag')})`);
+  const body = await res.json();
+  expect(body.by === null && body.files.length === 2, 'it needs no account, and an account with no handle says no one');
+  const none = await fetch(`${URL_}/api/share/${'x'.repeat(22)}`);
+  expect(none.status === 404 && /noindex/.test(none.headers.get('x-robots-tag') || ''), 'a link that is not there: 404');
+  expect((await fetch(`${URL_}/api/share/%E0%A4%A`)).status === 404 && (await fetch(`${URL_}/api/share/`)).status === 404,
+    'and an address that is no id at all, the same');
+  expect((await fetch(`${URL_}/api/share/${link.id}`, { method: 'POST' })).status === 405, 'it is only read');
+  // /s/<id> is the reading page: the Worker asks the site's files for it (this
+  // Worker serves none; scratch/probes/probe-share.mjs loads the real one).
+  const asked = [];
+  const site = { fetch: async (req) => { asked.push(new URL(req.url).pathname); return new Response('<title>BelJar</title>', { status: 200, headers: { 'content-type': 'text/html' } }); } };
+  const page = await worker.fetch(new Request(`https://beljar.example/s/${link.id}`), { ASSETS: site }, {});
+  expect(page.status === 200 && asked.join() === '/share' && /noindex/.test(page.headers.get('x-robots-tag') || '') && page.headers.get('cache-control') === 'no-store',
+    `/s/<id> is the reading page, never cached, never indexed (${page.status}, asked ${asked.join()})`);
+  const odd = await worker.fetch(new Request('https://beljar.example/s/nothing-here'), { ASSETS: site }, {});
+  expect(odd.status === 200 && asked.length === 2, 'whatever the id: the page says when a link is no link');
+  const deeper = await worker.fetch(new Request('https://beljar.example/s/a/b'), { ASSETS: site }, {});
+  expect(asked.length === 3 && asked[2] === '/s/a/b' && deeper.status === 200, 'and nothing deeper is the page: it goes to the files as it is');
+}
 
 // ── the Worker's own gate ────────────────────────────────────────────────────
 expect((await post('heads', { args: [] })).status === 401, 'no account: 401, nothing answered');
@@ -243,6 +280,12 @@ console.log(`  (the Worker logged ${served} sync requests)`);
     await quotaRules({ dean: small.transport('u_dean'), other: small.transport('u_other') }, expect);
     const u = await db.prepare('SELECT projects, text_bytes FROM usage WHERE account = ?').bind('u_dean').first();
     expect(u && u.projects === 2 && u.text_bytes === 10, `and D1 counts it in one row: two projects, ten bytes (${JSON.stringify(u)})`);
+    // The limits on links, and who a link says shared it.
+    const linked = createSyncStore({ db, texts: proxy3.env.TEXTS, shareLimit: 3, shareBytes: 10 });
+    await shareLimitRules({ dean: linked.transport('u_links'), read: linked.readShare }, expect);
+    await db.prepare("INSERT INTO users (id, handle, created_at) VALUES ('u_links', 'linker', 1)").run();
+    const one = await linked.transport('u_links').share('l1', { version: 1 });
+    expect((await linked.readShare(one.id)).by === 'linker', 'a link says who shared it, by handle');
   } finally {
     await proxy3.dispose();
     try { fs.rmSync(persist3, { recursive: true, force: true }); } catch (_) { /* a file may be held briefly */ }

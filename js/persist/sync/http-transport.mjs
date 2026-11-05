@@ -25,7 +25,8 @@
  * under that.
  */
 
-const METHODS = ['heads', 'head', 'blobs', 'missing', 'putBlobs', 'commit', 'remove', 'settings', 'commitSettings', 'versions', 'version'];
+const METHODS = ['heads', 'head', 'blobs', 'missing', 'putBlobs', 'commit', 'remove', 'settings', 'commitSettings', 'versions', 'version',
+  'shares', 'share', 'unshare'];
 
 /** How long a call may take. Texts travel in two of them, and a slow link needs the room. */
 export const TIMEOUT_MS = 30000;

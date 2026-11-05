@@ -12,6 +12,14 @@
  * the `X-BelJar-Account` header names the account instead. Anywhere else
  * that header means nothing, and without a session every call gets 401.
  *
+ * And the one read anyone may make (docs/PERSIST.md §5.12):
+ *
+ *   GET /api/share/<id>   what a link shows   →   200 { ... } | 404 | 413
+ *   GET /s/<id>           the reading page (share.html) that asks it
+ *
+ * Neither is cached (a revoked link is dead on the next load) and neither is
+ * to be indexed.
+ *
  * ⛔ Only same-site requests. A browser always sends Origin with a POST from
  * another site, and the JSON content type forces a preflight this Worker
  * never answers, so a cookie session can never be used from elsewhere.
@@ -20,15 +28,42 @@ import { createSyncStore } from './sync-store.mjs';
 import { handleAuth, sessionAccount } from './auth.mjs';
 import { dailySweep } from './deletion.mjs';
 
-const METHODS = new Set(['heads', 'head', 'blobs', 'missing', 'putBlobs', 'commit', 'remove', 'settings', 'commitSettings', 'versions', 'version']);
+const METHODS = new Set(['heads', 'head', 'blobs', 'missing', 'putBlobs', 'commit', 'remove', 'settings', 'commitSettings', 'versions', 'version',
+  'shares', 'share', 'unshare']);
 const ACCOUNT = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_BODY = 16 * 1024 * 1024;
 
-function json(value, status = 200) {
+function json(value, status = 200, extra) {
   return new Response(JSON.stringify(value), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+    headers: Object.assign({ 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }, extra || {}),
   });
+}
+
+const NOINDEX = { 'x-robots-tag': 'noindex, nofollow' };
+
+/** GET /api/share/<id>: what a link shows, to anyone. */
+export async function handleShareRead(request, env, id) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return json({ error: 'method' }, 405, NOINDEX);
+  try {
+    const view = await createSyncStore({ db: env.DB, texts: env.TEXTS }).readShare(id);
+    if (!view) return json({ error: 'not-found' }, 404, NOINDEX);
+    if (view.error) return json({ error: view.error }, 413, NOINDEX);
+    return json(view, 200, NOINDEX);
+  } catch (err) {
+    console.error('share', err && err.stack || err);
+    return json({ error: 'server' }, 500, NOINDEX);
+  }
+}
+
+/** GET /s/<id>: the reading page, whatever the id (it says when the link is no link). */
+async function sharePage(request, env) {
+  if (!env.ASSETS) return new Response('Not found', { status: 404 });
+  const res = await env.ASSETS.fetch(new Request(new URL('/share', request.url), { method: 'GET', headers: request.headers }));
+  const out = new Response(res.body, res);
+  out.headers.set('x-robots-tag', 'noindex, nofollow');
+  out.headers.set('cache-control', 'no-store');
+  return out;
 }
 
 async function accountOf(request, env) {
@@ -79,6 +114,9 @@ export default {
     const url = new URL(request.url);
     const m = /^\/api\/sync\/([A-Za-z]+)$/.exec(url.pathname);
     if (m) return handleSync(request, env, m[1]);
+    const shared = /^\/api\/share\/([^/]*)$/.exec(url.pathname);
+    if (shared) return handleShareRead(request, env, shared[1]);
+    if (/^\/s\/[^/]*\/?$/.test(url.pathname)) return sharePage(request, env);
     if (url.pathname.startsWith('/api/auth/')) {
       const res = await handleAuth(request, env, url.pathname, sameSite, ctx);
       if (res) return res;

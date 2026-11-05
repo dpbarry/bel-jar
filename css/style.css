@@ -11,6 +11,7 @@
 @import url('./workspace.css');
 @import url('./library.css');
 @import url('./explorer.css');
+@import url('./source-hl.css');
 @import url('./inspector.css');
 @import url('./floating-window.css');
 @import url('./graph.css');

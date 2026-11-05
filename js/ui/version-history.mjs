@@ -11,35 +11,24 @@
  *
  * Opened from Project > Version history, or the palette; signed in only.
  */
-import { lineDiff, compactDiff } from './review-differences.mjs';
+import { diffNode } from './review-differences.mjs';
 import { actionButton } from './prompt-dialog.mjs';
+import { versionTime, dayWords, clockTime } from './when.mjs';
+import { glyphButton, shareVersion } from './share-window.mjs';
 
 const g = typeof window !== 'undefined' ? window : globalThis;
 
-const DAY = 24 * 60 * 60 * 1000;
+export { versionTime };
 
-/** When a version was made, as a list says it: "Today 14:05", "Yesterday 09:12", "2 Oct 16:40". */
-export function versionTime(ms, now = Date.now()) {
-  const at = new Date(ms);
-  const time = at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  const today = new Date(now);
-  const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  if (ms >= midnight) return 'Today ' + time;
-  if (ms >= midnight - DAY) return 'Yesterday ' + time;
-  const opts = at.getFullYear() === today.getFullYear()
-    ? { day: 'numeric', month: 'short' }
-    : { day: 'numeric', month: 'short', year: 'numeric' };
-  return at.toLocaleDateString([], opts) + ' ' + time;
+/** The word at a row's right, if any: the newest is "Current", a deletion says so. */
+export function rowTag(v, newest) {
+  if (v.deleted) return 'Deleted';
+  return newest ? 'Current' : '';
 }
 
-/** What a row says under its time: the current one, a deletion, a name it had then, its files. */
-export function versionWords(v, o = {}) {
-  if (v.deleted) return 'Deleted';
-  const parts = [];
-  if (o.current) parts.push('Current');
-  if (v.name && o.name && v.name !== o.name) parts.push('Named ' + v.name);
-  parts.push(v.files === 1 ? '1 file' : v.files + ' files');
-  return parts.join(', ');
+/** The list's headings and times, newest first: each version's day, and its time to the second. */
+export function listTimes(versions, now = Date.now()) {
+  return versions.map((v) => ({ day: dayWords(v.createdAt, now), time: clockTime(v.createdAt, true) }));
 }
 
 /**
@@ -62,7 +51,17 @@ export function versionChanges(version, current) {
   return out;
 }
 
-const CHANGE_WORDS = { edited: 'edited', renamed: 'renamed', back: 'comes back', gone: 'goes' };
+/**
+ * What became of a file after the version shown, beside its path: "edited
+ * since", "renamed since, now" and its name now, "deleted since" (in the version, not in
+ * the project now) and "added since" (the other way round).
+ */
+export function changeWords(c) {
+  if (c.change === 'renamed') return 'renamed since, now ' + c.before;
+  if (c.change === 'back') return 'deleted since';
+  if (c.change === 'gone') return 'added since';
+  return 'edited since';
+}
 
 /** Why Restore could not go ahead, in a sentence. */
 export function restoreProblem(error) {
@@ -77,21 +76,6 @@ function el(tag, cls, text) {
   if (cls) n.className = cls;
   if (text != null) n.textContent = text;
   return n;
-}
-
-function diffNode(before, after) {
-  const box = el('div', 'review-diff');
-  for (const r of compactDiff(lineDiff(before || '', after || ''), 1)) {
-    if (r.kind === 'gap') {
-      box.appendChild(el('div', 'review-diff__gap', r.count === 1 ? '1 unchanged line' : r.count + ' unchanged lines'));
-      continue;
-    }
-    const line = el('div', 'review-diff__line is-' + r.kind);
-    line.appendChild(el('span', 'review-diff__mark', r.kind === 'theirs' ? '−' : r.kind === 'mine' ? '+' : ''));
-    line.appendChild(el('span', 'review-diff__text', r.text || ' '));
-    box.appendChild(line);
-  }
-  return box;
 }
 
 /** The open project's files as they are now. */
@@ -126,6 +110,13 @@ export async function openVersionHistory() {
   list.setAttribute('aria-label', 'Versions');
   const view = el('div', 'history__view');
   body.append(list, view);
+  // Both panes fade at an edge with more beyond it (scroll-fade.mjs). What they
+  // hold changes under them, so every drawing ends in fit().
+  const SF = g.ScrollFade;
+  const fades = SF && typeof SF.attach === 'function'
+    ? [SF.attach(list, { axis: 'y', size: 14 }), SF.attach(view, { axis: 'y', size: 14 })]
+    : [];
+  const fit = () => { for (const f of fades) f.update(); };
 
   let versions = [];
   let more = false;
@@ -134,26 +125,42 @@ export async function openVersionHistory() {
 
   const state = { pid, load, close: () => handle.close() };
 
-  function rowNode(v, i) {
+  function rowNode(v, i, time) {
     const row = el('button', 'history__row');
     row.type = 'button';
     row.setAttribute('role', 'option');
     row.dataset.version = String(v.version);
-    row.setAttribute('aria-selected', chosen === v.version ? 'true' : 'false');
-    row.appendChild(el('span', 'history__when', versionTime(v.createdAt)));
-    row.appendChild(el('span', 'history__what', versionWords(v, { current: i === 0, name: P.getProjectName() })));
+    row.appendChild(el('span', 'history__when', time));
+    const tag = rowTag(v, i === 0);
+    if (tag) row.appendChild(el('span', 'history__tag', tag));
     row.addEventListener('click', () => choose(v.version));
     return row;
   }
 
+  /** The versions under their days: a heading, then each one's time. */
   function drawList() {
-    list.replaceChildren(...versions.map(rowNode));
+    const times = listTimes(versions);
+    const days = [];
+    versions.forEach((v, i) => {
+      let day = days[days.length - 1];
+      if (!day || day.name !== times[i].day) {
+        day = { name: times[i].day, node: el('div', 'history__day') };
+        day.node.setAttribute('role', 'group');
+        day.node.setAttribute('aria-label', day.name);
+        day.node.appendChild(el('div', 'history__day-name', day.name));
+        days.push(day);
+      }
+      day.node.appendChild(rowNode(v, i, times[i].time));
+    });
+    list.replaceChildren(...days.map((d) => d.node));
+    markChosen();
     if (more) {
       const older = el('button', 'history__older', 'Show older');
       older.type = 'button';
       older.addEventListener('click', () => loadOlder());
       list.appendChild(older);
     }
+    fit();
   }
 
   function say(text, retry) {
@@ -163,6 +170,7 @@ export async function openVersionHistory() {
       again.addEventListener('click', () => load(true));
       view.appendChild(again);
     }
+    fit();
   }
 
   async function load(fresh) {
@@ -205,10 +213,47 @@ export async function openVersionHistory() {
     drawList();
   }
 
-  async function choose(n) {
+  /** The chosen row is selected, and the only one in the tab order: the arrows move between rows. */
+  function markChosen() {
+    const rows = [...list.querySelectorAll('.history__row')];
+    for (const r of rows) {
+      const on = r.dataset.version === String(chosen);
+      r.setAttribute('aria-selected', on ? 'true' : 'false');
+      r.tabIndex = on ? 0 : -1;
+    }
+    if (rows.length && !rows.some((r) => r.tabIndex === 0)) rows[0].tabIndex = 0;
+  }
+
+  // A listbox: Up and Down choose the next version, Home and End the first and
+  // last listed. Held down, the version opens once the key stops, not at every row.
+  let soon = null;
+  list.addEventListener('keydown', (e) => {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const rows = [...list.querySelectorAll('.history__row')];
+    const at = rows.indexOf(document.activeElement);
+    const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: rows.length - 1 }[e.key];
+    if (at < 0 || to == null) return;
+    e.preventDefault();
+    const row = rows[Math.max(0, Math.min(rows.length - 1, to))];
+    if (row === rows[at]) return;
+    row.focus();
+    choose(Number(row.dataset.version), true);
+  });
+
+  async function choose(n, later) {
     chosen = n;
-    for (const r of list.querySelectorAll('.history__row')) r.setAttribute('aria-selected', r.dataset.version === String(n) ? 'true' : 'false');
+    markChosen();
+    clearTimeout(soon);
+    if (later) {
+      soon = setTimeout(() => { if (chosen === n) open(n); }, 160);
+      return;
+    }
+    await open(n);
+  }
+
+  async function open(n) {
     view.replaceChildren(el('p', 'history__note', 'Opening…'));
+    fit();
     let v = null;
     try {
       v = await P.readVersion(pid, n);
@@ -223,33 +268,49 @@ export async function openVersionHistory() {
 
   function drawVersion(v, problem) {
     view.replaceChildren();
+    view.scrollTop = 0;
     const head = el('div', 'history__head');
-    const title = el('div', 'history__title');
-    title.appendChild(el('span', 'history__stamp', versionTime(v.createdAt)));
-    title.appendChild(el('span', 'history__sub', v.deleted ? 'The project was deleted here' : 'Read only'));
-    head.appendChild(title);
+    head.appendChild(el('span', 'history__stamp', versionTime(v.createdAt)));
     const isCurrent = versions.length && versions[0].version === v.version;
+    // A link to this version, as it is (docs/PERSIST.md §5.12): made, copied, and said what it is.
+    const shared = el('div', 'history__shared');
+    if (!v.deleted) {
+      const share = glyphButton('Share this version', 'share', 'secondary', 'link');
+      share.addEventListener('click', async () => {
+        share.disabled = true;
+        await shareVersion(pid, v.version, v.createdAt, shared);
+        share.disabled = false;
+        fit();
+      });
+      head.appendChild(share);
+    }
     if (!v.deleted && !isCurrent) {
       const restore = actionButton('Restore this version', 'restore', 'primary');
       restore.addEventListener('click', () => doRestore(v, restore));
       head.appendChild(restore);
     }
     view.appendChild(head);
+    view.appendChild(shared);
     if (problem) view.appendChild(el('p', 'review__problem', problem));
-    if (v.deleted) return;
+    drawChanges(v);
+    fit();
+  }
+
+  /** What changed since this version, file by file: − is the project now, + this version. */
+  function drawChanges(v) {
+    if (v.deleted) {
+      view.appendChild(el('p', 'history__note', 'The project was deleted here.'));
+      return;
+    }
     const changes = versionChanges(v, currentFiles());
     if (!changes.length) {
       view.appendChild(el('p', 'history__note', 'The same as the project is now.'));
       return;
     }
-    const legend = el('p', 'review__legend');
-    legend.appendChild(el('span', 'review__key is-theirs', '− now'));
-    legend.appendChild(el('span', 'review__key is-mine', '+ this version'));
-    view.appendChild(legend);
     for (const c of changes) {
       const line = el('div', 'review__change');
       line.appendChild(el('span', 'review__path', c.path));
-      line.appendChild(el('span', 'review__kind', CHANGE_WORDS[c.change]));
+      line.appendChild(el('span', 'review__kind', changeWords(c)));
       view.appendChild(line);
       if (c.change === 'edited') view.appendChild(diffNode(c.before, c.after));
     }
@@ -285,7 +346,11 @@ export async function openVersionHistory() {
     height: 460,
     minWidth: 480,
     minHeight: 260,
-    onClose: () => { if (win === state) win = null; },
+    onClose: () => {
+      clearTimeout(soon);
+      for (const f of fades) f.destroy();
+      if (win === state) win = null;
+    },
   });
   win = state;
   await load(true);

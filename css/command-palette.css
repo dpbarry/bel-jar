@@ -4,7 +4,7 @@
   position: fixed;
   inset: 0;
   z-index: 10200;
-  background: light-dark(hsla(222, 22%, 24%, 0.12), hsla(222, 18%, 4%, 0.28));
+  background: light-dark(hsla(222, 22%, 24%, 0.12), hsla(0, 0%, 0%, 0.28));
   opacity: 0;
   visibility: hidden;
   transition:

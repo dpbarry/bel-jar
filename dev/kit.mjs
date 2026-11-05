@@ -275,6 +275,66 @@ function headerOf(doc, signedIn) {
   });
 }
 
+// ── sharing ─────────────────────────────────────────────────────────────────
+{
+  const list = section('Sharing', 'The Share window (js/ui/share-window.mjs), opened as the app opens it over a stand-in cloud, in each state it has; then a link as Version history shows it.');
+  const { openShareWindow, shareVersion } = await import('../js/ui/share-window.mjs');
+  const now = Date.now();
+  const HOUR = 3600 * 1000;
+  // A cloud that answers at once: the links it is given, and a link when one is made.
+  const cloud = (links, synced = true) => ({
+    getActiveProjectId: () => 'kit',
+    projects: () => [{ id: 'kit', name: 'Calf work' }],
+    getProjectName: () => 'Calf work',
+    confirmSynced: async () => ({ ok: synced }),
+    shareLinks: async () => links,
+    makeShare: async (pid, version) => ({ ok: true, id: 'EwHUoT5YHnUZ4FppighmVA', version, createdAt: now, versionAt: now - 2 * HOUR }),
+    revokeShare: async () => ({ ok: true }),
+  });
+  const signedIn = { user: () => ({ login: 'dean-b' }), available: () => true, signIn() {} };
+  const signedOut = { user: () => null, available: () => true, signIn() {} };
+  const standIn = async (persist, account, draw) => {
+    const was = [window.Persist, window.Account];
+    window.Persist = persist;
+    window.Account = account;
+    try {
+      await draw();
+    } finally {
+      [window.Persist, window.Account] = was;
+    }
+  };
+  const shareCard = (label, persist, account) => {
+    const frame = specimen(list, label);
+    return drawn(frame, () => standIn(persist, account, async () => {
+      await openShareWindow('kit', 'Calf work');
+      await settled();
+      // The live window (a body's child), not a picture of one already in a frame.
+      const real = document.querySelector('body > dialog.share-window-wrap[open]:not(.is-leaving)');
+      if (!real) throw new Error('the window did not open');
+      inFlow(frame, [real]);
+      real.querySelector('.jar-dialog__close').click();
+      // Gone before the next one opens, so each specimen is its own window.
+      for (let i = 0; i < 40 && real.isConnected; i += 1) await settled();
+    }));
+  };
+  await shareCard('No link yet: who can read it, and Copy link', cloud([]), signedIn);
+  await shareCard('A link, with changes not in the cloud yet, and links to single versions', cloud([
+    { id: 'wXn8I_iEGU4FppighmVA2k', version: 0, createdAt: now, versionAt: 0 },
+    { id: 'EwHUoT5YHnUZ4FppighmVA', version: 7, createdAt: now - HOUR, versionAt: now - 2 * HOUR },
+    { id: 'Q9a2LmZr7TvKc3NpXy0bWe', version: 3, createdAt: now - 72 * HOUR, versionAt: now - 72 * HOUR },
+  ], false), signedIn);
+  await shareCard('Links to single versions, and none to the project', cloud([
+    { id: 'EwHUoT5YHnUZ4FppighmVA', version: 7, createdAt: now - HOUR, versionAt: now - 2 * HOUR },
+  ]), signedIn);
+  await shareCard('Signed out', cloud([]), signedOut);
+  const frame = specimen(list, 'A link to one version, made from Version history', 'kit-frame--panel');
+  await drawn(frame, () => standIn(cloud([]), signedIn, async () => {
+    const into = el('div', 'history__shared kit-share-inline');
+    frame.appendChild(into);
+    await shareVersion('kit', 7, now - 2 * HOUR, into);
+  }));
+}
+
 // ── home ────────────────────────────────────────────────────────────────────
 {
   const list = section('Home', 'The page\'s own column, read out of index.html and filled by home\'s own builders (js/home/home.mjs): rowNode, startNodes, linkNodes, findNodes.');
@@ -414,6 +474,86 @@ function headerOf(doc, signedIn) {
   });
 }
 
+// ── version history ─────────────────────────────────────────────────────────
+/**
+ * Version history open on a stand-in cloud: forty versions, and the one before
+ * the current three files edited away from the project now, one deleted since
+ * and one added. Resolves to a
+ * function that closes the window and puts back what Persist and Account were.
+ * probe-kit opens it live through Kit.openHistory.
+ */
+async function openHistory() {
+  await import('../js/ui/scroll-fade.mjs');
+  await import('../js/ui/floating-window.mjs');
+  const { openVersionHistory } = await import('../js/ui/version-history.mjs');
+  const lf = ['nat : type.', 'z : nat.', 's : nat → nat.', '', 'plus : nat → nat → nat → type.', 'plus/z : plus z N N.', 'plus/s : plus N M P → plus (s N) M (s P).', ''];
+  const lines = (n) => Array.from({ length: n }, (_, i) => lf[i % lf.length]);
+  const sumHead = ['rec sum : (N : [ ⊢ nat ]) → [ ⊢ sum N ] =', '  mlam N ⇒ case [ ⊢ N ] of % by induction on N'];
+  const files = [
+    ['sum.bel', lines(26).concat(sumHead, [
+      '  | [ ⊢ z ] ⇒ [ ⊢ sum-z ]',
+      '  | [ ⊢ s X ] ⇒',
+      '    let [ ⊢ R ] = plus1 [ ⊢ X ] in',
+      '    [ ⊢ sum-s R ] % z + (s z) = (s z) by rule sum-z, then the rest by the induction hypothesis',
+      ';',
+    ]), lines(26).concat(sumHead, ['  | [ ⊢ z ] ⇒ [ ⊢ sum-z ] % z + (s z) = (s z) by rule sum-z', ';'])],
+    ['lam.bel', lines(22).concat(['rec val-sound : [ ⊢ eval E V ] → [ ⊢ value V ] =', '  / total d (val-sound _ _ d) /'], lines(6)),
+      lines(22).concat(['rec val-sound : [ ⊢ E eval V ] → [ ⊢ value V ] =', '  / total d (val-sound _ _ d) /'], lines(6))],
+    ['plus.bel', lines(12).concat(['rec plus1 : (N : [ ⊢ nat ]) → [ ⊢ plus N (s z) (s N) ] =', '  mlam N ⇒ ?', ';'], lines(9)),
+      lines(12).concat(['rec plus1 : (N : [ ⊢ nat ]) → [ ⊢ plus N (s z) (s N) ] = ?', ';'], lines(9))],
+    // In the version only, and in the project now only.
+    ['scratch.bel', null, lines(4)],
+    ['notes.bel', lines(3), null],
+  ];
+  const now = Date.now();
+  const MIN = 60 * 1000;
+  // Every 2 h 17 min back, over several days; versions 96 to 94 in one minute,
+  // as a burst of syncs makes them; 70 is the project deleted, and brought back.
+  const burst = Math.floor((now - (4 * 137 + 3) * MIN) / MIN) * MIN;
+  const versions = Array.from({ length: 40 }, (_, i) => {
+    const v = 100 - i;
+    const createdAt = v >= 94 && v <= 96 ? burst + (96 - v) * -15000 + 50000 : now - (i * 137 + 3) * MIN;
+    const deleted = v === 70;
+    return { version: v, createdAt, files: deleted ? 0 : files.length, deleted, name: deleted ? null : 'Calf work' };
+  });
+  const was = [window.Persist, window.Account];
+  window.Persist = {
+    getActiveProjectId: () => 'kit',
+    projects: () => [{ id: 'kit', name: 'Calf work', owner: 'a' }],
+    getAccount: () => 'a',
+    getProjectName: () => 'Calf work',
+    confirmSynced: async () => ({ ok: true }),
+    shareLinks: async () => [],
+    listFiles: () => files.map(([name, now], i) => now && { id: 'f' + i, name }).filter(Boolean),
+    getFileText: (id) => files[Number(id.slice(1))][1].join('\n'),
+    projectHistory: async () => versions,
+    readVersion: async (_pid, n) => {
+      const v = versions.find((x) => x.version === n);
+      if (v.deleted) return { version: n, createdAt: v.createdAt, deleted: true, files: [] };
+      return { version: n, createdAt: v.createdAt, files: files.map(([path, , then], i) => then && { id: 'f' + i, path, text: then.join('\n') }).filter(Boolean) };
+    },
+  };
+  window.Account = { user: () => ({ login: 'dean-b' }), available: () => true, signIn() {} };
+  await openVersionHistory();
+  await settled();
+  return () => {
+    window.FloatingWindow.closeAll();
+    [window.Persist, window.Account] = was;
+  };
+}
+
+{
+  const list = section('Version history', 'The window (js/ui/version-history.mjs) on a stand-in cloud: the versions under their days, three of them in one minute, one a deletion. The list and the version fade where they run on; the diffs are review-differences.mjs’s, as Review differences and Changes made offline draw them.');
+  const frame = specimen(list, 'Forty versions; the one before the current, three files edited since, one deleted and one added', 'kit-frame--panel');
+  await drawn(frame, async () => {
+    const close = await openHistory();
+    const live = [...document.querySelectorAll('.floating-window')].pop();
+    if (!live || !live.querySelector('.history__head')) throw new Error('the window did not open on a version');
+    inFlow(frame, [live]);
+    close();
+  });
+}
+
 // ── the palette ─────────────────────────────────────────────────────────────
 {
   const list = section('The palette', 'CommandPalette (js/ui/command-palette.mjs) over the one command registry, as it opens before anything is typed.');
@@ -454,5 +594,6 @@ window.Kit = {
   sections: () => [...document.querySelectorAll('.kit-section__title')].map((h) => h.textContent),
   specimens: () => document.querySelectorAll('.kit-specimen').length,
   routes: Routes,
+  openHistory,
 };
 window.KitReady = true;

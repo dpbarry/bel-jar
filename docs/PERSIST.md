@@ -789,9 +789,14 @@ the notifications (`signInFailure`; `tests/test-account.mjs` reads every step ou
   `tests/test-server-migrations.mjs`.
 - **Version history and restore** (plan v6 c6, `js/ui/version-history.mjs`; Project > Version
   history, and the palette, signed in on one of the account's projects only). A floating window:
-  the versions down the left, newest first, a page of 50 at a time; the one before the current
-  open, set beside the project as it is now (what restoring would change, file by file); Restore
-  this version. Restoring deletes nothing and asks nothing: `engine.restoreVersion` writes the
+  the versions down the left, newest first, a page of 50 at a time, under their days, each saying
+  its time alone, to the second (seconds on every row, :00 too, Dean 2026-11-04: a list where some
+  had them read as uneven; "Current" on the newest, "Deleted" on a deletion); the one before the
+  current open, set beside the project as it is now, file by file, each saying what became of it
+  after that version ("edited since", "renamed since, now c.bel", "deleted since", "added since";
+  it said what restoring would do, "goes", and read as nothing); Restore this version. Up and Down move through the list. A row once
+  named the files its version changed, from the one before it; set beside a pane comparing with
+  the project now, it read as wrong, and Dean took it out (2026-11-04). Restoring deletes nothing and asks nothing: `engine.restoreVersion` writes the
   version's contents as sync writes them (an open editor follows), and the tab that syncs is asked
   for a round at once (`Persist.restoreVersion`), which commits it over the head like any edit:
   other devices merge it, and an edit made meanwhile on another device beats the restore's
@@ -1095,6 +1100,104 @@ the catalogue does not declare, which the registry drops without a word) and got
 
 Not built: the Settings dialog on home (it opens from the editor; on home the preferences that are
 not about an open file are in the palette).
+
+### 5.12 Sharing: a link anyone can read (plan 05; decided by Dean 2026-11-01)
+
+A share is a row on the server that points at a project: either at whatever its head is (**the
+project link**, which follows) or at one version (**a version link**, fixed). Anyone with the
+address can read what it points at; nobody can edit through it. Unlisted, not private: nothing
+lists a link, and nothing about the address names the person or the project, but whoever holds it
+can pass it on, and the page says so where the link is made.
+
+**Decided (Dean, 2026-11-01).**
+
+- **Where.** One item, *Share…*, in the Project menu, in home's row menu, and the palette (*Share
+  Project…*). It opens one small window for the project: who can read it at the top (Only you, or
+  Anyone with the link, with Revoke on that line), the link under it, and under a rule the version
+  links made for it, each with copy and revoke. Making and taking back are in the same place. A version link is made from Version history (*Share this version*
+  beside Restore): that is where one version is looked at. Signed out, *Share…* is still there and
+  says links live in the cloud, as Version history does.
+- **Following by default.** The project link shows the newest version the cloud has, so one address
+  stays current. The work in progress shows too, a proof that does not check included, and the
+  window says that plainly. Both kinds are the same row with one field different
+  (`version`, 0 for the head), so they are built together.
+- **The words, not a toast.** Over the project link: **Anyone with the link**, "Can read the
+  project, including changes you make later. It isn't listed anywhere." Before there is one: **Only
+  you**, "Anyone you send a link to can read the project, including changes you make later." Under a
+  version link in Version history: "Anyone with this link can read this version, as it was on 31 Oct
+  14:02. It isn't listed anywhere." When this browser has work the cloud lacks, the window says the
+  link does not show it.
+- **The reader** sees the project's name, "Shared by @handle" (a GitHub handle, public already), when
+  it was last changed, its files read-only with BelJar's highlighting, and the outline: each file's
+  theorems and the holes still open. No editor, no Beluga, no sign-in.
+- **Open in BelJar** makes a copy, never a way into the original: signed in it joins the reader's
+  account (as every project in the browser does), signed out it stays in that browser. Same name.
+- **The address** is `/s/` and 22 characters (128 random bits, base64url). Revoking ends it at once:
+  the page then says "This link no longer works", and making a link again gives a new address.
+  Deleting the project (a deletion version) or the account deletes its links. Signing out leaves
+  them: they are the account's, not the browser's.
+
+**The server** (migration `0006_shares.sql`, additive). `shares (id, project, owner, version,
+created_at)`, keyed by id, indexed by project. On the wire, for the signed-in account only:
+
+- `shares(pid)` → `[{ id, version, createdAt, versionAt }]`, the project's links, the project link
+  first (`versionAt`: when a version link's version was made, which is what its words say).
+- `share(pid, { version })` → `{ ok: true, id, version, createdAt }`, or `{ ok: false, error }`:
+  `not-found` (not the account's, or nothing in the cloud yet; another account's project reads as
+  not there), `deleted` (the head, or that version, is a deletion), `no-version`, `too-many`
+  (`SHARE_LIMIT` links on one project). A project has one link per kind: asking again for the
+  project link, or for a version that has one, answers the one there is. So a retry never makes two.
+- `unshare(pid, id)` → `{ ok: true }` whether or not it was there; another account's link is
+  untouched.
+- `remove` deletes the project's links in the same transaction as the deletion version.
+
+And one public read, the only thing on the server anyone may ask without a session:
+`GET /api/share/<id>` → `{ name, by, version, updatedAt, follows, files: [{ path, text }], folders, suites }`
+(`suites`: the active suite of each folder, so a copy checks as the original does) or 404. ⛔ It
+serves the files of the one version the link names (the head's for the project link)
+and nothing else: no project id, no account id, no other version, no text the manifest does not
+name. `by` is the owner's handle. Not cached anywhere (`no-store`), so a revoked link is dead on
+the next load; `x-robots-tag: noindex` on it and on the page. At most `SHARE_BYTES` of text (8 MB);
+past that it answers `too-large` and the page says the project is too big to show.
+
+**The reading page** (`share.html`, `js/share.mjs` → `js/share.js`; Routes owns `/s/<id>`, and
+`share.html?s=<id>` on a static server). A third document: no Persist, no editor, no worker, its own
+bundle under 300 KB (`tests/test-share-page.mjs`). It highlights with the editor's own tags
+(`js/editor-src/highlight-tags.mjs`, shared with the Library preview) on the parser alone, and
+works out the outline from the same parse, so the outline can never disagree with the text it is
+shown beside. (The plan had the author's editor compute it and store it with the share; for a link
+that follows, a stored outline would go stale with the next edit.) *Open in BelJar* goes home with
+`?copy=<id>`: home reads the share and makes the project, the one project home ever makes, and
+only at that click.
+
+**In the page.** Share… (`js/ui/share-window.mjs`) syncs first (`Persist.confirmSynced`), then asks
+for the project's links (`Persist.shareLinks`, `makeShare`, `revokeShare`: the transport's, signed in
+only). Redrawn on 2 November (Dean: the first had "no aesthetic prethought"), as share sheets are
+drawn. At the top, who can read: a round mark (a lock, the globe once there is a link), the state as
+a title, its line under it, and Revoke on the title's line. Under it one slot of one height: Copy
+link (it makes the link and copies it), which becomes the link itself, the address (the host quiet,
+the id in mono, the id giving way first when room is short), Open, and Copy (a check and Copied for
+a moment: no toast). Under a rule, the version links as rows: the version's time, its address, and
+two icon buttons. With version links and none to the project the title is "No link to the project
+yet", since "Only you" would not be true. The glyphs are Lucide's. Every state is on the kit page
+(`dev/kit.html`, Sharing). Offered wherever a server keeps links
+(`Account.available()`); signed out it says sign in. The reading page and the privacy page are
+plain cuts both ways (`page-transition-core.mjs`: a transition to a document that does not opt
+in was aborted with an error). ⛔ A page served at `/s/ID` is on the Worker, so Routes gives it the
+short addresses (`short()`): on `npm run dev` a relative `index.html` resolved under `/s/` and
+Open in BelJar went nowhere (found by the probe, 2026-11-01). Home's bundle grew 15 KB with the
+window and the copy (`tests/test-home.mjs`: under 600 KB).
+
+**Privacy**: `privacy.html` says what a link shows and that it lasts until revoked;
+`tests/test-privacy-page.mjs` holds it to the migration. **Deleting the account**: `shares` is in
+`ACCOUNT_ROWS`.
+
+Tests: `shareRules` in `tests/_sync-protocol-suite.mjs` on both servers (nothing reachable but the
+one version, another account's links untouched, deletion takes them, the retry answers the same
+link), the Worker's own read over HTTP (`tests/test-sync-worker.mjs`: headers, 404 for everything
+else), `tests/test-share-page.mjs` (the bundle, the highlight, the outline, the words),
+`tests/test-routes.mjs`, and in Chrome `scratch/probes/probe-share.mjs`: two browsers, a link made,
+read signed out, followed after an edit, a version link, Open in BelJar, revoked.
 
 ## 6. Stages
 

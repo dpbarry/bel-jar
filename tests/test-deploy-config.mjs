@@ -64,7 +64,8 @@ expect(!Object.keys(vars).some((k) => /SECRET|TOKEN|PASSWORD/i.test(k)), 'no sec
 expect(/^Ov23[A-Za-z0-9]+$/.test(vars.GITHUB_CLIENT_ID || ''), 'the live GitHub app\'s client id is set');
 expect(fs.existsSync(path.join(root, prod.main)), `the Worker exists (${prod.main})`);
 expect(prod.assets && prod.assets.directory === '.' && prod.assets.binding === 'ASSETS', 'the site is served from the repository root through ASSETS');
-expect(JSON.stringify(prod.assets.run_worker_first) === '["/api/*"]', 'the Worker answers /api/* only; every page and file is served as before');
+expect(JSON.stringify(prod.assets.run_worker_first) === '["/api/*","/s/*"]',
+  'the Worker answers /api/* and the reading page of a link (/s/*, docs/PERSIST.md §5.12); every other page and file is served as before');
 expect(JSON.stringify(dev.assets.run_worker_first) === JSON.stringify(prod.assets.run_worker_first), 'locally too, the same paths reach the Worker');
 const bindings = (c) => JSON.stringify([
   (c.d1_databases || []).map((d) => d.binding),
@@ -121,12 +122,14 @@ expect(!big, `no file is over the 25 MiB asset cap (${big})`);
 expect(uploaded.length < 20000 * 0.5, `the upload is well under the 20,000-file limit (${uploaded.length})`);
 
 // Everything the two pages load goes up: home (index.html) and the editor (edit.html).
-const DOCUMENTS = ['index.html', 'edit.html'];
+const DOCUMENTS = ['index.html', 'edit.html', 'share.html'];
 const refs = [];
 for (const doc of DOCUMENTS) {
   const html = fs.readFileSync(path.join(root, doc), 'utf8');
+  // The reading page is served at /s/<id>, so its files are named from the root.
   const own = [...html.matchAll(/(?:src|href)="([^"#:?]+)(?:\?[^"]*)?"/g)].map((m) => m[1].replace(/^\.\//, ''))
-    .filter((r) => !r.startsWith('/') && !/^beluga_web\./.test(r));
+    .map((r) => (doc === 'share.html' ? r.replace(/^\//, '') : r))
+    .filter((r) => r && !r.startsWith('/') && !/^beluga_web\./.test(r));
   expect(own.length > 4, `${doc} names the files it loads (${own.length})`);
   refs.push(...own);
 }
@@ -141,5 +144,10 @@ expect(!('html_handling' in (prod.assets || {})) || prod.assets.html_handling ==
 // ⛔ Home loads no editor and no Beluga: the document boundary is the guarantee.
 const home = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 expect(!/editor-cm\.bundle|beluga-client|harpoon-client|shell\.js/.test(home), 'home loads neither the editor bundle, the Beluga client nor the shell');
+// ⛔ Nor does the reading page of a link, and every file it names is from the root (it is served at /s/<id>).
+const sharePage = fs.readFileSync(path.join(root, 'share.html'), 'utf8');
+expect(!/editor-cm\.bundle|beluga-client|harpoon-client|shell\.js|home\.js|style\.css/.test(sharePage), 'the reading page loads no editor, no Beluga, no shell, not home');
+const relative = [...sharePage.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1]).filter((r) => !/^(\/|https?:|#)/.test(r));
+expect(!relative.length, `and names every file from the root, or /s/<id> would look for them under /s/ (${relative.join(', ')})`);
 
 console.log(`OK deploy-config (${n} checks: no dev switch or secret in production, /api/* only, ${uploaded.length} files uploaded, none private, all the page loads)`);

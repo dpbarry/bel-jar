@@ -48,7 +48,7 @@
   "uppercase": 1
  },
  "css/dialogs-base.css": {
-  "colour": 4,
+  "colour": 3,
   "radius": 1,
   "spacing": 6,
   "uppercase": 0
@@ -84,7 +84,7 @@
   "uppercase": 1
  },
  "css/explorer.css": {
-  "colour": 49,
+  "colour": 16,
   "radius": 0,
   "spacing": 13,
   "uppercase": 0
@@ -253,6 +253,18 @@
  },
  "css/responsive.css": {
   "colour": 0,
+  "radius": 0,
+  "spacing": 0,
+  "uppercase": 0
+ },
+ "css/share.css": {
+  "colour": 0,
+  "radius": 0,
+  "spacing": 0,
+  "uppercase": 0
+ },
+ "css/source-hl.css": {
+  "colour": 33,
   "radius": 0,
   "spacing": 0,
   "uppercase": 0

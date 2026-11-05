@@ -7,7 +7,7 @@
   min-width: 13rem;
   min-height: 8rem;
   background: var(--chrome-bg-panel);
-  border: 1px solid var(--chrome-divider);
+  border: 1px solid var(--float-border);
   border-radius: 0.5rem;
   box-shadow: var(--floating-window-shadow);
   overflow: hidden;

@@ -39,6 +39,7 @@ const SAYS = {
   settings_versions: ['Your settings'],
   ended_sessions: ['keeps why under that fingerprint'],
   usage: ['counts how many projects you have and how much text you have stored'],
+  shares: ['for each link you make', 'until you revoke it', 'anyone with a link you make can read what it shows', 'your GitHub handle'],
   [DELETION_RECORD]: ['A note that the account is being deleted, holding only its random number'],
 };
 const sql = fs.readdirSync(path.join(root, 'server', 'migrations')).filter((f) => f.endsWith('.sql')).sort()
@@ -52,10 +53,10 @@ expect(!missing.length, `and the page says each (${missing.join('; ')})`);
 
 // ── what Delete account removes is what the page says it removes ───────────
 const deleted = new Set(ACCOUNT_ROWS.map(([t]) => t));
-expect(['users', 'identities', 'sessions', 'projects', 'versions', 'texts', 'settings_heads', 'settings_versions', 'usage'].every((t) => deleted.has(t))
+expect(['users', 'identities', 'sessions', 'projects', 'versions', 'texts', 'settings_heads', 'settings_versions', 'usage', 'shares'].every((t) => deleted.has(t))
   && NAMES_NO_ACCOUNT.join() === 'ended_sessions',
-  'Delete account removes the GitHub details, every sign-in, the projects with their versions and texts, and the settings');
-expect(/Your GitHub details, every browser’s sign-in, your projects with all their versions, and your settings are deleted at once, and the text of your files with them/.test(text),
+  'Delete account removes the GitHub details, every sign-in, the projects with their versions, texts and links, and the settings');
+expect(/Your GitHub details, every browser’s sign-in, your projects with all their versions and links, and your settings are deleted at once, and the text of your files with them/.test(text),
   'and the page says exactly that');
 expect(GRACE_MS <= 24 * 60 * 60 * 1000 && /goes within a day too/.test(text), 'the deletion\'s own note goes within a day, as the page says');
 

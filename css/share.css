@@ -1,0 +1,336 @@
+/* The reading page of a link (share.html, docs/PERSIST.md §5.12): the
+ * project's name and who shared it across the top, its files and the open
+ * file's outline down the left, the file on the right. Read only. On a phone
+ * the three stack and the page scrolls. */
+
+.share-page {
+  --share-rail-w: 15rem;
+}
+
+.share-head {
+  display: flex;
+  align-items: center;
+  gap: var(--share-gap);
+  flex: 0 0 auto;
+  min-height: 3.25rem;
+  padding: var(--share-gap-sm) var(--share-gap);
+  border-bottom: 1px solid var(--muted-lower);
+  box-sizing: border-box;
+}
+
+.share-home {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--share-gap-sm);
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm);
+  color: var(--base-highest);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.share-home svg {
+  width: 1.375rem;
+  height: 1.375rem;
+  color: var(--accent-mid);
+}
+
+.share-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding-left: var(--share-gap);
+  border-left: 1px solid var(--muted-lower);
+}
+
+.share-title h1 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--base-highest);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-meta {
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted-high);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-meta:empty {
+  display: none;
+}
+
+.share-open {
+  flex: 0 0 auto;
+  padding: var(--panel-header-pad-control) var(--pad-inline);
+  border: 1px solid var(--muted-lower);
+  border-radius: var(--radius-md);
+  background: var(--base-lower);
+  color: var(--base-highest);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 520;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .share-open:hover {
+    border-color: var(--muted-low);
+    background: var(--base-low);
+  }
+}
+
+.share-open:focus-visible,
+.share-file:focus-visible,
+.share-outline__item:focus-visible,
+.share-home:focus-visible,
+.share-note__link:focus-visible,
+.share-code:focus-visible {
+  outline: 2px solid var(--accent-mid);
+  outline-offset: 1px;
+}
+
+.share-body {
+  display: grid;
+  grid-template-columns: var(--share-rail-w) minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.share-body[hidden] {
+  display: none;
+}
+
+.share-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--share-section-gap);
+  min-height: 0;
+  overflow: auto;
+  padding: var(--share-code-pad) var(--share-gap-sm);
+  border-right: 1px solid var(--muted-lower);
+}
+
+.share-files,
+.share-outline__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.share-file,
+.share-outline__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--share-gap-sm);
+  width: 100%;
+  padding: var(--share-gap-xs) var(--share-gap-sm);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--base-higher);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.share-file *,
+.share-outline__item * {
+  font-family: inherit;
+}
+
+/* A folder is named once, its files set in under it. */
+.share-folder__name {
+  display: block;
+  padding: var(--share-gap-xs) var(--share-gap-sm);
+  color: var(--muted-high);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.share-files--in .share-file {
+  padding-left: calc(var(--share-gap-sm) * 2.5);
+}
+
+.share-file__name,
+.share-outline__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-file[aria-current='true'] {
+  background: var(--accent-lowest);
+  color: var(--base-highest);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .share-file:hover,
+  .share-outline__item:hover {
+    background: var(--muted-lowest);
+  }
+
+  .share-file[aria-current='true']:hover {
+    background: var(--accent-lowest);
+  }
+}
+
+.share-outline__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--share-gap-sm);
+  margin: 0 0 var(--share-gap-xs);
+  padding: 0 var(--share-gap-sm);
+  color: var(--muted-high);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.share-outline__holes,
+.share-outline__count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--ide-hole-border);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.share-outline__count {
+  font-family: var(--sans);
+  font-size: 0.6875rem;
+}
+
+.share-code {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg);
+}
+
+.share-lines {
+  display: table;
+  min-width: 100%;
+  margin: 0;
+  padding: var(--share-code-pad) 0;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+.share-lines * {
+  font-family: inherit;
+}
+
+.share-lines.is-plain {
+  color: var(--base-higher);
+}
+
+.share-line {
+  display: table-row;
+}
+
+.share-line.is-target {
+  background: var(--accent-lowest);
+}
+
+.share-line__n {
+  display: table-cell;
+  width: 1%;
+  padding: 0 var(--share-gap) 0 var(--share-section-gap);
+  color: var(--muted-mid);
+  text-align: right;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.share-line__text {
+  display: table-cell;
+  padding-right: var(--share-code-end);
+  white-space: pre;
+}
+
+.share-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--share-code-pad);
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: var(--share-note-top) var(--share-code-end) calc(2 * var(--share-code-end));
+  color: var(--base-higher);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.share-note[hidden] {
+  display: none;
+}
+
+.share-note__text {
+  margin: 0;
+}
+
+.share-note__link {
+  color: var(--accent-high);
+  font-weight: 520;
+}
+
+@media (max-width: 720px) {
+  .share-page {
+    height: auto;
+    min-height: 100dvh;
+    overflow: auto;
+  }
+
+  .share-head {
+    flex-wrap: wrap;
+  }
+
+  .share-title {
+    order: 3;
+    flex-basis: 100%;
+    padding-left: 0;
+    border-left: none;
+  }
+
+  .share-open {
+    margin-left: auto;
+  }
+
+  .share-body {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .share-rail {
+    overflow: visible;
+    border-right: none;
+    border-bottom: 1px solid var(--muted-lower);
+  }
+
+  .share-code {
+    overflow: visible;
+    overflow-x: auto;
+  }
+}

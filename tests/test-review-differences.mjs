@@ -68,6 +68,12 @@ function expect(cond, msg) {
   expect(compactDiff(lineDiff('same\n', 'same\n')).length === 0, 'no difference left: nothing to show');
   const added = lineDiff('x', 'x\ny');
   expect(added.length === 2 && added[1].kind === 'mine' && added[1].text === 'y', 'a line only here is mine');
+  const ended = lineDiff('a\nb\nc\nd\n', 'a\nb\nc\nD\n');
+  expect(ended.map((r) => r.kind[0] + r.text).join(' ') === 'sa sb sc td mD',
+    `a final newline ends the last line, it is not an empty one under it (${ended.map((r) => r.kind[0] + r.text).join(' ')})`);
+  expect(compactDiff(lineDiff('a\nb\nc\nd\ne\n', 'A\nb\nc\nd\ne\n'), 1).pop().count === 3, 'so a gap at the end counts the lines there are');
+  const unended = lineDiff('a\n', 'a');
+  expect(unended.length === 2 && unended[1].kind === 'theirs' && unended[1].text === '', 'a final newline on one side only is a difference, and is shown');
   expect(otherSide('device').use === 'Use cloud' && otherSide('tab').use === 'Use other tab', 'the other version is named for where it came from');
   const one = reviewWords([{ source: 'device' }]);
   expect(one.intro === 'This file changed here and in the cloud.' && one.theirs === 'the cloud’s', 'one file from the cloud: said once, in the introduction and the legend');

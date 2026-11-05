@@ -94,7 +94,7 @@ the browser runs Wasm, the JS build (release profile) where it cannot; Settings 
 version chooses. One table, `js/beluga/beluga-client.js` `BUILDS`, names every build's file.
 Migrations applied remotely: 0001 and 0002 (2026-09-28), 0003 sessions and deletions (2026-10-04),
 0004 tables stored by key and 0005 the account's count (2026-10-05, each after
-`npm run backup:rehearse` kept every row of a fresh export).
+`npm run backup:rehearse` kept every row of a fresh export), 0006 links (2026-11-01, the same way).
 ⛔ A migration that rebuilds tables is rehearsed first: `npm run backup:export`, then
 `npm run backup:rehearse` (the export restored locally, every pending migration applied, no table
 may lose a row), and only then `npx wrangler d1 migrations apply DB --remote`.
@@ -133,6 +133,7 @@ head (through `@import` it was refused), and the two travelling boxes are rewrit
 transform-only animations (`page-transition-core.mjs`), or the editor's start-up stalls them.
 ⛔ With "Start page: Last project", a bare home address goes on to the last project, so every link
 to home is `Routes.homeUrl()` (`/?home`), never a typed `/`.
+Links anyone can read (PERSIST §5.12) by `node scratch/probes/probe-share.mjs` (two browsers: made, read signed out, followed, a version link, Open in BelJar, revoked, deleted).
 The signed-in half is probed by `node scratch/probes/probe-account.mjs` (the Worker and a stand-in
 GitHub; Devices, Sign out there and Delete account by `node scratch/probes/probe-devices.mjs`; the
 bell's card for sync failing by `node scratch/probes/probe-sync-failing.mjs`), the rest by `node scratch/probes/probe-home.mjs`; the cloud beside the project name by

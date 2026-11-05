@@ -8,7 +8,8 @@ import {
 import fs from 'node:fs';
 import { createMemoryServer } from '../js/persist/sync/memory-server.mjs';
 import { sha256Now } from './_sync-env.mjs';
-import { serverRules, quotaRules } from './_sync-protocol-suite.mjs';
+import { serverRules, quotaRules, shareRules, shareLimitRules } from './_sync-protocol-suite.mjs';
+import { isShareId, newShareId, shareVersion, SHARE_ID } from '../js/persist/sync/protocol.mjs';
 
 let n = 0;
 function expect(cond, msg) {
@@ -46,6 +47,23 @@ const server = createMemoryServer({ hash: (t) => Promise.resolve(sha256Now(t)) }
 await serverRules({ dean: server.transport('u_dean'), other: server.transport('u_other') }, expect);
 const hist = server.history('p1');
 expect(hist.owner === 'u_dean' && hist.versions.map((v) => `${v.version}/${v.base}`).join() === '1/0,2/1,3/2,4/3', 'history is a line');
+
+// Links anyone can read (docs/PERSIST.md §5.12), on the reference server.
+{
+  const ids = new Set();
+  for (let i = 0; i < 2000; i++) ids.add(newShareId());
+  expect(ids.size === 2000 && [...ids].every((id) => SHARE_ID.test(id) && isShareId(id)), 'a link address is 22 base64url characters, new every time');
+  expect(!isShareId('a'.repeat(21)) && !isShareId('a'.repeat(23)) && !isShareId('a'.repeat(21) + '=') && !isShareId(null), 'and nothing else is one');
+  expect(shareVersion({}) === 0 && shareVersion({ version: 3 }) === 3 && shareVersion({ version: -1 }) === null && shareVersion({ version: 1.5 }) === null,
+    'version 0 is the project link');
+  const handles = { u_dean: 'dean' };
+  const linked = createMemoryServer({ hash: (t) => Promise.resolve(sha256Now(t)), handleOf: (a) => handles[a] || null });
+  await shareRules({ dean: linked.transport('u_dean'), other: linked.transport('u_other'), read: linked.readShare }, expect, isShareId);
+  const limited = createMemoryServer({ hash: (t) => Promise.resolve(sha256Now(t)), shareLimit: 3, shareBytes: 10 });
+  await shareLimitRules({ dean: limited.transport('u_dean'), read: limited.readShare }, expect);
+  const one = await linked.transport('u_dean').share('s1', { version: 2 });
+  expect((await linked.readShare(one.id)).by === 'dean', 'a link says who shared it, by handle');
+}
 
 // What an account may hold, on a server made with small limits (plan v6 c10).
 {

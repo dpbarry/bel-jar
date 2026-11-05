@@ -44,7 +44,8 @@ expect(projectOfUrl('https://beljar.deanbarry.com/?open=' + A) === null && proje
   expect(step({ reduced: true }) === 'skip', '⛔ motion held back: no transition, a plain cut');
   expect(step({ unseen: true }) === 'skip', 'a page nobody saw has nothing to animate from');
   expect(step({ other: 'http://x.test/privacy' }) === 'skip' && step({ other: 'http://x.test/privacy.html' }) === 'skip'
-    && step({ here: 'privacy', other: 'http://x.test/?home' }) === 'skip',
+    && step({ here: 'privacy', other: 'http://x.test/?home' }) === 'skip'
+    && step({ here: 'share', other: 'http://x.test/?copy=x' }) === 'skip' && step({ other: 'http://x.test/s/abc' }) === 'skip',
   '⛔ to and from the page on what BelJar keeps: a plain cut (it does not opt in, and a transition left to the browser was aborted with an error)');
 }
 

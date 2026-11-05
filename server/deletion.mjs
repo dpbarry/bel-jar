@@ -43,6 +43,7 @@ export const ACCOUNT_ROWS = [
   ['settings_versions', 'account = ?'],
   ['settings_heads', 'account = ?'],
   ['usage', 'account = ?'],
+  ['shares', 'owner = ?'],
   ['sessions', 'user_id = ?'],
   ['identities', 'user_id = ?'],
   ['users', 'id = ?'],

@@ -282,10 +282,13 @@
   var EDIT_SHORT = /(?:^|\/)edit\/?$/;
   var EDIT_ANY = /(?:^|\/)edit(?:\.html)?\/?$/;
   var PRIVACY_ANY = /(?:^|\/)privacy(?:\.html)?\/?$/;
+  var SHARE_PATH = /(?:^|\/)s\/([^/]*)\/?$/;
+  var SHARE_PAGE = /(?:^|\/)share(?:\.html)?\/?$/;
+  var SHARE_ID = /^[A-Za-z0-9_-]{22}$/;
   function short() {
     if (g.BELJAR_DEPLOYED) return true;
     const path = g.location && typeof g.location.pathname === "string" ? g.location.pathname : "";
-    return EDIT_SHORT.test(path);
+    return EDIT_SHORT.test(path) || SHARE_PATH.test(path);
   }
   function query(pairs) {
     const parts = [];
@@ -303,6 +306,7 @@
   function homeUrl(opts) {
     const base = short() ? "/" : "index.html";
     if (opts && opts.open) return base + query([["open", opts.open]]);
+    if (opts && opts.copy) return base + query([["copy", opts.copy]]);
     return base + (startsOnLast() ? "?home" : "");
   }
   function editUrl(pid) {
@@ -310,6 +314,15 @@
   }
   function privacyUrl() {
     return short() ? "/privacy" : "privacy.html";
+  }
+  function shareUrl(id, absolute) {
+    const rel = short() ? "/s/" + encodeURIComponent(id) : "share.html" + query([["s", id]]);
+    if (!absolute) return rel;
+    try {
+      return new URL(rel, g.location && g.location.href ? g.location.href : "https://beljar.deanbarry.com/").href;
+    } catch (_) {
+      return rel;
+    }
   }
   function signInUrl(loc) {
     const l = loc || g.location;
@@ -319,6 +332,7 @@
   function pageOf(loc) {
     const p = String(loc && loc.pathname || "");
     if (EDIT_ANY.test(p)) return "edit";
+    if (SHARE_PATH.test(p) || SHARE_PAGE.test(p)) return "share";
     return PRIVACY_ANY.test(p) ? "privacy" : "home";
   }
   function projectParam(loc, name) {
@@ -338,6 +352,36 @@
   }
   function projectOf(loc) {
     return pageOf(loc) === "edit" ? projectParam(loc, "p") : null;
+  }
+  function param(loc, name) {
+    for (const pair of String(loc && loc.search || "").replace(/^\?/, "").split("&")) {
+      const eq = pair.indexOf("=");
+      if (eq === -1 || pair.slice(0, eq) !== name) continue;
+      try {
+        return decodeURIComponent(pair.slice(eq + 1));
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+  function shareOf(loc) {
+    if (pageOf(loc) !== "share") return null;
+    const m = SHARE_PATH.exec(String(loc.pathname || ""));
+    let id = m ? m[1] : param(loc, "s");
+    if (m) {
+      try {
+        id = decodeURIComponent(id);
+      } catch (_) {
+        return null;
+      }
+    }
+    return id && SHARE_ID.test(id) ? id : null;
+  }
+  function copyOf(loc) {
+    if (pageOf(loc) !== "home") return null;
+    const id = param(loc, "copy");
+    return id && SHARE_ID.test(id) ? id : null;
   }
   function pendingOf(loc) {
     return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
@@ -367,15 +411,19 @@
   }
   var Routes = {
     PROJECT_ID,
+    SHARE_ID,
     ISSUES_URL,
     CONTACT_URL,
     homeUrl,
     editUrl,
     privacyUrl,
+    shareUrl,
     signInUrl,
     pageOf,
     projectOf,
     pendingOf,
+    shareOf,
+    copyOf,
     go,
     settle,
     nameProject,
@@ -1623,9 +1671,9 @@
     }
     function removeAccountProjects(uid, keep) {
       if (!uid) return 0;
-      const open11 = pinned || device.get("activeProject");
-      const wasTheirs = peekProjects().some((p) => p.id === open11 && p.owner === uid);
-      setResume(String(uid), wasTheirs ? open11 : "");
+      const open12 = pinned || device.get("activeProject");
+      const wasTheirs = peekProjects().some((p) => p.id === open12 && p.owner === uid);
+      setResume(String(uid), wasTheirs ? open12 : "");
       let n = 0;
       for (const p of peekProjects()) {
         if (p.owner !== uid || keep && keep.has(p.id)) continue;
@@ -2072,9 +2120,9 @@
       return i === -1 ? "" : name.slice(0, i);
     }
     function notifyProjectTreeChanged(kind) {
-      var g23 = typeof window !== "undefined" ? window : null;
-      if (g23 && typeof g23.dispatchEvent === "function") {
-        g23.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
+      var g24 = typeof window !== "undefined" ? window : null;
+      if (g24 && typeof g24.dispatchEvent === "function") {
+        g24.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind } }));
       }
     }
     function listFiles2() {
@@ -2302,14 +2350,14 @@
     function getOpenFileIds() {
       var files2 = work2.peekTree().files;
       if (!files2.length) return [];
-      var open11 = work2.peekSession().open;
-      if (open11 === null) {
+      var open12 = work2.peekSession().open;
+      if (open12 === null) {
         var active5 = getActiveFileId();
         return active5 ? [active5] : [];
       }
       var valid = {};
       for (var i = 0; i < files2.length; i++) valid[files2[i].id] = true;
-      return open11.filter(function(id) {
+      return open12.filter(function(id) {
         return valid[id];
       });
     }
@@ -2603,9 +2651,9 @@
       return t && t.charAt(0) !== "%" && isCfgEntryToken2(t);
     }
     function cfgTextForRewrite(fileId) {
-      var g23 = typeof window !== "undefined" ? window : null;
-      if (g23) {
-        var ed = g23.CurrentEditor;
+      var g24 = typeof window !== "undefined" ? window : null;
+      if (g24) {
+        var ed = g24.CurrentEditor;
         if (fileId === getActiveFileId() && ed && typeof ed.getValue === "function") {
           return String(ed.getValue() ?? "");
         }
@@ -2614,9 +2662,9 @@
     }
     function notifyCfgRewritten(fileIds) {
       if (!fileIds.length) return;
-      var g23 = typeof window !== "undefined" ? window : null;
-      if (g23 && typeof g23.dispatchEvent === "function") {
-        g23.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
+      var g24 = typeof window !== "undefined" ? window : null;
+      if (g24 && typeof g24.dispatchEvent === "function") {
+        g24.dispatchEvent(new CustomEvent("beljar:cfg-rewritten", { detail: { fileIds } }));
       }
     }
     function rewriteCfgBody(text, cfgDir, oldName, newName) {
@@ -2626,14 +2674,14 @@
       var oldDir = dirOf5(oldName);
       var newDir = newName != null ? dirOf5(newName) : null;
       for (var i = 0; i < lines.length; i++) {
-        var line = lines[i];
-        var t = line.trim();
+        var line2 = lines[i];
+        var t = line2.trim();
         if (!isCfgEntryLine(t)) {
-          out.push(line);
+          out.push(line2);
           continue;
         }
         if (resolveCfgEntryPath(cfgDir, t) !== oldName) {
-          out.push(line);
+          out.push(line2);
           continue;
         }
         if (newName == null) {
@@ -2641,16 +2689,16 @@
           continue;
         }
         if (oldDir !== newDir) {
-          out.push(line);
+          out.push(line2);
           continue;
         }
         var rel = relToCfgDir(cfgDir, newName);
         if (rel == null || rel === "") {
-          out.push(line);
+          out.push(line2);
           continue;
         }
         changed = true;
-        out.push(line.slice(0, line.indexOf(t)) + rel);
+        out.push(line2.slice(0, line2.indexOf(t)) + rel);
       }
       return changed ? out.join("\n") : null;
     }
@@ -3027,9 +3075,9 @@
     var work2 = deps.work;
     var settings3 = deps.settings;
     var files2 = deps.files || null;
-    var open11 = /* @__PURE__ */ new Set();
+    var open12 = /* @__PURE__ */ new Set();
     work2.onFileChange(function(e) {
-      open11.forEach(function(doc2) {
+      open12.forEach(function(doc2) {
         doc2.noteFileChange(e);
       });
     });
@@ -3125,9 +3173,9 @@
         if (providers3 && typeof providers3.applyExternalText === "function") providers3.applyExternalText(text);
       }
       function announceConflict(source) {
-        var g23 = typeof window !== "undefined" ? window : null;
-        if (g23 && typeof g23.dispatchEvent === "function" && typeof CustomEvent === "function") {
-          g23.dispatchEvent(new CustomEvent("beljar:text-conflict", { detail: { fileId: documentId, source } }));
+        var g24 = typeof window !== "undefined" ? window : null;
+        if (g24 && typeof g24.dispatchEvent === "function" && typeof CustomEvent === "function") {
+          g24.dispatchEvent(new CustomEvent("beljar:text-conflict", { detail: { fileId: documentId, source } }));
         }
       }
       function reconcile() {
@@ -3309,7 +3357,7 @@
         return { ok: true, copyId };
       }
       var handle = { noteFileChange, flushIfDirty: flushCheckpointIfDirty };
-      open11.add(handle);
+      open12.add(handle);
       return {
         getEditorText: function() {
           return state3.editor.text;
@@ -3339,12 +3387,12 @@
         /** Stop listening for changes underneath (tests; a page never closes its document). */
         dispose: function() {
           cancelPendingSave();
-          open11.delete(handle);
+          open12.delete(handle);
         }
       };
     }
     function flushPending() {
-      open11.forEach(function(doc2) {
+      open12.forEach(function(doc2) {
         try {
           if (doc2.flushIfDirty) doc2.flushIfDirty();
         } catch (_) {
@@ -3598,6 +3646,7 @@
   // js/persist/sync/protocol.mjs
   var MANIFEST_VERSION = 1;
   var QUOTA = { projects: 1e3, textBytes: 1024 * 1024 * 1024 };
+  var SHARE_BYTES = 8 * 1024 * 1024;
   function canonicalJson(value) {
     if (value === null || typeof value !== "object") return JSON.stringify(value);
     if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
@@ -3632,14 +3681,14 @@
         const s1 = (y >>> 17 | y << 15) ^ (y >>> 19 | y << 13) ^ y >>> 10;
         w[t] = w[t - 16] + s0 + w[t - 7] + s1 | 0;
       }
-      let a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g23 = h[6], k = h[7];
+      let a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g24 = h[6], k = h[7];
       for (let t = 0; t < 64; t++) {
         const S1 = (e >>> 6 | e << 26) ^ (e >>> 11 | e << 21) ^ (e >>> 25 | e << 7);
-        const t1 = k + S1 + (e & f ^ ~e & g23) + SHA_K[t] + w[t] | 0;
+        const t1 = k + S1 + (e & f ^ ~e & g24) + SHA_K[t] + w[t] | 0;
         const S0 = (a >>> 2 | a << 30) ^ (a >>> 13 | a << 19) ^ (a >>> 22 | a << 10);
         const t2 = S0 + (a & b ^ a & c ^ b & c) | 0;
-        k = g23;
-        g23 = f;
+        k = g24;
+        g24 = f;
         f = e;
         e = d + t1 | 0;
         d = c;
@@ -3653,7 +3702,7 @@
       h[3] += d;
       h[4] += e;
       h[5] += f;
-      h[6] += g23;
+      h[6] += g24;
       h[7] += k;
     }
     let s = "";
@@ -4270,9 +4319,9 @@
       const sent = [];
       let left = budget == null ? Infinity : budget;
       const tombs = work2.readTombstones();
-      const open11 = typeof work2.pinnedProject === "function" ? work2.pinnedProject() : null;
+      const open12 = typeof work2.pinnedProject === "function" ? work2.pinnedProject() : null;
       const mine = work2.allProjects().filter((x) => x.owner === account && !tombs[x.id]);
-      mine.sort((a, b) => a.id === open11 ? -1 : b.id === open11 ? 1 : 0);
+      mine.sort((a, b) => a.id === open12 ? -1 : b.id === open12 ? 1 : 0);
       for (const { id: pid } of mine) {
         try {
           const rec = readRecord2(pid);
@@ -5268,9 +5317,9 @@
     treeNoticeQueued = true;
     Promise.resolve().then(function() {
       treeNoticeQueued = false;
-      var g23 = typeof window !== "undefined" ? window : null;
-      if (g23 && typeof g23.dispatchEvent === "function" && typeof CustomEvent === "function") {
-        g23.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
+      var g24 = typeof window !== "undefined" ? window : null;
+      if (g24 && typeof g24.dispatchEvent === "function" && typeof CustomEvent === "function") {
+        g24.dispatchEvent(new CustomEvent("beljar:project-tree-changed", { detail: { kind: "external" } }));
       }
     });
   }
@@ -5644,6 +5693,17 @@
       return syncEngine ? syncEngine.readVersion(pid, n) : Promise.resolve(null);
     },
     restoreVersion,
+    // Links anyone can read (docs/PERSIST.md §5.12, js/ui/share-window.mjs):
+    // signed in only, null otherwise. They are the server's: nothing is stored here.
+    shareLinks: function(pid) {
+      return syncTransport ? syncTransport.shares(pid) : Promise.resolve(null);
+    },
+    makeShare: function(pid, version2) {
+      return syncTransport ? syncTransport.share(pid, { version: version2 || 0 }) : Promise.resolve(null);
+    },
+    revokeShare: function(pid, id) {
+      return syncTransport ? syncTransport.unshare(pid, id) : Promise.resolve(null);
+    },
     useCloud: function(pid) {
       return syncEngine ? syncEngine.useCloud(pid) : Promise.resolve(false);
     },
@@ -6508,6 +6568,8 @@
     { id: "project.download", title: "Download Project", section: "File", scope: "global", palette: true },
     // Every version the cloud keeps, and Restore (js/ui/version-history.mjs): signed in only.
     { id: "project.history", title: "Version History", section: "File", scope: "global", palette: true },
+    // A link anyone can read, and taking it back (js/ui/share-window.mjs): where a server keeps links.
+    { id: "project.share", title: "Share Project\u2026", section: "File", scope: "global", palette: true },
     { id: "tab.next", title: "Next Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bn"] },
     { id: "tab.prev", title: "Previous Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bp"] },
     { id: "tab.close", title: "Close Tab", section: "File", scope: "global", palette: true, keybindable: true },
@@ -8163,9 +8225,9 @@
     const head = tokens[0].text;
     const lineHit = LINE_RE.exec(head);
     if (lineHit && tokens.length === 1) {
-      const line = parseInt(lineHit[1], 10);
+      const line2 = parseInt(lineHit[1], 10);
       const col = lineHit[2] != null ? parseInt(lineHit[2], 10) : 1;
-      return { ...base, kind: "line", line, col: Number.isFinite(col) && col > 0 ? col : 1, slot: 0 };
+      return { ...base, kind: "line", line: line2, col: Number.isFinite(col) && col > 0 ? col : 1, slot: 0 };
     }
     const bang = head.endsWith("!") && head.length > 1;
     const name = bang ? head.slice(0, -1) : head;
@@ -8465,8 +8527,8 @@
     const view2 = ed && typeof ed.getView === "function" ? ed.getView() : null;
     if (!view2 || !target) return false;
     const doc2 = view2.state.doc;
-    const line = doc2.line(Math.max(1, Math.min(target.line, doc2.lines)));
-    const pos = Math.min(line.from + Math.max(0, target.col - 1), line.to);
+    const line2 = doc2.line(Math.max(1, Math.min(target.line, doc2.lines)));
+    const pos = Math.min(line2.from + Math.max(0, target.col - 1), line2.to);
     if (typeof ed.jumpToRange === "function") ed.jumpToRange({ from: pos, to: pos });
     else view2.dispatch({ selection: { anchor: pos, head: pos }, scrollIntoView: true });
     if (typeof ed.focus === "function") ed.focus();
@@ -8535,8 +8597,8 @@
       const view2 = ed && typeof ed.getView === "function" ? ed.getView() : null;
       if (!view2 || typeof ed.peekRange !== "function") return;
       const doc2 = view2.state.doc;
-      const line = doc2.line(Math.max(1, Math.min(parsed.line, doc2.lines)));
-      ed.peekRange({ from: line.from, to: line.from });
+      const line2 = doc2.line(Math.max(1, Math.min(parsed.line, doc2.lines)));
+      ed.peekRange({ from: line2.from, to: line2.from });
     }, PREVIEW_MS);
   }
   function restoreViewport() {
@@ -9896,8 +9958,8 @@
     if (seg.dot) el9.appendChild(statusDot());
     if (seg.meter != null) el9.appendChild(meterEl(seg.meter));
     if (seg.icon) {
-      const glyph = iconEl(seg.icon);
-      if (glyph) el9.appendChild(glyph);
+      const glyph2 = iconEl(seg.icon);
+      if (glyph2) el9.appendChild(glyph2);
     }
     if (seg.mark) {
       const mark = document.createElement("span");
@@ -11017,8 +11079,8 @@
   }
   function parseCfg(text) {
     const out = [];
-    for (const line of String(text || "").split("\n")) {
-      const t = line.trim();
+    for (const line2 of String(text || "").split("\n")) {
+      const t = line2.trim();
       if (!t || t.charAt(0) === "%") continue;
       out.push(t);
     }
@@ -11155,8 +11217,8 @@
   }
   function defaultActiveCfgForDir(dir) {
     const d = dir != null ? String(dir) : "";
-    const g23 = typeof globalThis !== "undefined" ? globalThis : {};
-    const P3 = g23.Persist;
+    const g24 = typeof globalThis !== "undefined" ? globalThis : {};
+    const P3 = g24.Persist;
     if (P3 && typeof P3.getActiveCfgForDir === "function") {
       const path = P3.getActiveCfgForDir(d);
       if (path) {
@@ -11181,8 +11243,8 @@
   }
   function defaultActiveCfgsForDir(dir) {
     const d = dir != null ? String(dir) : "";
-    const g23 = typeof globalThis !== "undefined" ? globalThis : {};
-    const P3 = g23.Persist;
+    const g24 = typeof globalThis !== "undefined" ? globalThis : {};
+    const P3 = g24.Persist;
     if (P3 && typeof P3.getActiveCfgsForDir === "function") {
       const list3 = P3.getActiveCfgsForDir(d);
       if (list3?.length) {
@@ -11356,11 +11418,11 @@
     }
     return { code: parts.join("\n\n"), spans };
   }
-  function mapLine(spans, line) {
-    if (!spans || !isFinite(line)) return null;
+  function mapLine(spans, line2) {
+    if (!spans || !isFinite(line2)) return null;
     for (const s of spans) {
-      if (line >= s.startLine && line <= s.endLine) {
-        return { id: s.id, name: s.name, line: line - s.startLine + 1 };
+      if (line2 >= s.startLine && line2 <= s.endLine) {
+        return { id: s.id, name: s.name, line: line2 - s.startLine + 1 };
       }
     }
     return null;
@@ -11370,8 +11432,8 @@
     let out = String(text);
     out = out.replace(
       /File\s+"([^"]*)"\s*,\s*line\s+(\d+)/g,
-      (whole, _fname, line) => {
-        const hit = mapLine(spans, +line);
+      (whole, _fname, line2) => {
+        const hit = mapLine(spans, +line2);
         if (!hit) return whole;
         return `File "${hit.name}", line ${hit.line}`;
       }
@@ -11392,8 +11454,8 @@
     );
     out = out.replace(
       /(^|\n)(\s*)at line\s+(\d+),(\s*characters?\s+\d+(?:-\d+)?)/g,
-      (whole, lead, ws, line, rest) => {
-        const hit = mapLine(spans, +line);
+      (whole, lead, ws, line2, rest) => {
+        const hit = mapLine(spans, +line2);
         if (!hit) return whole;
         return `${lead}${ws}in ${hit.name}, at line ${hit.line},${rest}`;
       }
@@ -11636,8 +11698,8 @@
     for (const f of files2) {
       const peeled = peelGlobalFilePragmas(String(f.text != null ? f.text : ""));
       if (peeled.hoisted) {
-        for (const line of peeled.hoisted.split("\n")) {
-          if (line && hoistedLines.indexOf(line) === -1) hoistedLines.push(line);
+        for (const line2 of peeled.hoisted.split("\n")) {
+          if (line2 && hoistedLines.indexOf(line2) === -1) hoistedLines.push(line2);
         }
       }
       stripped.push({ id: f.id, name: f.name, text: peeled.rest });
@@ -11684,18 +11746,18 @@
       offsetLines: last.endLine + 1
     };
   }
-  function preludeFileAt(spans, line) {
+  function preludeFileAt(spans, line2) {
     for (const s of spans) {
-      if (line >= s.startLine && line <= s.endLine) {
-        return { name: s.name, line: line - s.startLine + 1 };
+      if (line2 >= s.startLine && line2 <= s.endLine) {
+        return { name: s.name, line: line2 - s.startLine + 1 };
       }
     }
     return null;
   }
   function messageAfter(text, index) {
     const lines = String(text).slice(index, index + 400).split("\n");
-    for (const line of lines) {
-      const t = line.trim().replace(/^(Error|Warning):\s*/i, "");
+    for (const line2 of lines) {
+      const t = line2.trim().replace(/^(Error|Warning):\s*/i, "");
       if (t && !/^[-^~\s]+$/.test(t)) return t.slice(0, 160);
     }
     return "";
@@ -11712,8 +11774,8 @@
       issues.push({ name: hit.name, line: hit.line, message: messageAfter(src, index) });
     }
     let out = String(text);
-    out = out.replace(/File\s+"([^"]*)"\s*,\s*line\s+(\d+)/g, (whole, fname, line, idx, src) => {
-      const L = +line;
+    out = out.replace(/File\s+"([^"]*)"\s*,\s*line\s+(\d+)/g, (whole, fname, line2, idx, src) => {
+      const L = +line2;
       if (L > offset) return `File "${fname}", line ${L - offset}`;
       const hit = preludeFileAt(prelude.spans, L);
       if (hit) noteIssue(hit, src, idx + whole.length);
@@ -11735,8 +11797,8 @@
     );
     out = out.replace(
       /(^|\n)(\s*)at line\s+(\d+),(\s*characters?\s+\d+(?:-\d+)?)/g,
-      (whole, lead, ws, line, rest, idx, src) => {
-        const L = +line;
+      (whole, lead, ws, line2, rest, idx, src) => {
+        const L = +line2;
         if (L > offset) return `${lead}${ws}at line ${L - offset},${rest}`;
         const hit = preludeFileAt(prelude.spans, L);
         if (hit) noteIssue(hit, src, idx + whole.length);
@@ -11988,17 +12050,17 @@
     }
   }
   function mergeFloatingSnapshots(priorFloating, activeFileId2, openFileIds, liveFloating) {
-    var open11 = openFileIds || [];
+    var open12 = openFileIds || [];
     var live2 = Array.isArray(liveFloating) ? liveFloating : [];
     var kept = (priorFloating || []).filter(function(entry) {
       if (!entry || entry.fileId === activeFileId2) return false;
-      if (open11.indexOf(entry.fileId) === -1) return false;
+      if (open12.indexOf(entry.fileId) === -1) return false;
       if (entry.kind === "graph" || entry.kind === "harpoon") return false;
       return true;
     });
     var merged = kept.concat(live2);
     return merged.filter(function(entry) {
-      return entry && open11.indexOf(entry.fileId) !== -1;
+      return entry && open12.indexOf(entry.fileId) !== -1;
     }).slice(0, MAX_FLOATING);
   }
   function collectWorkspace() {
@@ -12030,10 +12092,10 @@
   }
   function filterFloatingForFile(floating, fileId, openFileIds) {
     if (!Array.isArray(floating)) return [];
-    var open11 = openFileIds || [];
+    var open12 = openFileIds || [];
     return floating.filter(function(entry) {
       if (!entry || entry.fileId !== fileId) return false;
-      return open11.indexOf(entry.fileId) !== -1;
+      return open12.indexOf(entry.fileId) !== -1;
     });
   }
   function applyWorkspace(snapshot, deps) {
@@ -12634,8 +12696,8 @@
   }
   function separatedFromAnchor(x, y, w, h, anchor3, gap) {
     const tr = anchor3;
-    const g23 = gap;
-    return x + w <= tr.left - g23 || x >= tr.right + g23 || y + h <= tr.top - g23 || y >= tr.bottom + g23;
+    const g24 = gap;
+    return x + w <= tr.left - g24 || x >= tr.right + g24 || y + h <= tr.top - g24 || y >= tr.bottom + g24;
   }
   function overlapAreaWithAnchor(x, y, w, h, anchor3) {
     const tr = anchor3;
@@ -12651,15 +12713,15 @@
     const y2 = Math.min(vh - m, y + h) - Math.max(m, y);
     return Math.max(0, x2) * Math.max(0, y2);
   }
-  function computePointMenuPlacement(tw, th, vw, vh, m, g23, tr) {
-    let x = tr.left + g23;
-    let y = tr.top + g23;
-    if (x + tw > vw - m) x = tr.left - g23 - tw;
-    if (y + th > vh - m) y = tr.top - g23 - th;
+  function computePointMenuPlacement(tw, th, vw, vh, m, g24, tr) {
+    let x = tr.left + g24;
+    let y = tr.top + g24;
+    if (x + tw > vw - m) x = tr.left - g24 - tw;
+    if (y + th > vh - m) y = tr.top - g24 - th;
     const c = clampToViewport(x, y, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "menu" };
   }
-  function computeSideMenuPlacement(tw, th, vw, vh, m, g23, tr, side, align) {
+  function computeSideMenuPlacement(tw, th, vw, vh, m, g24, tr, side, align) {
     const ah = tr.bottom - tr.top;
     const aw = tr.right - tr.left;
     const alignY = () => {
@@ -12675,34 +12737,34 @@
     let x;
     let y;
     if (side === "right") {
-      x = tr.right + g23;
-      if (x + tw > vw - m) x = tr.left - g23 - tw;
+      x = tr.right + g24;
+      if (x + tw > vw - m) x = tr.left - g24 - tw;
       y = alignY();
       y = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
     } else if (side === "left") {
-      x = tr.left - g23 - tw;
-      if (x < m) x = tr.right + g23;
+      x = tr.left - g24 - tw;
+      if (x < m) x = tr.right + g24;
       y = alignY();
       y = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
     } else if (side === "bottom") {
-      y = tr.bottom + g23;
-      if (y + th > vh - m) y = tr.top - g23 - th;
+      y = tr.bottom + g24;
+      if (y + th > vh - m) y = tr.top - g24 - th;
       x = alignX();
       x = Math.min(Math.max(m, x), Math.max(m, vw - m - tw));
     } else {
-      y = tr.top - g23 - th;
-      if (y < m) y = tr.bottom + g23;
+      y = tr.top - g24 - th;
+      if (y < m) y = tr.bottom + g24;
       x = alignX();
       x = Math.min(Math.max(m, x), Math.max(m, vw - m - tw));
     }
     const c = clampToViewport(x, y, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "menu" };
   }
-  function computeMenuPlacementFull(opts, tw, th, vw, vh, m, g23, tr) {
+  function computeMenuPlacementFull(opts, tw, th, vw, vh, m, g24, tr) {
     const side = opts.side;
     const align = opts.align ?? "start";
-    if (!side) return computePointMenuPlacement(tw, th, vw, vh, m, g23, tr);
-    return computeSideMenuPlacement(tw, th, vw, vh, m, g23, tr, side, align);
+    if (!side) return computePointMenuPlacement(tw, th, vw, vh, m, g24, tr);
+    return computeSideMenuPlacement(tw, th, vw, vh, m, g24, tr, side, align);
   }
   function computePosition(opts) {
     const tw = opts.width;
@@ -12713,14 +12775,14 @@
     const gap = opts.gap ?? DEFAULT_GAP;
     const tr = normalizeAnchor(opts.anchor);
     const m = margin;
-    const g23 = gap;
+    const g24 = gap;
     if (opts.mode === "menu") {
-      return computeMenuPlacementFull(opts, tw, th, vw, vh, m, g23, tr);
+      return computeMenuPlacementFull(opts, tw, th, vw, vh, m, g24, tr);
     }
     const preferPlacement = opts.preferPlacement ?? PREFERENCE_TOOLTIP;
     const requireSeparation = opts.requireSeparation !== false;
     const fits = (x, y) => fitsViewport(x, y, tw, th, vw, vh, m);
-    const sep = (x, y) => !requireSeparation || separatedFromAnchor(x, y, tw, th, tr, g23);
+    const sep = (x, y) => !requireSeparation || separatedFromAnchor(x, y, tw, th, tr, g24);
     const clampY = (x, y) => {
       const iy = Math.min(Math.max(m, y), Math.max(m, vh - m - th));
       return { x, y: iy };
@@ -12732,28 +12794,28 @@
     function tryPlacement(side) {
       switch (side) {
         case "right": {
-          const x = tr.right + g23;
+          const x = tr.right + g24;
           if (x + tw > vw - m) return null;
           const { y } = clampY(x, tr.top + (tr.bottom - tr.top) / 2 - th / 2);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "left": {
-          const x = tr.left - g23 - tw;
+          const x = tr.left - g24 - tw;
           if (x < m) return null;
           const { y } = clampY(x, tr.top + (tr.bottom - tr.top) / 2 - th / 2);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "bottom": {
-          const y = tr.bottom + g23;
+          const y = tr.bottom + g24;
           if (y + th > vh - m) return null;
           const { x } = clampX(tr.left + (tr.right - tr.left) / 2 - tw / 2, y);
           if (!fits(x, y) || !sep(x, y)) return null;
           return { x, y, placement: side };
         }
         case "top": {
-          const y = tr.top - g23 - th;
+          const y = tr.top - g24 - th;
           if (y < m) return null;
           const { x } = clampX(tr.left + (tr.right - tr.left) / 2 - tw / 2, y);
           if (!fits(x, y) || !sep(x, y)) return null;
@@ -12768,10 +12830,10 @@
       if (pos) return pos;
     }
     const emergency = [
-      () => ({ x: m, y: tr.bottom + g23 }),
-      () => ({ x: vw - m - tw, y: tr.bottom + g23 }),
-      () => ({ x: tr.left - g23 - tw, y: vh - m - th }),
-      () => ({ x: tr.right + g23, y: vh - m - th }),
+      () => ({ x: m, y: tr.bottom + g24 }),
+      () => ({ x: vw - m - tw, y: tr.bottom + g24 }),
+      () => ({ x: tr.left - g24 - tw, y: vh - m - th }),
+      () => ({ x: tr.right + g24, y: vh - m - th }),
       () => ({ x: m, y: m })
     ];
     let best = null;
@@ -12792,7 +12854,7 @@
       }
     }
     if (best) return best;
-    const c = clampToViewport(tr.right + g23, tr.bottom + g23, tw, th, vw, vh, m);
+    const c = clampToViewport(tr.right + g24, tr.bottom + g24, tw, th, vw, vh, m);
     return { x: c.x, y: c.y, placement: "fallback" };
   }
   var FloatingRectPlacement2 = {
@@ -12844,24 +12906,24 @@
     if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? "left" : "right";
     return dy > 0 ? "above" : "below";
   }
-  function clearSpout(tip) {
-    for (let i = 0; i < SPOUT_CLASSES.length; i++) tip.classList.remove(SPOUT_CLASSES[i]);
-    tip.style.removeProperty("--tooltip-arrow-x");
-    tip.style.removeProperty("--tooltip-arrow-y");
+  function clearSpout(tip2) {
+    for (let i = 0; i < SPOUT_CLASSES.length; i++) tip2.classList.remove(SPOUT_CLASSES[i]);
+    tip2.style.removeProperty("--tooltip-arrow-x");
+    tip2.style.removeProperty("--tooltip-arrow-y");
   }
-  function applySpout(tip, anchor3, placement, x, y, tw, th, tr, arrowBox = null) {
-    clearSpout(tip);
+  function applySpout(tip2, anchor3, placement, x, y, tw, th, tr, arrowBox = null) {
+    clearSpout(tip2);
     if (anchor3.hasAttribute("data-tooltip-no-spout")) {
-      tip.classList.add("tooltip-spout-none");
+      tip2.classList.add("tooltip-spout-none");
       return;
     }
     let side = PLACEMENT_SPOUT[placement];
     if (!side && placement === "fallback") side = inferSpoutSide(x, y, tw, th, tr);
     if (!side) {
-      tip.classList.add("tooltip-spout-none");
+      tip2.classList.add("tooltip-spout-none");
       return;
     }
-    tip.classList.add(`tooltip-spout-${side}`);
+    tip2.classList.add(`tooltip-spout-${side}`);
     const cx = tr.left + tr.width / 2;
     const cy = tr.top + tr.height / 2;
     const min = TOOLTIP_ARROW_MIN;
@@ -12870,9 +12932,9 @@
     const aw = arrowBox?.width ?? tw;
     const ah = arrowBox?.height ?? th;
     if (side === "above" || side === "below") {
-      tip.style.setProperty("--tooltip-arrow-x", `${clamp(cx - ax, min, aw - min)}px`);
+      tip2.style.setProperty("--tooltip-arrow-x", `${clamp(cx - ax, min, aw - min)}px`);
     } else {
-      tip.style.setProperty("--tooltip-arrow-y", `${clamp(cy - ay, min, ah - min)}px`);
+      tip2.style.setProperty("--tooltip-arrow-y", `${clamp(cy - ay, min, ah - min)}px`);
     }
   }
   var tooltipRoot = null;
@@ -12883,6 +12945,24 @@
   var tooltipAnchor = null;
   var touchShowTimer = null;
   var tooltipSuppressLeaveUntilPointerUp = null;
+  function tooltipLayered() {
+    return !!(tooltipRoot && typeof tooltipRoot.showPopover === "function" && tooltipRoot.hasAttribute("popover"));
+  }
+  function raiseTooltipLayer() {
+    if (!tooltipLayered()) return;
+    try {
+      if (tooltipRoot.matches(":popover-open")) tooltipRoot.hidePopover();
+      tooltipRoot.showPopover();
+    } catch (_) {
+    }
+  }
+  function lowerTooltipLayer() {
+    if (!tooltipLayered()) return;
+    try {
+      if (tooltipRoot.matches(":popover-open")) tooltipRoot.hidePopover();
+    } catch (_) {
+    }
+  }
   function prepareOverflow(el9) {
     if (!el9._belOverflowTipBound) return;
     const getText = el9._belOverflowGetText;
@@ -12945,9 +13025,9 @@
     if (!anchor3) return false;
     return !!(anchor3.getAttribute("data-tooltip") || anchor3.getAttribute("data-tooltip-tone") || anchor3.hasAttribute("data-tooltip-head") || anchor3.hasAttribute("data-tooltip-rich") && typeof anchor3._belTooltipRich === "function" || parseLintErrors(anchor3));
   }
-  function fillDiagnosticTooltip(tip, message2, severity) {
-    tip.classList.add("tooltip-inner--diagnostic", `tooltip-inner--${severity}`);
-    tip.replaceChildren();
+  function fillDiagnosticTooltip(tip2, message2, severity) {
+    tip2.classList.add("tooltip-inner--diagnostic", `tooltip-inner--${severity}`);
+    tip2.replaceChildren();
     const frame2 = document.createElement("div");
     frame2.className = `cm-diagnostic cm-diagnostic-${severity}`;
     const head = document.createElement("div");
@@ -12960,14 +13040,14 @@
     body.className = "beljar-tip-body";
     body.textContent = message2 || "";
     frame2.append(head, body);
-    tip.appendChild(frame2);
+    tip2.appendChild(frame2);
   }
-  function fillTooltipContent(tip, anchor3) {
+  function fillTooltipContent(tip2, anchor3) {
     const text = anchor3.getAttribute("data-tooltip");
     const tone = anchor3.getAttribute("data-tooltip-tone");
     const items3 = parseLintErrors(anchor3);
     const headed = anchor3.hasAttribute("data-tooltip-head");
-    tip.classList.remove(
+    tip2.classList.remove(
       "tooltip-inner--lint-errors",
       "tooltip-inner--diagnostic",
       "tooltip-inner--error",
@@ -12975,29 +13055,29 @@
       "tooltip-inner--rich"
     );
     if (anchor3.hasAttribute("data-tooltip-rich") && typeof anchor3._belTooltipRich === "function") {
-      tip.classList.add("tooltip-inner--rich");
-      tip.replaceChildren();
+      tip2.classList.add("tooltip-inner--rich");
+      tip2.replaceChildren();
       let frag = null;
       try {
         frag = anchor3._belTooltipRich(anchor3);
       } catch (_) {
         frag = null;
       }
-      if (frag) tip.appendChild(frag);
-      else if (text) tip.textContent = text;
+      if (frag) tip2.appendChild(frag);
+      else if (text) tip2.textContent = text;
       return;
     }
     if (tone === "error" || tone === "warning") {
-      fillDiagnosticTooltip(tip, text, tone);
+      fillDiagnosticTooltip(tip2, text, tone);
       return;
     }
     if (headed) {
-      tip.classList.add("tooltip-inner--lint-errors");
-      tip.replaceChildren();
+      tip2.classList.add("tooltip-inner--lint-errors");
+      tip2.replaceChildren();
       const head = document.createElement("div");
       head.className = "tooltip-lint-head";
       head.textContent = text || "Errors detected";
-      tip.appendChild(head);
+      tip2.appendChild(head);
       if (items3) {
         const body = document.createElement("div");
         body.className = "tooltip-lint-body";
@@ -13007,22 +13087,22 @@
           const li = document.createElement("li");
           li.className = "tooltip-lint-item" + (item.kind === "warning" ? " tooltip-lint-item--warning" : "");
           const loc = item.prefix ? `${item.prefix}${item.line ?? "?"}` : String(item.line ?? "?");
-          const line = document.createElement("span");
-          line.className = "tooltip-lint-line";
-          line.textContent = loc;
+          const line2 = document.createElement("span");
+          line2.className = "tooltip-lint-line";
+          line2.textContent = loc;
           const msg = document.createElement("span");
           msg.className = "tooltip-lint-msg";
           msg.textContent = item.msg || item.message || "Error";
-          li.append(line, msg);
+          li.append(line2, msg);
           list3.appendChild(li);
         }
         body.appendChild(list3);
-        tip.appendChild(body);
+        tip2.appendChild(body);
       }
       return;
     }
     if (!text) return;
-    tip.textContent = text;
+    tip2.textContent = text;
   }
   function tooltipPreferPlacement(anchor3) {
     const raw = (anchor3.getAttribute("data-tooltip-placement") || "").trim().toLowerCase();
@@ -13055,11 +13135,11 @@
     const stack = document.createElement("div");
     stack.className = "tooltip-stack";
     for (const item of items3) {
-      const tip = document.createElement("div");
-      tip.className = "tooltip-inner";
+      const tip2 = document.createElement("div");
+      tip2.className = "tooltip-inner";
       const severity = item.kind === "warning" ? "warning" : "error";
-      fillDiagnosticTooltip(tip, item.msg || item.message || "", severity);
-      stack.appendChild(tip);
+      fillDiagnosticTooltip(tip2, item.msg || item.message || "", severity);
+      stack.appendChild(tip2);
     }
     tooltipRoot.appendChild(stack);
     return stack;
@@ -13117,17 +13197,17 @@
     }
     if (!anchorHasTooltip(anchor3) || tooltipRoot.hidden) return;
     const stacked = isStackedLintErrors(anchor3);
-    let tip;
-    if (stacked) tip = buildStackedDiagnosticTooltips(anchor3);
+    let tip2;
+    if (stacked) tip2 = buildStackedDiagnosticTooltips(anchor3);
     else {
-      tip = tooltipRoot.querySelector(".tooltip-inner");
-      if (!tip) {
+      tip2 = tooltipRoot.querySelector(".tooltip-inner");
+      if (!tip2) {
         ensureTooltipInner();
-        tip = tooltipRoot.querySelector(".tooltip-inner");
+        tip2 = tooltipRoot.querySelector(".tooltip-inner");
       }
-      fillTooltipContent(tip, anchor3);
+      fillTooltipContent(tip2, anchor3);
     }
-    if (!tip) return;
+    if (!tip2) return;
     tooltipRoot.classList.add("is-measuring");
     const tw = tooltipRoot.offsetWidth;
     const th = tooltipRoot.offsetHeight;
@@ -13143,8 +13223,8 @@
     tooltipRoot.classList.remove("is-measuring");
     tooltipRoot.style.left = `${pos.x}px`;
     tooltipRoot.style.top = `${pos.y}px`;
-    if (stacked) applyStackSpout(tip, anchor3, pos.placement, pos.x, pos.y, tw, th, tr);
-    else applySpout(tip, anchor3, pos.placement, pos.x, pos.y, tw, th, tr);
+    if (stacked) applyStackSpout(tip2, anchor3, pos.placement, pos.x, pos.y, tw, th, tr);
+    else applySpout(tip2, anchor3, pos.placement, pos.x, pos.y, tw, th, tr);
     tooltipRoot.classList.add("is-visible");
   }
   function isPlainTextTooltip(anchor3) {
@@ -13167,10 +13247,10 @@
       return;
     }
     if (isPlainTextTooltip(target) && !tooltipRoot.querySelector(".tooltip-stack")) {
-      const tip = tooltipRoot.querySelector(".tooltip-inner");
-      if (tip) {
+      const tip2 = tooltipRoot.querySelector(".tooltip-inner");
+      if (tip2) {
         const text = target.getAttribute("data-tooltip") || "";
-        if (tip.textContent !== text) tip.textContent = text;
+        if (tip2.textContent !== text) tip2.textContent = text;
         return;
       }
     }
@@ -13199,6 +13279,7 @@
     tooltipRoot.classList.remove("is-leaving");
     tooltipAnchor = anchor3;
     tooltipRoot.hidden = false;
+    raiseTooltipLayer();
     layoutTooltip(anchor3);
   }
   function hideTooltip() {
@@ -13212,12 +13293,13 @@
     if (!inner) {
       tooltipRoot.classList.remove("is-visible", "is-measuring", "is-leaving");
       tooltipRoot.hidden = true;
+      lowerTooltipLayer();
       tooltipRoot.style.left = "";
       tooltipRoot.style.top = "";
       return;
     }
     if (inner.classList.contains("tooltip-stack")) {
-      for (const tip of inner.querySelectorAll(".tooltip-inner")) clearSpout(tip);
+      for (const tip2 of inner.querySelectorAll(".tooltip-inner")) clearSpout(tip2);
     } else clearSpout(inner);
     tooltipRoot.classList.remove("is-visible", "is-measuring");
     tooltipRoot.classList.add("is-leaving");
@@ -13231,6 +13313,7 @@
       tooltipHideFallbackTimer = null;
       tooltipRoot.classList.remove("is-leaving");
       tooltipRoot.hidden = true;
+      lowerTooltipLayer();
       tooltipRoot.style.left = "";
       tooltipRoot.style.top = "";
     };
@@ -13248,10 +13331,11 @@
     cancelTooltipHideAnim();
     const inner = tooltipAnimatedEl();
     if (inner?.classList.contains("tooltip-stack")) {
-      for (const tip of inner.querySelectorAll(".tooltip-inner")) clearSpout(tip);
+      for (const tip2 of inner.querySelectorAll(".tooltip-inner")) clearSpout(tip2);
     } else if (inner) clearSpout(inner);
     tooltipRoot.classList.remove("is-visible", "is-measuring", "is-leaving");
     tooltipRoot.hidden = true;
+    lowerTooltipLayer();
     tooltipRoot.style.left = "";
     tooltipRoot.style.top = "";
   }
@@ -13362,15 +13446,15 @@
     if (!el9 || el9.nodeType !== 1) return;
     opts = opts || {};
     el9.removeAttribute("title");
-    const tip = text != null ? String(text).trim() : "";
-    if (!tip) {
+    const tip2 = text != null ? String(text).trim() : "";
+    if (!tip2) {
       el9.removeAttribute("data-tooltip");
       if (opts.ariaLabel !== false) el9.removeAttribute("aria-label");
       return;
     }
     const prev = el9.getAttribute("data-tooltip");
-    if (prev !== tip) el9.setAttribute("data-tooltip", tip);
-    if (opts.ariaLabel !== false) el9.setAttribute("aria-label", tip);
+    if (prev !== tip2) el9.setAttribute("data-tooltip", tip2);
+    if (opts.ariaLabel !== false) el9.setAttribute("aria-label", tip2);
     bindTooltipEl(el9);
   }
   function setRichTooltip(el9, buildFragment, ariaText) {
@@ -13429,6 +13513,9 @@
   function installTooltips() {
     if (typeof document === "undefined") return;
     tooltipRoot = document.getElementById("tooltip-root");
+    if (tooltipRoot && typeof tooltipRoot.showPopover === "function" && !tooltipRoot.hasAttribute("popover")) {
+      tooltipRoot.setAttribute("popover", "manual");
+    }
     bindTooltips();
   }
   if (typeof document !== "undefined") {
@@ -14472,7 +14559,7 @@
         focusMenuItem(menuEl, 0);
       });
     }
-    function open11(opts) {
+    function open12(opts) {
       closeOtherControllers();
       const items3 = opts.items;
       const anchor3 = opts.anchor;
@@ -14514,7 +14601,7 @@
     function openContext(opts) {
       const x = opts.x;
       const y = opts.y;
-      open11({
+      open12({
         anchor: { left: x, right: x, top: y, bottom: y },
         side: opts.side || "bottom",
         align: opts.align || "start",
@@ -14565,7 +14652,7 @@
       if (activeController === controller) setActiveController(null);
       forceCloseSync();
     }
-    controller.open = open11;
+    controller.open = open12;
     controller.openContext = openContext;
     controller.bindContextMenu = bindContextMenu;
     controller.closeAll = closeAll3;
@@ -14644,9 +14731,9 @@
   function wireMenuTrigger(btn, menuOpts) {
     if (!btn) return;
     let suppressNextClick = false;
-    function setOpen2(open11) {
-      btn.classList.toggle("is-active", open11);
-      btn.setAttribute("aria-expanded", open11 ? "true" : "false");
+    function setOpen2(open12) {
+      btn.classList.toggle("is-active", open12);
+      btn.setAttribute("aria-expanded", open12 ? "true" : "false");
     }
     function quietTooltip() {
       if (!g9.Tooltips) return;
@@ -14788,10 +14875,10 @@
   function parseLineQuery(query3) {
     const m = String(query3 || "").match(/^(\d+)(?::(\d+))?$/);
     if (!m) return null;
-    const line = parseInt(m[1], 10);
+    const line2 = parseInt(m[1], 10);
     const col = m[2] != null ? parseInt(m[2], 10) : 1;
-    if (!Number.isFinite(line) || line < 1) return null;
-    return { line, col: Number.isFinite(col) && col >= 1 ? col : 1 };
+    if (!Number.isFinite(line2) || line2 < 1) return null;
+    return { line: line2, col: Number.isFinite(col) && col >= 1 ? col : 1 };
   }
   var HELP_CATALOG = [
     { mode: "anywhere", title: "Anywhere", detail: "Go to files & symbols", prefix: "", commandId: "nav.anywhere" },
@@ -15046,8 +15133,8 @@
         const view2 = ed.getView();
         if (!view2) return;
         const doc2 = view2.state.doc;
-        const line = Math.min(Math.max(1, parsed.line), doc2.lines);
-        const lineObj = doc2.line(line);
+        const line2 = Math.min(Math.max(1, parsed.line), doc2.lines);
+        const lineObj = doc2.line(line2);
         const col = Math.min(Math.max(1, parsed.col), lineObj.length + 1);
         const pos = Math.min(lineObj.from + col - 1, lineObj.to);
         if (typeof ed.jumpToRange === "function") ed.jumpToRange({ from: pos, to: pos });
@@ -15264,8 +15351,8 @@
   }
   function runCommandEntry() {
     var style = Settings.get("keymapStyle");
-    var line = typeof StatusStrip !== "undefined" && StatusStrip.openCommandLine;
-    if (!line) return toggle3({ mode: "commands" });
+    var line2 = typeof StatusStrip !== "undefined" && StatusStrip.openCommandLine;
+    if (!line2) return toggle3({ mode: "commands" });
     if (style === "emacs") return StatusStrip.openCommandLine("", { prompt: "M-x" });
     return StatusStrip.openCommandLine("");
   }
@@ -15400,12 +15487,12 @@
         const btn = makeEl("button", "floating-window-action");
         btn.type = "button";
         btn.innerHTML = act2.icon || "";
-        const tip = (on) => on && act2.labelOn ? act2.labelOn : act2.label;
+        const tip2 = (on) => on && act2.labelOn ? act2.labelOn : act2.label;
         if (act2.toggle) {
           const setPressed = (on) => {
             btn.classList.toggle("is-on", !!on);
             btn.setAttribute("aria-pressed", on ? "true" : "false");
-            const t = tip(on);
+            const t = tip2(on);
             if (t) btn.setAttribute("aria-label", t);
             if (global15.Tooltips?.set) global15.Tooltips.set(btn, t);
           };
@@ -15709,8 +15796,8 @@
       }
       if (row.id && !keys[had].id) keys[had] = row;
     };
-    for (const g23 of styleGroups3 || []) {
-      for (const r of g23.rows) {
+    for (const g24 of styleGroups3 || []) {
+      for (const r of g24.rows) {
         push2({
           id: r.id,
           title: r.title,
@@ -15733,16 +15820,16 @@
       byGroup.get(name).push(row);
     }
     const groups = sortGroups([...byGroup.keys()]).map((name) => ({ name, rows: byGroup.get(name) }));
-    const line = access ? [{
+    const line2 = access ? [{
       name: "Command line",
       lead: access.open,
       prefix: access.prefix,
       rows: rows2.filter((r) => (r.ex || []).length)
     }] : [];
-    const live2 = groups.filter((g23) => g23.rows.length);
+    const live2 = groups.filter((g24) => g24.rows.length);
     if (note && live2.length) live2[live2.length - 1].closing = note;
     const tail = reserved ? [reserved] : [];
-    return live2.concat(line.filter((g23) => g23.rows.length)).concat(tail.filter((g23) => g23 && (g23.rows.length || (g23.meta || []).length)));
+    return live2.concat(line2.filter((g24) => g24.rows.length)).concat(tail.filter((g24) => g24 && (g24.rows.length || (g24.meta || []).length)));
   }
   function commandLineAccess(style, chord) {
     if (style === "vim") return { prefix: ":", open: "Press : in Normal mode." };
@@ -15751,7 +15838,7 @@
     return null;
   }
   function countRows(groups) {
-    return (groups || []).reduce((n, g23) => n + g23.rows.length, 0);
+    return (groups || []).reduce((n, g24) => n + g24.rows.length, 0);
   }
   function el(tag, cls, text) {
     const node = document.createElement(tag);
@@ -15872,9 +15959,9 @@
       return [];
     }
     if (!C2 || typeof C2.chordShadowFor !== "function") return groups;
-    return groups.map((g23) => ({
-      name: g23.name,
-      rows: g23.rows.map((r) => Object.assign({}, r, {
+    return groups.map((g24) => ({
+      name: g24.name,
+      rows: g24.rows.map((r) => Object.assign({}, r, {
         shadow: C2.chordShadowFor({ style, keys: r.keys, commandId: r.id })
       }))
     }));
@@ -16373,9 +16460,9 @@
   }
   function capturingSearchInput() {
     if (typeof document === "undefined") return null;
-    const open11 = document.querySelectorAll("dialog." + DIALOG_ROOT_CLASS + "[open]:not(.is-leaving)");
-    for (let i = open11.length - 1; i >= 0; i--) {
-      const input2 = findSurfaceSearchInput(open11[i]);
+    const open12 = document.querySelectorAll("dialog." + DIALOG_ROOT_CLASS + "[open]:not(.is-leaving)");
+    for (let i = open12.length - 1; i >= 0; i--) {
+      const input2 = findSurfaceSearchInput(open12[i]);
       if (input2) return input2;
     }
     const palette = document.querySelector(".jar-palette.is-open");
@@ -17642,9 +17729,9 @@
     for (var rf = 0; rf < replaceFolders.length; rf++) {
       var folder = replaceFolders[rf];
       var deleteIds = [];
-      for (var g23 = 0; g23 < existingFiles.length; g23++) {
-        var nm = existingFiles[g23].name;
-        if (nm === folder.prefix || nm.indexOf(folder.prefix + "/") === 0) deleteIds.push(existingFiles[g23].id);
+      for (var g24 = 0; g24 < existingFiles.length; g24++) {
+        var nm = existingFiles[g24].name;
+        if (nm === folder.prefix || nm.indexOf(folder.prefix + "/") === 0) deleteIds.push(existingFiles[g24].id);
       }
       plan.replaceFolder.push({
         prefix: folder.prefix,
@@ -18027,7 +18114,7 @@
     function emit2(name, arg) {
       if (typeof opts[name] === "function") opts[name](arg);
     }
-    function open11() {
+    function open12() {
       if (isOpen6) return;
       isOpen6 = true;
       host2.classList.add("is-open");
@@ -18053,15 +18140,15 @@
     }
     function toggle6() {
       if (isOpen6) close6(true);
-      else open11();
+      else open12();
     }
     host2.addEventListener("mousedown", function(e) {
       if (e.target === input2) return;
       e.preventDefault();
       if (isOpen6) input2.focus();
-      else open11();
+      else open12();
     });
-    input2.addEventListener("focus", open11);
+    input2.addEventListener("focus", open12);
     input2.addEventListener("input", function() {
       emit2("onInput", input2.value);
     });
@@ -18095,7 +18182,7 @@
       }, true);
     }
     return {
-      open: open11,
+      open: open12,
       close: close6,
       toggle: toggle6,
       isOpen: function() {
@@ -18469,8 +18556,8 @@
     for (var f = 0; f < fps.length; f++) {
       var fp = fps[f];
       var nested = false;
-      for (var g23 = 0; g23 < fps.length; g23++) {
-        if (fps[g23] !== fp && isPathUnderFolder(fp, fps[g23])) {
+      for (var g24 = 0; g24 < fps.length; g24++) {
+        if (fps[g24] !== fp && isPathUnderFolder(fp, fps[g24])) {
           nested = true;
           break;
         }
@@ -19445,14 +19532,14 @@
     var lineStart = src.lastIndexOf("\n", idx - 1) + 1;
     var lineEnd = src.indexOf("\n", idx);
     if (lineEnd === -1) lineEnd = src.length;
-    var line = src.slice(lineStart, lineEnd);
+    var line2 = src.slice(lineStart, lineEnd);
     var rel = idx - lineStart;
     var pad = 42;
     var start2 = Math.max(0, rel - pad);
-    var end = Math.min(line.length, rel + q.length + pad);
-    var snippet = line.slice(start2, end);
+    var end = Math.min(line2.length, rel + q.length + pad);
+    var snippet = line2.slice(start2, end);
     if (start2 > 0) snippet = "\u2026" + snippet;
-    if (end < line.length) snippet = snippet + "\u2026";
+    if (end < line2.length) snippet = snippet + "\u2026";
     return {
       snippet,
       line: src.slice(0, lineStart).split("\n").length
@@ -20236,9 +20323,9 @@
         return;
       }
     }
-    function setFolderOpen(id, open11) {
+    function setFolderOpen(id, open12) {
       if (!id) return;
-      if (open11) expanded.add(id);
+      if (open12) expanded.add(id);
       else expanded.delete(id);
       renderTree();
       focusFolderToggle(id);
@@ -20487,8 +20574,8 @@
       }
       render8();
     }
-    function applyTip(el9, tip) {
-      if (typeof opts.applyTip === "function") opts.applyTip(el9, tip);
+    function applyTip(el9, tip2) {
+      if (typeof opts.applyTip === "function") opts.applyTip(el9, tip2);
     }
     function toast4(msg, kind) {
       if (typeof opts.showToast === "function") opts.showToast(msg, { kind: kind || "info" });
@@ -21849,16 +21936,16 @@
     const l = rec && rec.links;
     if (!l || !l.fileId) return null;
     const from2 = Number.isFinite(l.from) ? l.from : null;
-    const line = Number.isFinite(l.line) && l.line >= 1 ? Math.floor(l.line) : null;
-    if (from2 == null && line == null) return null;
+    const line2 = Number.isFinite(l.line) && l.line >= 1 ? Math.floor(l.line) : null;
+    if (from2 == null && line2 == null) return null;
     const path = l.path != null ? String(l.path) : "";
     const base = path ? path.slice(path.lastIndexOf("/") + 1) : String(l.fileId);
     return {
       fileId: String(l.fileId),
       from: from2,
       to: Number.isFinite(l.to) ? l.to : from2,
-      line,
-      label: line != null ? base + ":" + line : base
+      line: line2,
+      label: line2 != null ? base + ":" + line2 : base
     };
   }
   function createMemoryAdapter(seed) {
@@ -22087,12 +22174,12 @@
     const out = [];
     let rest = src;
     while (rest) {
-      const open11 = rest.indexOf("`");
-      if (open11 < 0) break;
-      const close6 = rest.indexOf("`", open11 + 1);
+      const open12 = rest.indexOf("`");
+      if (open12 < 0) break;
+      const close6 = rest.indexOf("`", open12 + 1);
       if (close6 < 0) break;
-      if (open11 > 0) out.push({ code: false, text: rest.slice(0, open11) });
-      const code = rest.slice(open11 + 1, close6);
+      if (open12 > 0) out.push({ code: false, text: rest.slice(0, open12) });
+      const code = rest.slice(open12 + 1, close6);
       if (code) out.push({ code: true, text: code });
       rest = rest.slice(close6 + 1);
     }
@@ -22621,7 +22708,7 @@
     el9.removeAttribute("data-tooltip-placement");
     el9.removeAttribute("data-tooltip-no-track");
   }
-  function setStampTooltip(host2, tip) {
+  function setStampTooltip(host2, tip2) {
     if (!hoverTimestampOn()) {
       clearStampTooltip(host2);
       return;
@@ -22629,9 +22716,9 @@
     host2.setAttribute("data-tooltip-placement", "above");
     host2.setAttribute("data-tooltip-no-track", "");
     if (typeof Tooltips !== "undefined" && Tooltips.set) {
-      Tooltips.set(host2, tip, { ariaLabel: false });
+      Tooltips.set(host2, tip2, { ariaLabel: false });
     } else {
-      host2.setAttribute("data-tooltip", tip);
+      host2.setAttribute("data-tooltip", tip2);
     }
   }
   function clearStamp(el9) {
@@ -22699,9 +22786,9 @@
         return rich;
       }
       for (var k = 0; k < host2.children.length; k++) {
-        var line = host2.children[k];
-        if (line.classList && (line.classList.contains("repl-line") || line.classList.contains("repl-help"))) {
-          return line;
+        var line2 = host2.children[k];
+        if (line2.classList && (line2.classList.contains("repl-line") || line2.classList.contains("repl-help"))) {
+          return line2;
         }
       }
     }
@@ -23082,9 +23169,9 @@ ${blocks.join("\n\n")}`;
     var v = normalizeReplVerb(verb) || String(verb != null ? verb : "");
     return 'Command "' + v + '" does not apply in BelJar.';
   }
-  function inferLineKind(line) {
-    if (line === "") return "blank";
-    var t = line.trimStart();
+  function inferLineKind(line2) {
+    if (line2 === "") return "blank";
+    var t = line2.trimStart();
     if (/^\[JS ERROR\]/i.test(t)) return "error";
     if (/^\[FATAL\]/i.test(t)) return "fatal";
     if (/^Error:/i.test(t)) return "error";
@@ -23105,7 +23192,7 @@ ${blocks.join("\n\n")}`;
     if (/^#\s/.test(t)) return "muted";
     return "out";
   }
-  function makeReplLine(line, kind) {
+  function makeReplLine(line2, kind) {
     var row = document.createElement("div");
     row.className = "repl-line repl-line--" + kind;
     if (kind === "cmd") {
@@ -23114,11 +23201,11 @@ ${blocks.join("\n\n")}`;
       chev.textContent = "\u276F";
       var body = document.createElement("span");
       body.className = "repl-cmd-body";
-      body.textContent = line.replace(/^#\s*/, "").replace(/^%:\s*/, "");
+      body.textContent = line2.replace(/^#\s*/, "").replace(/^%:\s*/, "");
       row.appendChild(chev);
       row.appendChild(body);
     } else {
-      row.textContent = line;
+      row.textContent = line2;
     }
     return row;
   }
@@ -23128,10 +23215,10 @@ ${blocks.join("\n\n")}`;
   function stripBelugaTrailingSemicolons(text) {
     return normBelugaRaw(text).replace(/\s*;\s*$/g, "").trim();
   }
-  function splitFirstColonSpace(line) {
-    var i = line.indexOf(" : ");
+  function splitFirstColonSpace(line2) {
+    var i = line2.indexOf(" : ");
     if (i <= 0) return null;
-    return { left: line.slice(0, i).trim(), right: line.slice(i + 3).trim() };
+    return { left: line2.slice(0, i).trim(), right: line2.slice(i + 3).trim() };
   }
   function streamAppend(node) {
     if (typeof ReplStream !== "undefined" && ReplStream.appendBeforeLive) {
@@ -23247,9 +23334,9 @@ ${blocks.join("\n\n")}`;
       appendRichTitle(shell2, titleText);
       var warnings = [];
       var kv = [];
-      lines.forEach(function(line) {
-        if (/^\s*-\s/.test(line)) warnings.push(line.replace(/^\s*-\s*/, "").replace(/;\s*$/, "").trim());
-        else kv.push(line);
+      lines.forEach(function(line2) {
+        if (/^\s*-\s/.test(line2)) warnings.push(line2.replace(/^\s*-\s*/, "").replace(/;\s*$/, "").trim());
+        else kv.push(line2);
       });
       warnings.forEach(function(w) {
         var d = document.createElement("div");
@@ -23260,10 +23347,10 @@ ${blocks.join("\n\n")}`;
       if (!kv.length) return;
       var grid = document.createElement("div");
       grid.className = "repl-rich-kv-grid";
-      kv.forEach(function(line) {
+      kv.forEach(function(line2) {
         var row = document.createElement("div");
         row.className = "repl-rich-kv-row";
-        var parsed = splitFirstColonSpace(line);
+        var parsed = splitFirstColonSpace(line2);
         if (parsed) {
           var k = document.createElement("code");
           k.className = "repl-rich-k";
@@ -23275,7 +23362,7 @@ ${blocks.join("\n\n")}`;
           row.appendChild(v);
         } else {
           row.className = "repl-rich-kv-row repl-rich-kv-row--full";
-          row.textContent = line;
+          row.textContent = line2;
         }
         grid.appendChild(row);
       });
@@ -23715,8 +23802,8 @@ ${blocks.join("\n\n")}`;
   }
   function classifyRunOtherKind(text) {
     var segLines = String(text || "").split("\n");
-    var isTypeReconStatus = segLines.length > 0 && segLines.every(function(line) {
-      return /^##\s*Type Reconstruction (begin|done):/i.test(line.trim());
+    var isTypeReconStatus = segLines.length > 0 && segLines.every(function(line2) {
+      return /^##\s*Type Reconstruction (begin|done):/i.test(line2.trim());
     });
     if (isTypeReconStatus) return "success";
     if (/##\s*Holes:/i.test(text)) return "holes";
@@ -23775,10 +23862,10 @@ ${blocks.join("\n\n")}`;
     skel.className = "repl-run-skel";
     skel.setAttribute("aria-hidden", "true");
     [72, 46].forEach(function(w) {
-      var line = document.createElement("span");
-      line.className = "repl-run-skel-line";
-      line.style.setProperty("--w", w + "%");
-      skel.appendChild(line);
+      var line2 = document.createElement("span");
+      line2.className = "repl-run-skel-line";
+      line2.style.setProperty("--w", w + "%");
+      skel.appendChild(line2);
     });
     pre.appendChild(skel);
     shell2.appendChild(pre);
@@ -24001,11 +24088,11 @@ ${blocks.join("\n\n")}`;
     var block = createReplBlock();
     var lines = splitOutputLines(text);
     for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
+      var line2 = lines[i];
       var kind;
       if (useForce) kind = forcedKind;
-      else kind = inferLineKind(line);
-      block.appendChild(makeReplLine(line, kind));
+      else kind = inferLineKind(line2);
+      block.appendChild(makeReplLine(line2, kind));
     }
     streamAppend(block);
     scrollReplBottom();
@@ -24564,8 +24651,8 @@ ${blocks.join("\n\n")}`;
       numeric: true
     });
   }
-  function parseCompletionContext(line) {
-    var raw = String(line != null ? line : "");
+  function parseCompletionContext(line2) {
+    var raw = String(line2 != null ? line2 : "");
     var s = raw.replace(/^%:\s*/, "");
     var offset = raw.length - s.length;
     if (!/\s/.test(s) && !/^run&/i.test(s)) {
@@ -24770,10 +24857,10 @@ ${blocks.join("\n\n")}`;
     if (opts.explicit) return true;
     var trigger = opts.trigger === "none" || opts.trigger === "always" ? opts.trigger : "typing";
     if (trigger === "none") return false;
-    var line = String(opts.line || "");
-    var pos = opts.pos == null ? line.length : opts.pos;
-    if (pos <= 0 || pos > line.length) return false;
-    return !/\s/.test(line.slice(pos - 1, pos));
+    var line2 = String(opts.line || "");
+    var pos = opts.pos == null ? line2.length : opts.pos;
+    if (pos <= 0 || pos > line2.length) return false;
+    return !/\s/.test(line2.slice(pos - 1, pos));
   }
   function suggestReplCompletions(opts) {
     opts = opts || {};
@@ -25701,7 +25788,7 @@ ${blocks.join("\n\n")}`;
       panel2.style.top = pos.y + "px";
       panel2.style.left = pos.x + "px";
     }
-    function open11() {
+    function open12() {
       var el9 = container.parentElement;
       while (el9 && el9.tagName !== "DIALOG") el9 = el9.parentElement;
       var mountEl = el9 || document.body;
@@ -25749,14 +25836,14 @@ ${blocks.join("\n\n")}`;
     }
     trigger.addEventListener("click", function() {
       if (container.classList.contains("is-open")) close6();
-      else open11();
+      else open12();
     });
     trigger.addEventListener("keydown", function(e) {
       var isOpen6 = container.classList.contains("is-open");
       if (!isOpen6) {
         if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          open11();
+          open12();
         }
         return;
       }
@@ -28782,12 +28869,12 @@ ${blocks.join("\n\n")}`;
     return global46.HarpoonGlyphs || null;
   }
   function displayBeluga2(text) {
-    var g23 = glyphs();
-    return g23 ? g23.displayBeluga(text) : String(text == null ? "" : text);
+    var g24 = glyphs();
+    return g24 ? g24.displayBeluga(text) : String(text == null ? "" : text);
   }
   function compactTypeLabel2(box) {
-    var g23 = glyphs();
-    return g23 ? g23.compactTypeLabel(box) : norm(box);
+    var g24 = glyphs();
+    return g24 ? g24.compactTypeLabel(box) : norm(box);
   }
   function trunc(s, max) {
     s = String(s == null ? "" : s);
@@ -29068,10 +29155,10 @@ ${blocks.join("\n\n")}`;
     if (n.type === "ghost") return SIZE.ghost.label;
     return SIZE.move.label;
   }
-  function renderNodeBody(g23, n, pw, h, clipId) {
+  function renderNodeBody(g24, n, pw, h, clipId) {
     var isArm = n.type === "arm";
     var rx = isArm ? 6 : 8;
-    g23.appendChild(el3("rect", {
+    g24.appendChild(el3("rect", {
       x: -pw / 2,
       y: -h / 2,
       width: pw,
@@ -29086,16 +29173,16 @@ ${blocks.join("\n\n")}`;
       "clip-path": "url(#" + clipId + ")"
     });
     text.textContent = label;
-    g23.appendChild(text);
+    g24.appendChild(text);
     if (n.closed) {
-      g23.appendChild(el3("circle", {
+      g24.appendChild(el3("circle", {
         cx: pw / 2 - 9,
         cy: -h / 2 + 9,
         r: 3,
         class: "hpt-status hpt-status--done"
       }));
     } else if (n.open && n.type === "move") {
-      g23.appendChild(el3("circle", {
+      g24.appendChild(el3("circle", {
         cx: pw / 2 - 9,
         cy: -h / 2 + 9,
         r: 3,
@@ -29104,8 +29191,8 @@ ${blocks.join("\n\n")}`;
     }
   }
   function looksLikeType(s) {
-    var g23 = glyphs();
-    if (g23 && typeof g23.looksLikeBeluga === "function") return g23.looksLikeBeluga(s);
+    var g24 = glyphs();
+    if (g24 && typeof g24.looksLikeBeluga === "function") return g24.looksLikeBeluga(s);
     return /(\|-|⊢|\[)/.test(String(s || ""));
   }
   function highlightInto(host2, text, kind) {
@@ -29265,24 +29352,24 @@ ${blocks.join("\n\n")}`;
     });
     var selectedG = null;
     var selectedId = opts.selectedId || null;
-    function select(n, g23) {
+    function select(n, g24) {
       if (selectedG) selectedG.classList.remove("is-selected");
-      selectedG = g23;
-      if (g23) g23.classList.add("is-selected");
+      selectedG = g24;
+      if (g24) g24.classList.add("is-selected");
       if (opts.onSelect) opts.onSelect(n);
     }
     nodes.forEach(function(n, idx) {
       var pw = n.w;
       var h = n.h;
-      var g23 = el3("g", {
+      var g24 = el3("g", {
         class: "hpt-node hpt-node--" + (n.kind || n.type) + (n.type === "ghost" ? " is-ghost" : ""),
         transform: "translate(" + n.x + "," + n.y + ")",
         "data-node-id": String(n.id),
         tabindex: "0",
         role: "button"
       });
-      g23.style.transitionDelay = Math.min(idx * 20, 600) + "ms";
-      renderNodeBody(g23, n, pw, h, n._clipId);
+      g24.style.transitionDelay = Math.min(idx * 20, 600) + "ms";
+      renderNodeBody(g24, n, pw, h, n._clipId);
       if (mode !== "space" && n.altCount > 0 && n.type === "move") {
         var bw = 20;
         var bh = 13;
@@ -29293,7 +29380,7 @@ ${blocks.join("\n\n")}`;
         var ct = el3("text", { x: bw / 2, y: bh - 4, class: "hpt-altcount-text" });
         ct.textContent = "+" + n.altCount;
         chip.appendChild(ct);
-        g23.appendChild(chip);
+        g24.appendChild(chip);
       }
       var ariaTip;
       if (n.type === "ghost" && n.ghost) {
@@ -29303,26 +29390,26 @@ ${blocks.join("\n\n")}`;
       }
       if (global46.Tooltips && typeof global46.Tooltips.setRich === "function") {
         (function(node) {
-          global46.Tooltips.setRich(g23, function() {
+          global46.Tooltips.setRich(g24, function() {
             return buildNodeTipFragment(node, mode);
           }, ariaTip);
         })(n);
       } else {
         var title = document.createElementNS(SVGNS, "title");
         title.textContent = ariaTip;
-        g23.appendChild(title);
+        g24.appendChild(title);
       }
-      g23.addEventListener("click", function() {
-        select(n, g23);
+      g24.addEventListener("click", function() {
+        select(n, g24);
       });
-      g23.addEventListener("keydown", function(ev) {
+      g24.addEventListener("keydown", function(ev) {
         if (ev.key === "Enter" || ev.key === " ") {
           ev.preventDefault();
-          select(n, g23);
+          select(n, g24);
         }
       });
-      scene.appendChild(g23);
-      if (selectedId && n.id === selectedId) select(n, g23);
+      scene.appendChild(g24);
+      if (selectedId && n.id === selectedId) select(n, g24);
     });
     function applyVB() {
       svg.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h);
@@ -29382,8 +29469,8 @@ ${blocks.join("\n\n")}`;
     container.textContent = "";
     container.appendChild(svg);
     if (opts.instant) {
-      svg.querySelectorAll(".hpt-node").forEach(function(g23) {
-        g23.style.transitionDelay = "0ms";
+      svg.querySelectorAll(".hpt-node").forEach(function(g24) {
+        g24.style.transitionDelay = "0ms";
       });
       var pills = svg.querySelectorAll(".hpt-node");
       if (pills.length) pills[pills.length - 1].style.transitionDelay = "30ms";
@@ -29416,13 +29503,13 @@ ${blocks.join("\n\n")}`;
     var ICON_ARROW_RIGHT2 = deps.ICON_ARROW_RIGHT;
     var ICON_ALERT2 = deps.ICON_ALERT;
     function normalizeGlyphs2(text) {
-      var g23 = global47.HarpoonGlyphs;
-      if (g23) return g23.fallbackNormalize(text);
+      var g24 = global47.HarpoonGlyphs;
+      if (g24) return g24.fallbackNormalize(text);
       return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
     }
     function displayType3(typeStr) {
-      var g23 = global47.HarpoonGlyphs;
-      if (g23) return g23.displayBeluga(typeStr);
+      var g24 = global47.HarpoonGlyphs;
+      if (g24) return g24.displayBeluga(typeStr);
       var ed = E3();
       if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
       return normalizeGlyphs2(typeStr);
@@ -29717,12 +29804,12 @@ ${blocks.join("\n\n")}`;
     };
     function goalHeadFromGoal(goal) {
       if (!goal) return null;
-      var g23 = String(goal).trim();
-      if (g23[0] === "[" && g23[g23.length - 1] === "]" || g23[0] === "(" && g23[g23.length - 1] === ")") {
-        g23 = g23.slice(1, -1).trim();
+      var g24 = String(goal).trim();
+      if (g24[0] === "[" && g24[g24.length - 1] === "]" || g24[0] === "(" && g24[g24.length - 1] === ")") {
+        g24 = g24.slice(1, -1).trim();
       }
-      var m = g23.match(/(?:\|-|⊢|\|)\s*([\s\S]*)$/);
-      var concl = (m ? m[1] : g23).trim();
+      var m = g24.match(/(?:\|-|⊢|\|)\s*([\s\S]*)$/);
+      var concl = (m ? m[1] : g24).trim();
       var head = concl.split(/\s+/)[0];
       return head || null;
     }
@@ -29776,12 +29863,12 @@ ${blocks.join("\n\n")}`;
       if (derived) return derived;
       return s && MOVE_GLOSS[s.move] || "made a move";
     }
-    function facetChip(text, extraClass, tip, richKind) {
+    function facetChip(text, extraClass, tip2, richKind) {
       var chip = el9("span", "hpt-move-facet-chip" + (extraClass ? " " + extraClass : ""));
       var code = el9("code", "hpt-move-facet-code");
       renderSource2(code, text);
       chip.appendChild(code);
-      if (tip) bindChipTip2(chip, tip, richKind ? text : null, richKind);
+      if (tip2) bindChipTip2(chip, tip2, richKind ? text : null, richKind);
       return chip;
     }
     function renderMoveFacet(step2, variant) {
@@ -30209,14 +30296,14 @@ ${blocks.join("\n\n")}`;
     }
     function syncReelStatTips(session, na) {
       if (!na) return;
-      var tip = reelStatText(na);
+      var tip2 = reelStatText(na);
       var node = session._statTipEl || session._autoSearchSpinner;
       if (!node) return;
-      if (node.getAttribute("data-tooltip") === tip) return;
+      if (node.getAttribute("data-tooltip") === tip2) return;
       if (global49.Tooltips && global49.Tooltips.set) {
-        global49.Tooltips.set(node, tip, { ariaLabel: false });
-      } else if (tip) {
-        node.setAttribute("data-tooltip", tip);
+        global49.Tooltips.set(node, tip2, { ariaLabel: false });
+      } else if (tip2) {
+        node.setAttribute("data-tooltip", tip2);
       }
     }
     var REEL_TICK_MS = 320;
@@ -30914,8 +31001,8 @@ ${blocks.join("\n\n")}`;
       return String(reason).replace(/^File\s+"[^"]*",\s*line\s+\d+,\s*column\s+\d+\s*/i, "").replace(/^Error:\s*/i, "").trim();
     }
     function belugaText(s) {
-      var g23 = globalThis.HarpoonGlyphs;
-      return g23 ? g23.displayBeluga(s) : String(s == null ? "" : s);
+      var g24 = globalThis.HarpoonGlyphs;
+      return g24 ? g24.displayBeluga(s) : String(s == null ? "" : s);
     }
     var STUCK_REASON = {
       "no-move": "no move certified",
@@ -30986,24 +31073,24 @@ ${blocks.join("\n\n")}`;
             return byKey[k];
           });
         };
-        var addGroup = function(g23) {
-          var li = el9("li", "harpoon-stuck-tried-row is-" + g23.verdict);
-          li.appendChild(el9("span", "hpt-card-kind hpt-kind--" + g23.kind, g23.kind));
+        var addGroup = function(g24) {
+          var li = el9("li", "harpoon-stuck-tried-row is-" + g24.verdict);
+          li.appendChild(el9("span", "hpt-card-kind hpt-kind--" + g24.kind, g24.kind));
           var hd = el9("code", "harpoon-stuck-tried-head");
-          renderSource2(hd, g23.heads[0]);
+          renderSource2(hd, g24.heads[0]);
           li.appendChild(hd);
-          if (g23.heads.length > 1) {
-            var more = el9("span", "harpoon-stuck-tried-more", "+" + (g23.heads.length - 1));
-            setTip2(more, g23.heads.map(belugaText).join("\n"), { ariaLabel: false });
+          if (g24.heads.length > 1) {
+            var more = el9("span", "harpoon-stuck-tried-more", "+" + (g24.heads.length - 1));
+            setTip2(more, g24.heads.map(belugaText).join("\n"), { ariaLabel: false });
             more.setAttribute(
               "aria-label",
-              g23.heads.length + " candidates rejected with this objection"
+              g24.heads.length + " candidates rejected with this objection"
             );
             li.appendChild(more);
           }
-          if (g23.reason) {
-            var rn = el9("span", "harpoon-stuck-tried-reason", g23.reason);
-            setTip2(rn, g23.reason, { ariaLabel: false });
+          if (g24.reason) {
+            var rn = el9("span", "harpoon-stuck-tried-reason", g24.reason);
+            setTip2(rn, g24.reason, { ariaLabel: false });
             li.appendChild(rn);
           }
           list3.appendChild(li);
@@ -31185,9 +31272,9 @@ ${blocks.join("\n\n")}`;
           split.classList.toggle("is-rail-collapsed", collapsed);
           rail.classList.toggle("is-collapsed", collapsed);
           toggle6.innerHTML = collapsed ? ICON_CHEVRON_LEFT2 : ICON_CHEVRON_RIGHT2;
-          var tip = collapsed ? "Show details panel" : "Hide details panel";
-          setTip2(toggle6, tip);
-          toggle6.setAttribute("aria-label", tip);
+          var tip2 = collapsed ? "Show details panel" : "Hide details panel";
+          setTip2(toggle6, tip2);
+          toggle6.setAttribute("aria-label", tip2);
           toggle6.setAttribute("aria-expanded", collapsed ? "false" : "true");
         };
         var split = el9("div", "hpt-split");
@@ -31390,9 +31477,9 @@ ${blocks.join("\n\n")}`;
       banner.appendChild(el9("div", "hpt-detail-name", name));
       mount4.appendChild(banner);
       if (na.goalType) {
-        var g23 = el9("div", "hpt-detail-goal");
-        renderType4(g23, na.goalType);
-        mount4.appendChild(detailSection("Theorem", g23));
+        var g24 = el9("div", "hpt-detail-goal");
+        renderType4(g24, na.goalType);
+        mount4.appendChild(detailSection("Theorem", g24));
       }
       var snap = na.theoremSnapshot;
       if (snap && (snap.premiseCount || snap.totality)) {
@@ -31412,9 +31499,9 @@ ${blocks.join("\n\n")}`;
       } else if (na.complete) {
         status2.appendChild(el9("div", "hpt-detail-status-main", autoVerdictTitle(na)));
         var sc = (na.steps || []).length;
-        var line = sc ? sc + (sc === 1 ? " step" : " steps") : "";
-        if (na.checks) line += (line ? " \xB7 " : "") + na.checks + (na.checks === 1 ? " check" : " checks");
-        if (line) status2.appendChild(el9("div", "hpt-detail-status-sub", line));
+        var line2 = sc ? sc + (sc === 1 ? " step" : " steps") : "";
+        if (na.checks) line2 += (line2 ? " \xB7 " : "") + na.checks + (na.checks === 1 ? " check" : " checks");
+        if (line2) status2.appendChild(el9("div", "hpt-detail-status-sub", line2));
       } else {
         status2.appendChild(el9("div", "hpt-detail-status-main", autoVerdictTitle(na)));
         var sub = autoSubtext(na);
@@ -31499,14 +31586,14 @@ ${blocks.join("\n\n")}`;
         }
       ];
       var wrap = el9("div", "hpt-alt-tray");
-      groups.forEach(function(g23) {
+      groups.forEach(function(g24) {
         var rows2 = tried.filter(function(v) {
-          return v.verdict === g23.key;
+          return v.verdict === g24.key;
         });
         if (!rows2.length) return;
-        var sec = el9("div", "hpt-alt-group is-" + g23.key);
-        var groupLabel = el9("div", "hpt-alt-group-label", g23.label + " (" + rows2.length + ")");
-        if (g23.tip) setTip2(groupLabel, g23.tip);
+        var sec = el9("div", "hpt-alt-group is-" + g24.key);
+        var groupLabel = el9("div", "hpt-alt-group-label", g24.label + " (" + rows2.length + ")");
+        if (g24.tip) setTip2(groupLabel, g24.tip);
         sec.appendChild(groupLabel);
         var list3 = el9("ul", "hpt-detail-tried");
         rows2.forEach(function(v) {
@@ -31781,8 +31868,8 @@ ${blocks.join("\n\n")}`;
       return { verb: base.verb, arg, tip: base.tip, meta };
     }
     function displayGoal(s) {
-      var g23 = globalThis.HarpoonGlyphs;
-      return g23 ? g23.displayBeluga(s) : String(s == null ? "" : s);
+      var g24 = globalThis.HarpoonGlyphs;
+      return g24 ? g24.displayBeluga(s) : String(s == null ? "" : s);
     }
     function moveHeadText(text) {
       return String(text || "").split("\n")[0].replace(/\s+/g, " ").trim().slice(0, 90);
@@ -31826,11 +31913,11 @@ ${blocks.join("\n\n")}`;
       foot.addEventListener("click", function(e) {
         e.preventDefault();
         e.stopPropagation();
-        var open11 = row.classList.toggle("is-expanded");
-        foot.setAttribute("aria-expanded", open11 ? "true" : "false");
-        setTip2(foot, open11 ? "Hide the full term" : "Show the full term");
+        var open12 = row.classList.toggle("is-expanded");
+        foot.setAttribute("aria-expanded", open12 ? "true" : "false");
+        setTip2(foot, open12 ? "Hide the full term" : "Show the full term");
         var full = row.querySelector(".harpoon-lab-move-term");
-        if (open11 && !full) {
+        if (open12 && !full) {
           var term = el9("div", "harpoon-lab-move-term");
           renderSource2(term, mv.text);
           row.appendChild(term);
@@ -31865,11 +31952,11 @@ ${blocks.join("\n\n")}`;
         main.disabled = state3 === "rejected";
         main.setAttribute("aria-disabled", state3 === "rejected" ? "true" : "false");
       }
-      var tip = PIP_TIP[state3] || "";
-      if (state3 === "rejected" && detail2) tip += ": " + String(detail2).slice(0, 180);
-      setTip2(row._pip, tip);
-      row._pip.setAttribute("aria-hidden", tip ? "false" : "true");
-      if (tip) row._pip.setAttribute("aria-label", tip);
+      var tip2 = PIP_TIP[state3] || "";
+      if (state3 === "rejected" && detail2) tip2 += ": " + String(detail2).slice(0, 180);
+      setTip2(row._pip, tip2);
+      row._pip.setAttribute("aria-hidden", tip2 ? "false" : "true");
+      if (tip2) row._pip.setAttribute("aria-label", tip2);
     }
     function skel(cls, w) {
       var n = el9("span", "harpoon-skel" + (cls ? " " + cls : ""));
@@ -32643,7 +32730,7 @@ ${blocks.join("\n\n")}`;
           box.appendChild(place3);
           if (commit.status === "checking") this.updateCommitPlace();
         }
-        var open11 = st ? st.holes.length : 0;
+        var open12 = st ? st.holes.length : 0;
         var bar = el9("div", "harpoon-lab-bar");
         var status2 = el9("div", "harpoon-lab-status");
         var dot = el9("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
@@ -32653,7 +32740,7 @@ ${blocks.join("\n\n")}`;
         status2.appendChild(el9(
           "span",
           "harpoon-lab-status-text",
-          complete2 ? "Proven" : open11 === 1 ? "1 goal" : open11 + " goals"
+          complete2 ? "Proven" : open12 === 1 ? "1 goal" : open12 + " goals"
         ));
         bar.appendChild(status2);
         var actions = el9("div", "harpoon-lab-bar-actions");
@@ -32719,7 +32806,7 @@ ${blocks.join("\n\n")}`;
           stage += 1;
         }
       } else {
-        var open11 = st ? st.holes.length : 0;
+        var open12 = st ? st.holes.length : 0;
         var bar = el9("div", "harpoon-lab-bar");
         var status2 = el9("div", "harpoon-lab-status");
         var dot = el9("span", "harpoon-lab-status-dot" + (complete2 ? " is-done" : ""));
@@ -32729,7 +32816,7 @@ ${blocks.join("\n\n")}`;
         status2.appendChild(el9(
           "span",
           "harpoon-lab-status-text",
-          complete2 ? "Proven" : open11 === 1 ? "1 goal" : open11 + " goals"
+          complete2 ? "Proven" : open12 === 1 ? "1 goal" : open12 + " goals"
         ));
         bar.appendChild(status2);
         var actions = el9("div", "harpoon-lab-bar-actions");
@@ -33020,8 +33107,8 @@ ${blocks.join("\n\n")}`;
       global51.Tooltips.set(el9, text, opts);
     } else {
       el9.removeAttribute("title");
-      var tip = text != null ? String(text).trim() : "";
-      if (tip) el9.setAttribute("data-tooltip", tip);
+      var tip2 = text != null ? String(text).trim() : "";
+      if (tip2) el9.setAttribute("data-tooltip", tip2);
       else el9.removeAttribute("data-tooltip");
     }
   }
@@ -33056,23 +33143,23 @@ ${blocks.join("\n\n")}`;
       setTip(host2, "Goal at this step: " + shown, { ariaLabel: false });
     }
   }
-  function bindChipTip(el9, tip, richCode, richKind, placement) {
-    if (!el9 || !tip) return;
+  function bindChipTip(el9, tip2, richCode, richKind, placement) {
+    if (!el9 || !tip2) return;
     el9.setAttribute("data-tooltip-placement", placement || "below");
     el9.setAttribute("data-tooltip-no-track", "");
     if (richCode && global51.Tooltips && typeof global51.Tooltips.setRich === "function") {
       global51.Tooltips.setRich(el9, function() {
-        return buildLabeledCodeTip(tip, richCode, richKind || "type");
-      }, tip);
+        return buildLabeledCodeTip(tip2, richCode, richKind || "type");
+      }, tip2);
     } else {
-      setTip(el9, tip, { ariaLabel: false });
+      setTip(el9, tip2, { ariaLabel: false });
     }
   }
-  function iconBtn(className, svg, label, tip, onClick2, disabled) {
+  function iconBtn(className, svg, label, tip2, onClick2, disabled) {
     var b = el4("button", className);
     b.type = "button";
     b.setAttribute("aria-label", label);
-    if (tip) setTip(b, tip);
+    if (tip2) setTip(b, tip2);
     if (disabled) b.disabled = true;
     b.innerHTML = svg;
     b.addEventListener("click", function(e) {
@@ -33121,13 +33208,13 @@ ${blocks.join("\n\n")}`;
     }
     return typeof P3.getFileText === "function" ? P3.getFileText(fileId) || "" : "";
   }
-  function lineColToOffset(text, line, col) {
+  function lineColToOffset(text, line2, col) {
     var lines = text.split("\n");
     var offset = 0;
-    for (var i = 0; i < line - 1 && i < lines.length; i += 1) {
+    for (var i = 0; i < line2 - 1 && i < lines.length; i += 1) {
       offset += lines[i].length + 1;
     }
-    var lineText = lines[line - 1] || "";
+    var lineText = lines[line2 - 1] || "";
     var c = Math.max(0, (col || 1) - 1);
     return offset + Math.min(c, lineText.length);
   }
@@ -33157,11 +33244,11 @@ ${blocks.join("\n\n")}`;
     var qIdx = body.indexOf("?");
     if (qIdx < 0) return null;
     var before = docText.slice(0, bodyStart + qIdx);
-    var line = before.split("\n").length;
+    var line2 = before.split("\n").length;
     var lastNl = before.lastIndexOf("\n");
     var col = before.length - (lastNl < 0 ? 0 : lastNl + 1) + 1;
     var off = bodyStart + qIdx;
-    return { hole: { line, col, name: null }, from: off, to: off + 1 };
+    return { hole: { line: line2, col, name: null }, from: off, to: off + 1 };
   }
   function noteOrcaFinished(session, complete2, stuck, startedAt) {
     var N = global51.Notifications;
@@ -33670,7 +33757,7 @@ ${blocks.join("\n\n")}`;
     var ed = E();
     if (!ed || !output2 || !prep || !prep.hit || !this.nativeAuto) return;
     var holes = typeof ed.parseHoles === "function" ? ed.parseHoles(output2) : [];
-    var line = prep.hit.hole.line;
+    var line2 = prep.hit.hole.line;
     var col = prep.hit.hole.col || 1;
     var match = null;
     if (typeof ed.mapProveHolesToDocHits === "function") {
@@ -33682,7 +33769,7 @@ ${blocks.join("\n\n")}`;
       );
       for (var m = 0; m < mapped.length; m++) {
         var mh = mapped[m];
-        if (mh.line === line && (mh.col || 1) === col && mh.goal) {
+        if (mh.line === line2 && (mh.col || 1) === col && mh.goal) {
           match = mh;
           break;
         }
@@ -33690,7 +33777,7 @@ ${blocks.join("\n\n")}`;
     }
     for (var i = 0; !match && i < holes.length; i++) {
       var h = holes[i];
-      if (h.line === line && (h.col || 1) === col && h.goal) {
+      if (h.line === line2 && (h.col || 1) === col && h.goal) {
         match = h;
         break;
       }
@@ -34081,7 +34168,7 @@ ${blocks.join("\n\n")}`;
     var self = this;
     var body = this.bodyEl;
     if (!body) return;
-    var open11 = m.subgoals && m.subgoals.length || 0;
+    var open12 = m.subgoals && m.subgoals.length || 0;
     var bar = el4("div", "harpoon-lab-bar");
     var status2 = el4("div", "harpoon-lab-status");
     var dot = el4("span", "harpoon-lab-status-dot" + (m.complete ? " is-done" : ""));
@@ -34092,10 +34179,10 @@ ${blocks.join("\n\n")}`;
     var label = el4("span", "harpoon-lab-status-text");
     if (m.complete) {
       label.textContent = "Proven";
-    } else if (open11 === 1) {
+    } else if (open12 === 1) {
       label.textContent = "1 goal";
     } else {
-      label.textContent = open11 + " goals";
+      label.textContent = open12 + " goals";
     }
     status2.appendChild(label);
     bar.appendChild(status2);
@@ -35050,13 +35137,13 @@ ${blocks.join("\n\n")}`;
     });
   }
   function normalizeGlyphs(text) {
-    var g23 = global53.HarpoonGlyphs;
-    if (g23) return g23.fallbackNormalize(text);
+    var g24 = global53.HarpoonGlyphs;
+    if (g24) return g24.fallbackNormalize(text);
     return String(text == null ? "" : text).replace(/\|-#/g, "\u22A2#").replace(/\|-/g, "\u22A2").replace(/=>/g, "\u21D2").replace(/->/g, "\u2192");
   }
   function displayType2(typeStr) {
-    var g23 = global53.HarpoonGlyphs;
-    if (g23) return g23.displayBeluga(typeStr);
+    var g24 = global53.HarpoonGlyphs;
+    if (g24) return g24.displayBeluga(typeStr);
     var ed = E2();
     if (ed && typeof ed.normalizeType === "function") return ed.normalizeType(typeStr);
     return normalizeGlyphs(typeStr);
@@ -35105,9 +35192,9 @@ ${blocks.join("\n\n")}`;
     } else if (st === "pending") {
       st = "loading";
     }
-    var g23 = goal || "";
-    if (g23) g23 = displayType2(g23).replace(/\s+/g, "");
-    return st + ":" + g23;
+    var g24 = goal || "";
+    if (g24) g24 = displayType2(g24).replace(/\s+/g, "");
+    return st + ":" + g24;
   }
   function modelRenderKey(model) {
     if (!model || !model.totalCount) return "";
@@ -35356,12 +35443,12 @@ ${blocks.join("\n\n")}`;
     return declTextCache[fileId];
   }
   function declForEntry(entry) {
-    var line = entry && entry.hit && entry.hit.hole && entry.hit.hole.line;
-    if (!line) return null;
+    var line2 = entry && entry.hit && entry.hit.hole && entry.hit.hole.line;
+    if (!line2) return null;
     var text = fileTextFor(entry.fileId);
     if (!text) return null;
     var lines = text.split(/\r?\n/);
-    for (var i = Math.min(line, lines.length) - 1; i >= 0; i -= 1) {
+    for (var i = Math.min(line2, lines.length) - 1; i >= 0; i -= 1) {
       var m = DECL_LINE.exec(lines[i]);
       if (m) return { kw: m[1], name: m[2] };
     }
@@ -35717,21 +35804,21 @@ ${blocks.join("\n\n")}`;
     var detail2 = [];
     var sawFailed = false;
     for (var i = 0; i < lines.length; i++) {
-      var line = lines[i].trim();
-      if (!line || line === ";") continue;
-      if (/^-\s*Error in query\s*:\s*/i.test(line)) {
-        line = line.replace(/^-\s*Error in query\s*:\s*/i, "").trim();
+      var line2 = lines[i].trim();
+      if (!line2 || line2 === ";") continue;
+      if (/^-\s*Error in query\s*:\s*/i.test(line2)) {
+        line2 = line2.replace(/^-\s*Error in query\s*:\s*/i, "").trim();
       }
-      if (/^-\s*Failed to execute command\.?$/i.test(line)) {
+      if (/^-\s*Failed to execute command\.?$/i.test(line2)) {
         if (sawFailed) continue;
         sawFailed = true;
         continue;
       }
-      if (/^-\s*Error\b/i.test(line) && !/^Error:/i.test(line)) {
-        line = line.replace(/^-\s*Error\s*:\s*/i, "").trim();
-        if (/^-\s*Failed to execute command\.?$/i.test(line)) continue;
+      if (/^-\s*Error\b/i.test(line2) && !/^Error:/i.test(line2)) {
+        line2 = line2.replace(/^-\s*Error\s*:\s*/i, "").trim();
+        if (/^-\s*Failed to execute command\.?$/i.test(line2)) continue;
       }
-      if (line) detail2.push(line);
+      if (line2) detail2.push(line2);
     }
     var body = polishBelugaErrorDetail(detail2.join("\n"));
     return {
@@ -35794,8 +35881,8 @@ ${blocks.join("\n\n")}`;
     let error = false;
     let first = null;
     let inHoles = false;
-    for (const line of lines) {
-      const t = line.trim();
+    for (const line2 of lines) {
+      const t = line2.trim();
       if (!t || /^Done\.?$/.test(t) || t === ";") continue;
       if (/^##\s/.test(t)) {
         inHoles = /##\s*Holes:/i.test(t);
@@ -36568,7 +36655,22 @@ ${blocks.join("\n\n")}`;
   }
 
   // js/persist/sync/http-transport.mjs
-  var METHODS = ["heads", "head", "blobs", "missing", "putBlobs", "commit", "remove", "settings", "commitSettings", "versions", "version"];
+  var METHODS = [
+    "heads",
+    "head",
+    "blobs",
+    "missing",
+    "putBlobs",
+    "commit",
+    "remove",
+    "settings",
+    "commitSettings",
+    "versions",
+    "version",
+    "shares",
+    "share",
+    "unshare"
+  ];
   var TIMEOUT_MS = 3e4;
   var TEXTS_TIMEOUT_MS = 12e4;
   var CARRIES_TEXTS = /* @__PURE__ */ new Set(["blobs", "putBlobs"]);
@@ -37216,6 +37318,10 @@ ${blocks.join("\n\n")}`;
   function lineDiff(theirs, mine) {
     const a = splitLines(theirs);
     const b = splitLines(mine);
+    if (a[a.length - 1] === "" && b[b.length - 1] === "") {
+      a.pop();
+      b.pop();
+    }
     const match = lcsMatch(a, b);
     const rows2 = [];
     let j = 0;
@@ -37271,33 +37377,39 @@ ${blocks.join("\n\n")}`;
   }
   function sidesOf(c) {
     const App = g16.App;
-    const open11 = App && typeof App.openConflictSides === "function" ? App.openConflictSides(c.pid, c.fid) : null;
-    return open11 || g16.Persist.conflictSides(c.pid, c.fid);
+    const open12 = App && typeof App.openConflictSides === "function" ? App.openConflictSides(c.pid, c.fid) : null;
+    return open12 || g16.Persist.conflictSides(c.pid, c.fid);
   }
   function resolveDifference(c, choice) {
     const App = g16.App;
-    const open11 = App && typeof App.resolveOpenConflict === "function" ? App.resolveOpenConflict(c.pid, c.fid, choice) : null;
-    if (open11 !== null && open11 !== void 0) return open11;
+    const open12 = App && typeof App.resolveOpenConflict === "function" ? App.resolveOpenConflict(c.pid, c.fid, choice) : null;
+    if (open12 !== null && open12 !== void 0) return open12;
     return g16.Persist.resolveStoredConflict(c.pid, c.fid, choice);
   }
-  function diffNode(sides) {
-    const pre = el6("div", "review-diff");
-    const rows2 = compactDiff(lineDiff(sides.theirs, sides.mine), 1);
-    if (!rows2.length) {
-      pre.appendChild(el6("div", "review-diff__none", "Both sides are the same now. Either choice keeps it."));
-      return pre;
+  function gapWords(count) {
+    return count === 1 ? "1 line" : count + " lines";
+  }
+  function diffNode(theirs, mine, none) {
+    const box = el6("div", "review-diff");
+    const rows2 = compactDiff(lineDiff(theirs || "", mine || ""), 1);
+    if (!rows2.length && none) {
+      box.appendChild(el6("div", "review-diff__none", none));
+      return box;
     }
     for (const r of rows2) {
       if (r.kind === "gap") {
-        pre.appendChild(el6("div", "review-diff__gap", r.count === 1 ? "1 unchanged line" : r.count + " unchanged lines"));
+        const gap = el6("div", "review-diff__gap");
+        gap.setAttribute("aria-label", r.count === 1 ? "1 unchanged line" : r.count + " unchanged lines");
+        gap.append(el6("span", "review-diff__mark", "\u22EF"), el6("span", "review-diff__count", gapWords(r.count)));
+        box.appendChild(gap);
         continue;
       }
-      const line = el6("div", "review-diff__line is-" + r.kind);
-      line.appendChild(el6("span", "review-diff__mark", r.kind === "theirs" ? "\u2212" : r.kind === "mine" ? "+" : ""));
-      line.appendChild(el6("span", "review-diff__text", r.text || " "));
-      pre.appendChild(line);
+      const line2 = el6("div", "review-diff__line is-" + r.kind);
+      line2.appendChild(el6("span", "review-diff__mark", r.kind === "theirs" ? "\u2212" : r.kind === "mine" ? "+" : ""));
+      line2.appendChild(el6("span", "review-diff__text", r.text || " "));
+      box.appendChild(line2);
     }
-    return pre;
+    return box;
   }
   var win = null;
   function render6(body) {
@@ -37337,7 +37449,7 @@ ${blocks.join("\n\n")}`;
       }
       head.appendChild(actions);
       section.appendChild(head);
-      section.appendChild(diffNode(sides));
+      section.appendChild(diffNode(sides.theirs, sides.mine, "Both sides are the same now. Either choice keeps it."));
       body.appendChild(section);
     }
     if (files2.length > 1) {
@@ -37427,20 +37539,6 @@ ${blocks.join("\n\n")}`;
     if (text != null) n.textContent = text;
     return n;
   }
-  function diffNode2(theirs, mine) {
-    const box = el7("div", "review-diff");
-    for (const r of compactDiff(lineDiff(theirs || "", mine || ""), 1)) {
-      if (r.kind === "gap") {
-        box.appendChild(el7("div", "review-diff__gap", r.count === 1 ? "1 unchanged line" : r.count + " unchanged lines"));
-        continue;
-      }
-      const line = el7("div", "review-diff__line is-" + r.kind);
-      line.appendChild(el7("span", "review-diff__mark", r.kind === "theirs" ? "\u2212" : r.kind === "mine" ? "+" : ""));
-      line.appendChild(el7("span", "review-diff__text", r.text || " "));
-      box.appendChild(line);
-    }
-    return box;
-  }
   var win2 = null;
   var busy = false;
   var problem = null;
@@ -37463,13 +37561,13 @@ ${blocks.join("\n\n")}`;
     head.appendChild(actions);
     section.appendChild(head);
     for (const f of p.files) {
-      const line = el7("div", "review__change");
-      line.appendChild(el7("span", "review__path", f.path));
-      line.appendChild(el7("span", "review__kind", CHANGE_WORDS[f.change]));
-      section.appendChild(line);
+      const line2 = el7("div", "review__change");
+      line2.appendChild(el7("span", "review__path", f.path));
+      line2.appendChild(el7("span", "review__kind", CHANGE_WORDS[f.change]));
+      section.appendChild(line2);
       const theirs = side.texts && side.texts[f.fid];
       if (f.change === "edited" && typeof theirs === "string") {
-        section.appendChild(diffNode2(theirs, P3.projectFileText(p.pid, f.fid)));
+        section.appendChild(diffNode(theirs, P3.projectFileText(p.pid, f.fid)));
       }
     }
     return section;
@@ -37582,11 +37680,11 @@ ${blocks.join("\n\n")}`;
     return state3 === "offline" ? "offline" : "synced";
   }
   function cloudSvg(look) {
-    const open11 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+    const open12 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
     if (look === "offline") {
-      return open11 + '<mask id="sync-cloud-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/><path d="' + SLASH + '" stroke="#000" stroke-width="5"/></mask><path d="' + CLOUD + '" mask="url(#sync-cloud-cut)"/><path class="sync-cloud__mark" d="' + SLASH + '"/></svg>';
+      return open12 + '<mask id="sync-cloud-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/><path d="' + SLASH + '" stroke="#000" stroke-width="5"/></mask><path d="' + CLOUD + '" mask="url(#sync-cloud-cut)"/><path class="sync-cloud__mark" d="' + SLASH + '"/></svg>';
     }
-    return open11 + '<path d="' + CLOUD + '"/>' + (MARKS[look] || MARKS.synced) + "</svg>";
+    return open12 + '<path d="' + CLOUD + '"/>' + (MARKS[look] || MARKS.synced) + "</svg>";
   }
 
   // js/account/sync-watch.mjs
@@ -37690,10 +37788,10 @@ ${blocks.join("\n\n")}`;
       btn.innerHTML = cloudSvg(look);
       shownLook = look;
     }
-    const tip = cloudWords(s).tip;
-    btn.setAttribute("aria-label", tip);
-    if (g18.Tooltips && typeof g18.Tooltips.set === "function") g18.Tooltips.set(btn, tip);
-    else btn.setAttribute("data-tooltip", tip);
+    const tip2 = cloudWords(s).tip;
+    btn.setAttribute("aria-label", tip2);
+    if (g18.Tooltips && typeof g18.Tooltips.set === "function") g18.Tooltips.set(btn, tip2);
+    else btn.setAttribute("data-tooltip", tip2);
     if (g18.Menu && g18.Menu.update && g18.Menu.rootAnchor && g18.Menu.rootAnchor() === btn) g18.Menu.update(btn, menuItems2());
   }
   function menuItems2() {
@@ -37823,26 +37921,420 @@ ${blocks.join("\n\n")}`;
     else go2();
   }
 
-  // js/ui/version-history.mjs
-  var g19 = typeof window !== "undefined" ? window : globalThis;
-  var DAY2 = 24 * 60 * 60 * 1e3;
-  function versionTime(ms, now = Date.now()) {
-    const at = new Date(ms);
-    const time = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    const today = new Date(now);
-    const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-    if (ms >= midnight) return "Today " + time;
-    if (ms >= midnight - DAY2) return "Yesterday " + time;
-    const opts = at.getFullYear() === today.getFullYear() ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" };
-    return at.toLocaleDateString([], opts) + " " + time;
+  // js/ui/when.mjs
+  function midnightOf(ms) {
+    const d = new Date(ms);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   }
-  function versionWords(v, o = {}) {
+  function daysAgo(ms, now) {
+    const today = new Date(now);
+    if (ms >= midnightOf(now)) return 0;
+    return ms >= new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1).getTime() ? 1 : 2;
+  }
+  function dayWords(ms, now = Date.now()) {
+    const ago2 = daysAgo(ms, now);
+    if (ago2 === 0) return "Today";
+    if (ago2 === 1) return "Yesterday";
+    const at = new Date(ms);
+    const opts = at.getFullYear() === new Date(now).getFullYear() ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" };
+    return at.toLocaleDateString([], opts);
+  }
+  function clockTime(ms, seconds = false) {
+    const opts = seconds ? { hour: "numeric", minute: "2-digit", second: "2-digit" } : { hour: "numeric", minute: "2-digit" };
+    return new Date(ms).toLocaleTimeString([], opts);
+  }
+  function versionTime(ms, now = Date.now()) {
+    return dayWords(ms, now) + " " + clockTime(ms, true);
+  }
+  function whenWords(ms, now = Date.now()) {
+    const ago2 = daysAgo(ms, now);
+    const time = clockTime(ms);
+    if (ago2 === 0) return "today at " + time;
+    if (ago2 === 1) return "yesterday at " + time;
+    return "on " + dayWords(ms, now) + " at " + time;
+  }
+
+  // js/ui/share-window.mjs
+  var g19 = typeof window !== "undefined" ? window : globalThis;
+  var PROJECT_LINK_WORDS = "Can read the project, including changes you make later. It isn\u2019t listed anywhere.";
+  var NO_LINK_WORDS = "Anyone you send a link to can read the project, including changes you make later.";
+  var VERSION_LINKS_WORDS = "Each shows the project as it was then.";
+  function versionLinkWords(at, now = Date.now()) {
+    return "Anyone with this link can read this version, as it was " + whenWords(at, now) + ". It isn\u2019t listed anywhere.";
+  }
+  function shareProblem(error) {
+    if (error === "not-found") return "This project isn\u2019t in the cloud yet. Try again once it has synced.";
+    if (error === "deleted") return "This project was deleted in the cloud, so it can\u2019t be shared.";
+    if (error === "no-version") return "That version can\u2019t be shared.";
+    if (error === "too-many") return "This project has as many links as it can have. Revoke one to make another.";
+    return "Couldn\u2019t reach the cloud. Try again.";
+  }
+  var SIGNED_OUT_WORDS = "Links are kept in the cloud. Sign in to make one.";
+  var UNSYNCED_WORDS = "Some changes here aren\u2019t in the cloud yet, so the link doesn\u2019t show them.";
+  var ACCESS = {
+    looking: { glyph: "link", title: "Looking for a link\u2026", words: "" },
+    none: { glyph: "lock", title: "Only you", words: NO_LINK_WORDS },
+    // Links to single versions, and none to the project: "Only you" would not be true.
+    versions: { glyph: "link", title: "No link to the project yet", words: NO_LINK_WORDS },
+    link: { glyph: "globe", title: "Anyone with the link", words: PROJECT_LINK_WORDS },
+    out: { glyph: "lock", title: "Only you", words: SIGNED_OUT_WORDS },
+    trouble: { glyph: "alert", title: "Couldn\u2019t reach the cloud", words: "" }
+  };
+  var GLYPHS = {
+    link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+    globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+    lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    open: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+    history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+    unlink: '<path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><path d="M8 2v3"/><path d="M2 8h3"/><path d="M16 19v3"/><path d="M19 16h3"/>',
+    alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>'
+  };
+  var GLYPH_NAMES = Object.keys(GLYPHS);
+  function svgOf(name) {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + GLYPHS[name] + "</svg>";
+  }
+  function glyph(name, className) {
+    const span = el2("span", "share-glyph" + (className ? " " + className : ""));
+    span.dataset.glyph = name;
+    span.innerHTML = svgOf(name);
+    return span;
+  }
+  function glyphButton(label, action, variant, name) {
+    const btn = actionButton(label, action, variant);
+    btn.classList.add("has-glyph");
+    btn.replaceChildren(glyph(name), el2("span", "share-label", label));
+    return btn;
+  }
+  function tip(node, text) {
+    const T = g19.Tooltips;
+    if (T && typeof T.set === "function") T.set(node, text);
+    else node.setAttribute("aria-label", text);
+  }
+  function linkAddress(id) {
+    const R = g19.Routes;
+    return R && typeof R.shareUrl === "function" ? R.shareUrl(id, true) : "/s/" + id;
+  }
+  function addressParts(href, id) {
+    const shown = String(href).replace(/^https?:\/\//, "");
+    const cut = id && shown.endsWith(id) ? shown.length - id.length : shown.lastIndexOf("/") + 1;
+    return { host: shown.slice(0, cut), id: shown.slice(cut) };
+  }
+  function selectAll(node) {
+    const sel = typeof g19.getSelection === "function" ? g19.getSelection() : null;
+    if (!sel || typeof document === "undefined") return;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+  async function copyText(text, field) {
+    try {
+      const nav = g19.navigator;
+      if (nav && nav.clipboard && typeof nav.clipboard.writeText === "function") {
+        await nav.clipboard.writeText(text);
+        return true;
+      }
+    } catch (_) {
+    }
+    if (field) {
+      if (typeof field.focus === "function") field.focus();
+      if (typeof field.select === "function") field.select();
+      else selectAll(field);
+    }
+    return false;
+  }
+  function copied(btn, label, words, done) {
+    const mark = btn.querySelector(".share-glyph");
+    if (mark) mark.replaceWith(glyph("check"));
+    else btn.innerHTML = svgOf("check");
+    btn.classList.add("is-copied");
+    if (label) label.textContent = done;
+    clearTimeout(btn._copiedTimer);
+    btn._copiedTimer = setTimeout(() => {
+      const now = btn.querySelector(".share-glyph");
+      if (now) now.replaceWith(glyph("copy"));
+      else btn.innerHTML = svgOf("copy");
+      btn.classList.remove("is-copied");
+      if (label) label.textContent = words;
+    }, 1600);
+  }
+  function linkRow(id, opts = {}) {
+    const href = linkAddress(id);
+    const parts = addressParts(href, id);
+    const row = el2("div", "share-link");
+    const field = el2("div", "share-link__address share-window__address");
+    field.tabIndex = 0;
+    field.dataset.link = href;
+    field.setAttribute("role", "textbox");
+    field.setAttribute("aria-readonly", "true");
+    field.setAttribute("aria-label", "Link");
+    field.append(el2("span", "share-link__host", parts.host), el2("span", "share-link__id", parts.id));
+    field.addEventListener("focus", () => selectAll(field));
+    field.addEventListener("copy", (e) => {
+      if (!e.clipboardData) return;
+      e.clipboardData.setData("text/plain", href);
+      e.preventDefault();
+    });
+    const open12 = el2("a", "share-link__open");
+    open12.href = href;
+    open12.target = "_blank";
+    open12.rel = "noopener";
+    open12.appendChild(glyph("open"));
+    tip(open12, "Open link");
+    const copy = el2("button", "share-link__copy share-window__copy");
+    copy.type = "button";
+    copy.dataset.action = "copy";
+    const label = el2("span", "share-label", "Copy");
+    copy.append(glyph("copy"), label);
+    async function doCopy() {
+      const ok = await copyText(href, field);
+      if (ok) copied(copy, label, "Copy", "Copied");
+      if (typeof opts.onCopy === "function") opts.onCopy(ok);
+      return ok;
+    }
+    copy.addEventListener("click", doCopy);
+    row.append(field, open12, copy);
+    row.copy = doCopy;
+    return row;
+  }
+  function iconButton(name, words, className) {
+    const btn = el2("button", "icon-btn share-icon-btn " + className);
+    btn.type = "button";
+    btn.innerHTML = svgOf(name);
+    tip(btn, words);
+    return btn;
+  }
+  function versionRow(link, onRevoke) {
+    const href = linkAddress(link.id);
+    const item = el2("li", "share-version share-window__version");
+    item.dataset.version = String(link.version);
+    item.appendChild(glyph("history", "share-version__mark"));
+    const text = el2("div", "share-version__text");
+    text.appendChild(el2("span", "share-version__when", versionTime(link.versionAt || link.createdAt)));
+    const address = el2("span", "share-version__address share-window__address", "/s/" + link.id);
+    address.dataset.link = href;
+    text.appendChild(address);
+    item.appendChild(text);
+    const copy = iconButton("copy", "Copy link", "share-version__copy");
+    copy.addEventListener("click", async () => {
+      if (await copyText(href, address)) copied(copy, null, "", "");
+    });
+    const off = iconButton("unlink", "Revoke link", "share-version__revoke share-window__revoke");
+    off.addEventListener("click", () => onRevoke(link.id, off));
+    item.append(copy, off);
+    return item;
+  }
+  function accessRow(kind, action) {
+    const A = ACCESS[kind];
+    const box = el2("div", "share-access");
+    box.dataset.state = kind;
+    box.appendChild(glyph(A.glyph, "share-access__mark"));
+    box.appendChild(el2("p", "share-access__title", A.title));
+    if (action) box.appendChild(action);
+    if (A.words) box.appendChild(el2("p", "share-access__words share-window__words", A.words));
+    return box;
+  }
+  function line(text, kind) {
+    const p = el2("p", "share-line share-window__" + kind);
+    p.append(glyph("alert"), el2("span", "", text));
+    return p;
+  }
+  var open11 = null;
+  async function openShareWindow(pid, name) {
+    const P3 = g19.Persist;
+    const A = g19.Account;
+    if (!P3) return false;
+    if (!pid) pid = P3.getActiveProjectId();
+    if (!name) {
+      const p = (typeof P3.projects === "function" ? P3.projects() : []).find((x) => x.id === pid);
+      name = p ? p.name : P3.getProjectName();
+    }
+    if (open11) requestDialogClose(open11);
+    const body = el2("div", "share-window");
+    const dialogEl2 = createDialog({
+      ariaLabel: "Share " + name,
+      title: "Share \u201C" + name + "\u201D",
+      content: body,
+      className: WRAP_CLASS + " share-window-wrap",
+      cardClass: CARD_CLASS + " share-window__card",
+      removeOnClose: true
+    });
+    dialogEl2.addEventListener("close", () => {
+      if (open11 === dialogEl2) open11 = null;
+    });
+    open11 = dialogEl2;
+    openDialog(dialogEl2);
+    let busy2 = false;
+    let synced = null;
+    let links = [];
+    function slotButton(label, action, variant, glyphName) {
+      const btn = glyphName ? glyphButton(label, action, variant, glyphName) : actionButton(label, action, variant);
+      btn.classList.add("share-slot");
+      return btn;
+    }
+    function signedOut() {
+      const parts = [accessRow("out")];
+      if (A && typeof A.signIn === "function") {
+        const sign = slotButton("Sign in with GitHub", "sign-in", "primary");
+        sign.addEventListener("click", () => {
+          requestDialogClose(dialogEl2);
+          A.signIn();
+        });
+        parts.push(sign);
+      }
+      body.replaceChildren(...parts);
+    }
+    function trouble() {
+      const again = slotButton("Try again", "retry", "secondary");
+      again.addEventListener("click", () => load());
+      body.replaceChildren(accessRow("trouble"), again);
+    }
+    function looking() {
+      const wait = slotButton("Copy link", "make", "primary", "link");
+      wait.disabled = true;
+      body.replaceChildren(accessRow("looking"), wait);
+    }
+    async function make() {
+      if (busy2) return null;
+      busy2 = true;
+      let res;
+      try {
+        res = await P3.makeShare(pid, 0);
+      } catch (_) {
+        res = { ok: false, error: "network" };
+      }
+      busy2 = false;
+      if (res === null) {
+        signedOut();
+        return null;
+      }
+      return res;
+    }
+    async function revoke(id, btn) {
+      if (busy2) return;
+      busy2 = true;
+      btn.disabled = true;
+      try {
+        await P3.revokeShare(pid, id);
+      } catch (_) {
+        busy2 = false;
+        btn.disabled = false;
+        draw(shareProblem("network"));
+        return;
+      }
+      busy2 = false;
+      await load(true);
+    }
+    function draw(problem2) {
+      const project = links.find((l) => !l.version);
+      const parts = [];
+      if (project) {
+        const off = actionButton("Revoke", "revoke", "ghost");
+        off.classList.add("share-access__revoke", "share-window__revoke");
+        off.addEventListener("click", () => revoke(project.id, off));
+        parts.push(accessRow("link", off), linkRow(project.id));
+      } else {
+        const make1 = slotButton("Copy link", "make", "primary", "link");
+        make1.classList.add("share-window__make");
+        make1.addEventListener("click", async () => {
+          make1.disabled = true;
+          const res = await make();
+          if (!res) return;
+          if (!res.ok) {
+            draw(shareProblem(res.error));
+            return;
+          }
+          links = [{ id: res.id, version: 0, createdAt: res.createdAt, versionAt: 0 }].concat(links.filter((l) => l.version));
+          draw();
+          const row = body.querySelector(".share-link");
+          if (row && row.copy) row.copy();
+        });
+        parts.push(accessRow(links.length ? "versions" : "none"), make1);
+      }
+      if (problem2) parts.push(line(problem2, "problem"));
+      if (synced === false) parts.push(line(UNSYNCED_WORDS, "unsynced"));
+      const fixed = links.filter((l) => l.version);
+      if (fixed.length) {
+        const versions = el2("section", "share-versions");
+        const head = el2("div", "share-versions__head");
+        head.append(el2("h3", "share-versions__title", "Links to one version"), el2("p", "share-versions__words", VERSION_LINKS_WORDS));
+        const list3 = el2("ul", "share-versions__list");
+        for (const l of fixed) list3.appendChild(versionRow(l, revoke));
+        versions.append(head, list3);
+        parts.push(versions);
+      }
+      body.replaceChildren(...parts);
+    }
+    async function load(quiet) {
+      if (!A || typeof A.user !== "function" || !A.user()) {
+        signedOut();
+        return;
+      }
+      if (!quiet) looking();
+      if (synced == null) {
+        try {
+          const s = await P3.confirmSynced();
+          synced = !!(s && s.ok);
+        } catch (_) {
+          synced = false;
+        }
+      }
+      let got;
+      try {
+        got = await P3.shareLinks(pid);
+      } catch (_) {
+        got = void 0;
+      }
+      if (open11 !== dialogEl2) return;
+      if (got === null) return signedOut();
+      if (!got) return trouble();
+      links = got;
+      draw();
+    }
+    await load();
+    return true;
+  }
+  function shareAvailable() {
+    const A = g19.Account;
+    return !!A && typeof A.available === "function" && A.available();
+  }
+  async function shareVersion(pid, version2, at, into) {
+    const P3 = g19.Persist;
+    let res;
+    try {
+      res = await P3.makeShare(pid, version2);
+    } catch (_) {
+      res = { ok: false, error: "network" };
+    }
+    const box = el2("div", "share-window__inline");
+    if (!res) {
+      box.appendChild(el2("p", "history__note", SIGNED_OUT_WORDS));
+    } else if (!res.ok) {
+      box.appendChild(el2("p", "review__problem", shareProblem(res.error)));
+    } else {
+      const row = linkRow(res.id);
+      box.appendChild(row);
+      box.appendChild(el2("p", "history__note share-window__words", versionLinkWords(res.versionAt || at)));
+      into.replaceChildren(box);
+      await row.copy();
+      return res;
+    }
+    into.replaceChildren(box);
+    return res;
+  }
+  var ShareWindow = { open: openShareWindow, available: shareAvailable, shareVersion };
+  g19.ShareWindow = ShareWindow;
+
+  // js/ui/version-history.mjs
+  var g20 = typeof window !== "undefined" ? window : globalThis;
+  function rowTag(v, newest) {
     if (v.deleted) return "Deleted";
-    const parts = [];
-    if (o.current) parts.push("Current");
-    if (v.name && o.name && v.name !== o.name) parts.push("Named " + v.name);
-    parts.push(v.files === 1 ? "1 file" : v.files + " files");
-    return parts.join(", ");
+    return newest ? "Current" : "";
+  }
+  function listTimes(versions, now = Date.now()) {
+    return versions.map((v) => ({ day: dayWords(v.createdAt, now), time: clockTime(v.createdAt, true) }));
   }
   function versionChanges(version2, current2) {
     const now = new Map(current2.map((f) => [f.id, f]));
@@ -37857,7 +38349,12 @@ ${blocks.join("\n\n")}`;
     for (const c of now.values()) out.push({ path: c.path, change: "gone", before: c.text, after: "" });
     return out;
   }
-  var CHANGE_WORDS2 = { edited: "edited", renamed: "renamed", back: "comes back", gone: "goes" };
+  function changeWords(c) {
+    if (c.change === "renamed") return "renamed since, now " + c.before;
+    if (c.change === "back") return "deleted since";
+    if (c.change === "gone") return "added since";
+    return "edited since";
+  }
   function restoreProblem(error) {
     if (error === "unsynced") return "Not everything here is in the cloud yet, and restoring would lose it. Try again once it\u2019s synced.";
     if (error === "review") return "Some files are waiting in Review differences. Settle them first.";
@@ -37870,34 +38367,20 @@ ${blocks.join("\n\n")}`;
     if (text != null) n.textContent = text;
     return n;
   }
-  function diffNode3(before, after) {
-    const box = el8("div", "review-diff");
-    for (const r of compactDiff(lineDiff(before || "", after || ""), 1)) {
-      if (r.kind === "gap") {
-        box.appendChild(el8("div", "review-diff__gap", r.count === 1 ? "1 unchanged line" : r.count + " unchanged lines"));
-        continue;
-      }
-      const line = el8("div", "review-diff__line is-" + r.kind);
-      line.appendChild(el8("span", "review-diff__mark", r.kind === "theirs" ? "\u2212" : r.kind === "mine" ? "+" : ""));
-      line.appendChild(el8("span", "review-diff__text", r.text || " "));
-      box.appendChild(line);
-    }
-    return box;
-  }
   function currentFiles() {
-    const P3 = g19.Persist;
+    const P3 = g20.Persist;
     return (P3.listFiles() || []).map((f) => ({ id: f.id, path: f.name, text: P3.getFileText(f.id) || "" }));
   }
   var win3 = null;
   function saveNow3() {
     try {
-      if (g19.Commands && typeof g19.Commands.run === "function") g19.Commands.run("file.save");
+      if (g20.Commands && typeof g20.Commands.run === "function") g20.Commands.run("file.save");
     } catch (_) {
     }
   }
   async function openVersionHistory() {
-    const FW2 = g19.FloatingWindow;
-    const P3 = g19.Persist;
+    const FW2 = g20.FloatingWindow;
+    const P3 = g20.Persist;
     if (!FW2 || !P3) return false;
     const pid = P3.getActiveProjectId();
     if (win3 && win3.pid === pid) {
@@ -37911,30 +38394,50 @@ ${blocks.join("\n\n")}`;
     list3.setAttribute("aria-label", "Versions");
     const view2 = el8("div", "history__view");
     body.append(list3, view2);
+    const SF = g20.ScrollFade;
+    const fades = SF && typeof SF.attach === "function" ? [SF.attach(list3, { axis: "y", size: 14 }), SF.attach(view2, { axis: "y", size: 14 })] : [];
+    const fit = () => {
+      for (const f of fades) f.update();
+    };
     let versions = [];
     let more = false;
     let chosen2 = null;
     let busy2 = false;
     const state3 = { pid, load, close: () => handle.close() };
-    function rowNode2(v, i) {
+    function rowNode2(v, i, time) {
       const row = el8("button", "history__row");
       row.type = "button";
       row.setAttribute("role", "option");
       row.dataset.version = String(v.version);
-      row.setAttribute("aria-selected", chosen2 === v.version ? "true" : "false");
-      row.appendChild(el8("span", "history__when", versionTime(v.createdAt)));
-      row.appendChild(el8("span", "history__what", versionWords(v, { current: i === 0, name: P3.getProjectName() })));
+      row.appendChild(el8("span", "history__when", time));
+      const tag = rowTag(v, i === 0);
+      if (tag) row.appendChild(el8("span", "history__tag", tag));
       row.addEventListener("click", () => choose2(v.version));
       return row;
     }
     function drawList() {
-      list3.replaceChildren(...versions.map(rowNode2));
+      const times = listTimes(versions);
+      const days = [];
+      versions.forEach((v, i) => {
+        let day = days[days.length - 1];
+        if (!day || day.name !== times[i].day) {
+          day = { name: times[i].day, node: el8("div", "history__day") };
+          day.node.setAttribute("role", "group");
+          day.node.setAttribute("aria-label", day.name);
+          day.node.appendChild(el8("div", "history__day-name", day.name));
+          days.push(day);
+        }
+        day.node.appendChild(rowNode2(v, i, times[i].time));
+      });
+      list3.replaceChildren(...days.map((d) => d.node));
+      markChosen();
       if (more) {
         const older = el8("button", "history__older", "Show older");
         older.type = "button";
         older.addEventListener("click", () => loadOlder());
         list3.appendChild(older);
       }
+      fit();
     }
     function say3(text, retry) {
       view2.replaceChildren(el8("p", "history__note", text));
@@ -37943,6 +38446,7 @@ ${blocks.join("\n\n")}`;
         again.addEventListener("click", () => load(true));
         view2.appendChild(again);
       }
+      fit();
     }
     async function load(fresh) {
       if (fresh) chosen2 = null;
@@ -37983,10 +38487,43 @@ ${blocks.join("\n\n")}`;
       more = page.length >= 50;
       drawList();
     }
-    async function choose2(n) {
+    function markChosen() {
+      const rows2 = [...list3.querySelectorAll(".history__row")];
+      for (const r of rows2) {
+        const on = r.dataset.version === String(chosen2);
+        r.setAttribute("aria-selected", on ? "true" : "false");
+        r.tabIndex = on ? 0 : -1;
+      }
+      if (rows2.length && !rows2.some((r) => r.tabIndex === 0)) rows2[0].tabIndex = 0;
+    }
+    let soon = null;
+    list3.addEventListener("keydown", (e) => {
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const rows2 = [...list3.querySelectorAll(".history__row")];
+      const at = rows2.indexOf(document.activeElement);
+      const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: rows2.length - 1 }[e.key];
+      if (at < 0 || to == null) return;
+      e.preventDefault();
+      const row = rows2[Math.max(0, Math.min(rows2.length - 1, to))];
+      if (row === rows2[at]) return;
+      row.focus();
+      choose2(Number(row.dataset.version), true);
+    });
+    async function choose2(n, later) {
       chosen2 = n;
-      for (const r of list3.querySelectorAll(".history__row")) r.setAttribute("aria-selected", r.dataset.version === String(n) ? "true" : "false");
+      markChosen();
+      clearTimeout(soon);
+      if (later) {
+        soon = setTimeout(() => {
+          if (chosen2 === n) open12(n);
+        }, 160);
+        return;
+      }
+      await open12(n);
+    }
+    async function open12(n) {
       view2.replaceChildren(el8("p", "history__note", "Opening\u2026"));
+      fit();
       let v = null;
       try {
         v = await P3.readVersion(pid, n);
@@ -38000,35 +38537,48 @@ ${blocks.join("\n\n")}`;
     }
     function drawVersion(v, problem2) {
       view2.replaceChildren();
+      view2.scrollTop = 0;
       const head = el8("div", "history__head");
-      const title = el8("div", "history__title");
-      title.appendChild(el8("span", "history__stamp", versionTime(v.createdAt)));
-      title.appendChild(el8("span", "history__sub", v.deleted ? "The project was deleted here" : "Read only"));
-      head.appendChild(title);
+      head.appendChild(el8("span", "history__stamp", versionTime(v.createdAt)));
       const isCurrent = versions.length && versions[0].version === v.version;
+      const shared = el8("div", "history__shared");
+      if (!v.deleted) {
+        const share = glyphButton("Share this version", "share", "secondary", "link");
+        share.addEventListener("click", async () => {
+          share.disabled = true;
+          await shareVersion(pid, v.version, v.createdAt, shared);
+          share.disabled = false;
+          fit();
+        });
+        head.appendChild(share);
+      }
       if (!v.deleted && !isCurrent) {
         const restore2 = actionButton("Restore this version", "restore", "primary");
         restore2.addEventListener("click", () => doRestore(v, restore2));
         head.appendChild(restore2);
       }
       view2.appendChild(head);
+      view2.appendChild(shared);
       if (problem2) view2.appendChild(el8("p", "review__problem", problem2));
-      if (v.deleted) return;
+      drawChanges(v);
+      fit();
+    }
+    function drawChanges(v) {
+      if (v.deleted) {
+        view2.appendChild(el8("p", "history__note", "The project was deleted here."));
+        return;
+      }
       const changes = versionChanges(v, currentFiles());
       if (!changes.length) {
         view2.appendChild(el8("p", "history__note", "The same as the project is now."));
         return;
       }
-      const legend = el8("p", "review__legend");
-      legend.appendChild(el8("span", "review__key is-theirs", "\u2212 now"));
-      legend.appendChild(el8("span", "review__key is-mine", "+ this version"));
-      view2.appendChild(legend);
       for (const c of changes) {
-        const line = el8("div", "review__change");
-        line.appendChild(el8("span", "review__path", c.path));
-        line.appendChild(el8("span", "review__kind", CHANGE_WORDS2[c.change]));
-        view2.appendChild(line);
-        if (c.change === "edited") view2.appendChild(diffNode3(c.before, c.after));
+        const line2 = el8("div", "review__change");
+        line2.appendChild(el8("span", "review__path", c.path));
+        line2.appendChild(el8("span", "review__kind", changeWords(c)));
+        view2.appendChild(line2);
+        if (c.change === "edited") view2.appendChild(diffNode(c.before, c.after));
       }
     }
     async function doRestore(v, btn) {
@@ -38060,6 +38610,8 @@ ${blocks.join("\n\n")}`;
       minWidth: 480,
       minHeight: 260,
       onClose: () => {
+        clearTimeout(soon);
+        for (const f of fades) f.destroy();
         if (win3 === state3) win3 = null;
       }
     });
@@ -38068,15 +38620,15 @@ ${blocks.join("\n\n")}`;
     return true;
   }
   function historyAvailable() {
-    const P3 = g19.Persist;
-    const A = g19.Account;
+    const P3 = g20.Persist;
+    const A = g20.Account;
     if (!P3 || !A || typeof A.user !== "function" || !A.user()) return false;
     const pid = P3.getActiveProjectId();
     const p = (P3.projects() || []).find((x) => x.id === pid);
     return !!p && !!p.owner && p.owner === P3.getAccount();
   }
   var VersionHistory = { open: openVersionHistory, available: historyAvailable };
-  g19.VersionHistory = VersionHistory;
+  g20.VersionHistory = VersionHistory;
 
   // js/app/app-empty-state.mjs
   function create5(opts) {
@@ -38135,18 +38687,18 @@ ${blocks.join("\n\n")}`;
       }
       return null;
     }
-    function setSidePanelOpen(id, open11) {
+    function setSidePanelOpen(id, open12) {
       var cfg = panels[id];
       if (!workspaceEl || !cfg) return;
-      workspaceEl.classList.toggle(cfg.openClass, open11);
+      workspaceEl.classList.toggle(cfg.openClass, open12);
       if (cfg.btn) {
-        cfg.btn.classList.toggle("is-active", open11);
-        cfg.btn.setAttribute("aria-pressed", open11 ? "true" : "false");
+        cfg.btn.classList.toggle("is-active", open12);
+        cfg.btn.setAttribute("aria-pressed", open12 ? "true" : "false");
       }
-      if (cfg.panel) cfg.panel.setAttribute("aria-hidden", open11 ? "false" : "true");
-      if (typeof cfg.onOpenChange === "function") cfg.onOpenChange(open11);
+      if (cfg.panel) cfg.panel.setAttribute("aria-hidden", open12 ? "false" : "true");
+      if (typeof cfg.onOpenChange === "function") cfg.onOpenChange(open12);
       if (typeof Persist !== "undefined" && Persist.writeSidePanel) {
-        if (open11) Persist.writeSidePanel(id);
+        if (open12) Persist.writeSidePanel(id);
         else if (!getOpenSidePanelId()) Persist.writeSidePanel(null);
       }
       scheduleWorkspaceSave();
@@ -38163,12 +38715,12 @@ ${blocks.join("\n\n")}`;
     function toggleSidePanel(id) {
       var cfg = panels[id];
       if (!workspaceEl || !cfg) return false;
-      var open11 = !workspaceEl.classList.contains(cfg.openClass);
-      if (open11) closeOtherSidePanels(id);
-      if (open11 && typeof Hint !== "undefined" && Hint.isVisible && Hint.isVisible("library")) Hint.dismiss("library");
-      setSidePanelOpen(id, open11);
+      var open12 = !workspaceEl.classList.contains(cfg.openClass);
+      if (open12) closeOtherSidePanels(id);
+      if (open12 && typeof Hint !== "undefined" && Hint.isVisible && Hint.isVisible("library")) Hint.dismiss("library");
+      setSidePanelOpen(id, open12);
       notifySidePanelLayout();
-      return open11;
+      return open12;
     }
     function wireSidebarOpenTooltip(btn) {
       if (!btn || typeof Tooltips === "undefined") return function() {
@@ -38504,7 +39056,7 @@ ${blocks.join("\n\n")}`;
   }
 
   // js/workspace/import-project.mjs
-  var g20 = typeof window !== "undefined" ? window : globalThis;
+  var g21 = typeof window !== "undefined" ? window : globalThis;
   function relPathFromPickerFile(file, opts) {
     const rel = file.webkitRelativePath || file.name;
     const parts = rel.split("/");
@@ -38563,15 +39115,15 @@ ${blocks.join("\n\n")}`;
     };
   }
   function createImportedProject(plan) {
-    const P3 = g20.Persist;
+    const P3 = g21.Persist;
     const made = P3.createProjectWithFiles(plan.name, plan.entries, {
       projectName: plan.name,
       activeCfgByDir: plan.activeCfgByDir || void 0
     });
     if (!made || !made.projectId) return null;
-    const open11 = plan.activePath || plan.firstBel;
-    if (open11) {
-      const created = P3.listFiles().find((f) => f.name === open11);
+    const open12 = plan.activePath || plan.firstBel;
+    if (open12) {
+      const created = P3.listFiles().find((f) => f.name === open12);
       if (created) P3.setActiveFileId(created.id);
     }
     return made.projectId;
@@ -38584,7 +39136,7 @@ ${blocks.join("\n\n")}`;
     folderAsProject,
     createImportedProject
   };
-  g20.ImportProject = ImportProject;
+  g21.ImportProject = ImportProject;
 
   // js/app/app-upload-import.mjs
   function create9(deps) {
@@ -38693,8 +39245,8 @@ ${blocks.join("\n\n")}`;
       if (getPersist2()) {
         const cur = getPersist2().getCurrentFileId();
         if (cur && unique.includes(cur) && !Persist.getFileById(cur)) {
-          const open11 = Persist.getOpenFileIds().find((openId) => Persist.getFileById(openId));
-          if (open11) switchToFile(open11);
+          const open12 = Persist.getOpenFileIds().find((openId) => Persist.getFileById(openId));
+          if (open12) switchToFile(open12);
           else if (projectIsEmpty()) enterEmptyProjectView();
           else enterCanvasIdleView();
         }
@@ -39132,12 +39684,12 @@ ${blocks.join("\n\n")}`;
     var getExplorerController = deps.getExplorerController;
     var syncCfgEditorsAfterRewrite = deps.syncCfgEditorsAfterRewrite;
     var refPeekRestore = null;
-    function resolveLineOffset(line) {
+    function resolveLineOffset(line2) {
       var ed = getEditor();
       var view2 = ed && typeof ed.getView === "function" ? ed.getView() : null;
       var doc2 = view2 && view2.state ? view2.state.doc : null;
-      if (!doc2 || !doc2.lines || !Number.isFinite(line)) return null;
-      var n = Math.min(Math.max(1, Math.floor(line)), doc2.lines);
+      if (!doc2 || !doc2.lines || !Number.isFinite(line2)) return null;
+      var n = Math.min(Math.max(1, Math.floor(line2)), doc2.lines);
       return doc2.line(n).from;
     }
     function withResolvedOffset(jumpAt) {
@@ -39780,13 +40332,13 @@ ${blocks.join("\n\n")}`;
         listFiles: () => Persist.listFiles(),
         listEmptyFolders: () => Persist.listEmptyFolders(),
         getActiveId: () => {
-          const open11 = Persist.getOpenFileIds();
-          if (!open11.length) return null;
+          const open12 = Persist.getOpenFileIds();
+          if (!open12.length) return null;
           const cur = getPersist2() ? getPersist2().getCurrentFileId() : null;
-          if (cur && open11.includes(cur)) return cur;
+          if (cur && open12.includes(cur)) return cur;
           const active5 = Persist.getActiveFileId();
-          if (active5 && open11.includes(active5)) return active5;
-          return open11[open11.length - 1] || null;
+          if (active5 && open12.includes(active5)) return active5;
+          return open12[open12.length - 1] || null;
         },
         getActiveCfgForDir: activeCfgForDir,
         getActiveCfgsForDir: activeCfgsForDir2,
@@ -39794,7 +40346,7 @@ ${blocks.join("\n\n")}`;
         getFileDiag: explorerFileDiag,
         bindFileDiagTip: bindExplorerDiagTip,
         getProjectName: () => Persist.getProjectName(),
-        applyTip: (el9, tip) => setTip2(el9, tip, { ariaLabel: false }),
+        applyTip: (el9, tip2) => setTip2(el9, tip2, { ariaLabel: false }),
         getFileContextItems: (fileId) => fileContextItems(fileId),
         getSelectionContextItems: (selection) => explorerSelectionContextItems(selection),
         getFolderContextItems: (folderPath) => explorerFolderContextItems(folderPath),
@@ -39852,7 +40404,7 @@ ${blocks.join("\n\n")}`;
         }),
         getActiveFileId: () => getPersist2() ? getPersist2().getCurrentFileId() : Persist.getActiveFileId(),
         getEditor: () => getEditor(),
-        applyTip: (el9, tip) => setTip2(el9, tip, { ariaLabel: false }),
+        applyTip: (el9, tip2) => setTip2(el9, tip2, { ariaLabel: false }),
         showToast,
         afterSuiteEdit,
         applyFileReplacement: (id, text) => applyFileReplacement(id, text),
@@ -40026,6 +40578,8 @@ ${blocks.join("\n\n")}`;
         },
         // Signed in only: the versions are the cloud's.
         ...window.VersionHistory && window.VersionHistory.available() ? [{ label: "Version history", onSelect: () => window.VersionHistory.open() }] : [],
+        // Wherever there is a server to keep links; signed out, the window says sign in.
+        ...window.ShareWindow && window.ShareWindow.available() ? [{ label: "Share\u2026", onSelect: () => window.ShareWindow.open() }] : [],
         {
           label: 'Download "' + (currentFile ? currentFile.name : "file") + '"',
           onSelect: downloadCurrentFile
@@ -40596,10 +41150,10 @@ body {
 }
 `;
   var escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  function normalizeLineComment(text, line) {
+  function normalizeLineComment(text, line2) {
     const raw = String(text);
-    if (!line) return raw.trim();
-    return raw.replace(new RegExp(`^(?:${escapeRegExp(line)})+ ?`), "").trimEnd();
+    if (!line2) return raw.trim();
+    return raw.replace(new RegExp(`^(?:${escapeRegExp(line2)})+ ?`), "").trimEnd();
   }
   function normalizeBlockComment(text, block) {
     let inner = String(text);
@@ -40609,9 +41163,9 @@ body {
     }
     inner = inner.replace(/^\r?\n/, "").replace(/\r?\n$/, "");
     const lines = inner.split(/\r?\n/);
-    const indents = lines.filter((line) => line.trim()).map((line) => (line.match(/^\s*/) || [""])[0].length);
+    const indents = lines.filter((line2) => line2.trim()).map((line2) => (line2.match(/^\s*/) || [""])[0].length);
     const indent = indents.length ? Math.min(...indents) : 0;
-    return lines.map((line) => line.slice(indent).replace(/^\s*\* ?/, "")).join("\n").trim();
+    return lines.map((line2) => line2.slice(indent).replace(/^\s*\* ?/, "")).join("\n").trim();
   }
   function commentText(comment, tokens = null) {
     return comment.kind === "line" ? normalizeLineComment(comment.text, tokens?.line) : normalizeBlockComment(comment.text, tokens?.block);
@@ -40743,37 +41297,37 @@ ${doc2.documentElement.outerHTML}`;
   }
 
   // js/commands/shared-commands.mjs
-  var g21 = globalThis;
+  var g22 = globalThis;
   function attachSharedCommands(page) {
     const say3 = page && typeof page.say === "function" ? page.say : () => {
     };
     const applied = page && typeof page.applied === "function" ? page.applied : () => {
     };
     const on = (id, run3, when) => Commands2.attach(id, when ? { run: run3, when } : { run: run3 });
-    const account = () => g21.Account || null;
-    const sync = () => g21.Persist && typeof g21.Persist.syncSummary === "function" ? g21.Persist.syncSummary() : null;
+    const account = () => g22.Account || null;
+    const sync = () => g22.Persist && typeof g22.Persist.syncSummary === "function" ? g22.Persist.syncSummary() : null;
     on("account.sign-in", () => account().signIn(), () => !!account() && account().available() && !account().user());
     on("account.sign-out", () => account().signOut(), () => !!account() && !!account().user());
-    on("sync.now", () => g21.Persist.confirmSynced(), () => {
+    on("sync.now", () => g22.Persist.confirmSynced(), () => {
       const s = sync();
       return !!s && s.signedIn && s.state !== "offline" && s.state !== "held";
     });
-    on("sync.review", () => g21.SyncUI.review(), () => {
+    on("sync.review", () => g22.SyncUI.review(), () => {
       const s = sync();
       return !!s && s.differs.length > 0;
     });
-    on("sync.review-offline", () => g21.SyncUI.reviewOffline(), () => {
+    on("sync.review-offline", () => g22.SyncUI.reviewOffline(), () => {
       const s = sync();
       return !!s && s.state === "held";
     });
-    on("view.theme", () => g21.Frame.toggleTheme());
+    on("view.theme", () => g22.Frame.toggleTheme());
     on("app.report-issue", () => Routes.reportIssue());
-    on("tools.palette", () => g21.CommandPalette.open());
+    on("tools.palette", () => g22.CommandPalette.open());
     for (const spec of SETTINGS2) {
       const id = settingId(spec.slug);
       if (!Commands2.runsHere(id)) continue;
       on(id, () => {
-        const res = applyValue(g21.Settings, spec, void 0);
+        const res = applyValue(g22.Settings, spec, void 0);
         if (res.applied) applied(spec);
         say3(res.message);
         return res.ok;
@@ -40862,6 +41416,7 @@ ${doc2.documentElement.outerHTML}`;
       on("file.download", downloadCurrentFile);
       on("project.download", () => downloadProject(), () => (Persist.listFiles() || []).length > 0);
       on("project.history", () => window.VersionHistory.open(), () => !!window.VersionHistory && window.VersionHistory.available());
+      on("project.share", () => window.ShareWindow.open(), () => !!window.ShareWindow && window.ShareWindow.available());
       on("tab.next", () => stepTab(1), () => openTabIds().length > 1);
       on("tab.prev", () => stepTab(-1), () => openTabIds().length > 1);
       on(
@@ -41702,8 +42257,8 @@ ${doc2.documentElement.outerHTML}`;
         btn: inspectorBtn,
         panel: inspectorPanelEl,
         openClass: "is-inspector-open",
-        onOpenChange: (open11) => {
-          if (open11) scheduleInspectorFollowHint();
+        onOpenChange: (open12) => {
+          if (open12) scheduleInspectorFollowHint();
           else hideInspectorFollowHint();
         }
       },
@@ -41711,8 +42266,8 @@ ${doc2.documentElement.outerHTML}`;
         btn: libraryBtn,
         panel: libraryPanelEl,
         openClass: "is-library-open",
-        onOpenChange: (open11) => {
-          if (!open11) {
+        onOpenChange: (open12) => {
+          if (!open12) {
             const lib = getLibraryController();
             if (lib && typeof lib.collapseFolders === "function") lib.collapseFolders();
           }
@@ -42438,9 +42993,9 @@ ${doc2.documentElement.outerHTML}`;
       if (!el9 || !nameEl) return;
       if (headerProjectRenameInput) return;
       nameEl.textContent = Persist.getProjectName();
-      const tip = headerContextFileHint();
-      el9.setAttribute("aria-label", tip);
-      setTip2(el9, tip);
+      const tip2 = headerContextFileHint();
+      el9.setAttribute("aria-label", tip2);
+      setTip2(el9, tip2);
     }
     const headerContextEl = document.getElementById("header-context");
     if (headerContextEl) {
@@ -42486,14 +43041,14 @@ ${doc2.documentElement.outerHTML}`;
       const N = window.Notifications;
       if (!N || typeof N.emit !== "function") return;
       const files2 = Persist.listFiles() || [];
-      const open11 = Persist.getFileById(Persist.getActiveFileId());
+      const open12 = Persist.getFileById(Persist.getActiveFileId());
       for (const cfg of files2.filter((f) => /\.cfg$/i.test(f.name))) {
         const members = ProjectSource.developmentFilesForCfg(files2, cfg.name, projectFileText).map((f) => {
           const health = belFileHealth(f.id);
           const first = (health.items || []).find((it) => it.kind === "error");
           return { path: f.name, fileId: f.id, errors: health.errors || 0, line: first ? first.line : void 0 };
         });
-        const notice = suiteWatch.observe(cfg.name, members, open11 ? open11.name : null);
+        const notice = suiteWatch.observe(cfg.name, members, open12 ? open12.name : null);
         if (notice) N.emit(notice);
       }
     }
@@ -42528,8 +43083,8 @@ ${doc2.documentElement.outerHTML}`;
       inspectorBtn.addEventListener("click", () => {
         const wasOpen = workspaceEl.classList.contains("is-inspector-open");
         if (!wasOpen) hideInspectorTooltipUntilLeave();
-        const open11 = toggleSidePanel("inspector");
-        if (open11) refreshInspector({ live: true });
+        const open12 = toggleSidePanel("inspector");
+        if (open12) refreshInspector({ live: true });
       });
       onWin("beljar:open-inspector", openInspector);
     }
@@ -42557,8 +43112,8 @@ ${doc2.documentElement.outerHTML}`;
         }
         const wasOpen = workspaceEl.classList.contains("is-library-open");
         if (!wasOpen) hideLibraryTooltipUntilLeave();
-        const open11 = toggleSidePanel("library");
-        if (open11) {
+        const open12 = toggleSidePanel("library");
+        if (open12) {
           ensureLibrary();
           if (getLibraryController() && typeof getLibraryController().refresh === "function") {
             getLibraryController().refresh();
@@ -42604,8 +43159,8 @@ ${doc2.documentElement.outerHTML}`;
       harpoonBtn.addEventListener("click", () => {
         const wasOpen = workspaceEl.classList.contains("is-harpoon-open");
         if (!wasOpen) hideProofTooltipUntilLeave();
-        const open11 = toggleSidePanel("harpoon");
-        if (open11) {
+        const open12 = toggleSidePanel("harpoon");
+        if (open12) {
           ensureHarpoonPanel();
           refreshHarpoonPanelIfOpen();
         }
@@ -43250,7 +43805,7 @@ ${doc2.documentElement.outerHTML}`;
   start();
 
   // js/compat/beljar-window-aliases.mjs
-  var g22 = globalThis;
+  var g23 = globalThis;
   var ALIASES = [
     ["BelJarExplorerSuiteLayout", "ExplorerSuiteLayout"],
     ["BelJarHarpoonGoalSections", "HarpoonGoalSections"],
@@ -43304,7 +43859,7 @@ ${doc2.documentElement.outerHTML}`;
   ];
   function installBelJarWindowAliases() {
     for (const [legacy, neu] of ALIASES) {
-      if (neu in g22 && g22[neu] != null) g22[legacy] = g22[neu];
+      if (neu in g23 && g23[neu] != null) g23[legacy] = g23[neu];
     }
   }
   installBelJarWindowAliases();

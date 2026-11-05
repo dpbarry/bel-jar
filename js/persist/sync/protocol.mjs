@@ -38,8 +38,21 @@
  *   version(pid, n)                { version, createdAt, deleted, manifest } | null
  *        One version, whole. Its texts come from `blobs`: a text, once kept,
  *        is never removed while the account lasts.
+ *   shares(pid)                    [{ id, version, createdAt, versionAt }]  the project's links (docs/PERSIST.md §5.12),
+ *        the project link (version 0, which follows the head) first, then the version links, newest first
+ *   share(pid, { version })        { ok: true, id, version, createdAt, versionAt } | { ok: false, error }
+ *        `versionAt`: when the version a version link names was made (0 for the project link).
+ *        A link anyone can read: version 0 the project as its head is, n that version.
+ *        One link per kind: asking again answers the one there is, so a retry never makes two.
+ *        error: 'not-found' (not in the cloud, or another account's), 'deleted', 'no-version', 'too-many'
+ *   unshare(pid, id)               { ok: true }  the link is gone (or never was); another account's stays
  * Another account's project answers [] and null, as if it did not exist.
  * A transport that cannot reach the server throws; that is never an answer.
+ *
+ * And the one thing anyone may ask without an account (`readShare`, served
+ * as GET /api/share/<id>): what a link shows, or null.
+ *   { name, by, version, updatedAt, follows, files: [{ path, text }], folders, suites }
+ * Only the one version the link names, and only the texts its manifest names.
  */
 
 export const MANIFEST_VERSION = 1;
@@ -56,6 +69,67 @@ export const QUOTA = { projects: 1000, textBytes: 1024 * 1024 * 1024 };
 /** Versions a history page holds, by default and at most. */
 export const VERSIONS_PAGE = 50;
 export const VERSIONS_MAX = 200;
+
+/**
+ * Links (docs/PERSIST.md §5.12): an address is 22 base64url characters, 128
+ * random bits. At most SHARE_LIMIT on one project; a read carries at most
+ * SHARE_BYTES of text.
+ */
+export const SHARE_ID = /^[A-Za-z0-9_-]{22}$/;
+export const SHARE_LIMIT = 50;
+export const SHARE_BYTES = 8 * 1024 * 1024;
+
+export function isShareId(id) {
+  return typeof id === 'string' && SHARE_ID.test(id);
+}
+
+/** A new link's address: 16 random bytes, base64url, no padding. */
+export function newShareId() {
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  let bits = 0;
+  let acc = 0;
+  let out = '';
+  for (const b of bytes) {
+    acc = (acc << 8) | b;
+    bits += 8;
+    while (bits >= 6) {
+      bits -= 6;
+      out += A[(acc >> bits) & 63];
+    }
+  }
+  if (bits) out += A[(acc << (6 - bits)) & 63];
+  return out;
+}
+
+/** The share a version number asks for: 0 (the head) or a version, else null. */
+export function shareVersion(o) {
+  const v = o && o.version != null ? o.version : 0;
+  return Number.isInteger(v) && v >= 0 ? v : null;
+}
+
+/** Links in the order `shares` lists them: the project link, then versions newest first. */
+export function shareOrder(a, b) {
+  if (!a.version !== !b.version) return a.version ? 1 : -1;
+  return b.version - a.version;
+}
+
+/**
+ * What a link shows, from the version it names: the files in the manifest's
+ * order with their texts (`texts`: hash → text). Null when a text is missing.
+ */
+export function shareView({ manifest, version, createdAt, follows, by }, texts) {
+  const files = [];
+  for (const f of manifest.files) {
+    if (typeof texts[f.hash] !== 'string') return null;
+    files.push({ path: f.path, text: texts[f.hash] });
+  }
+  return {
+    name: manifest.name, by: by || null, version, updatedAt: Number(createdAt) || 0, follows: !!follows,
+    files, folders: manifest.folders.slice(), suites: JSON.parse(JSON.stringify(manifest.suites || {})),
+  };
+}
 
 /** The page size a `versions` call asked for, within bounds. */
 export function versionsLimit(n) {

@@ -275,6 +275,24 @@
   var tooltipAnchor = null;
   var touchShowTimer = null;
   var tooltipSuppressLeaveUntilPointerUp = null;
+  function tooltipLayered() {
+    return !!(tooltipRoot && typeof tooltipRoot.showPopover === "function" && tooltipRoot.hasAttribute("popover"));
+  }
+  function raiseTooltipLayer() {
+    if (!tooltipLayered()) return;
+    try {
+      if (tooltipRoot.matches(":popover-open")) tooltipRoot.hidePopover();
+      tooltipRoot.showPopover();
+    } catch (_) {
+    }
+  }
+  function lowerTooltipLayer() {
+    if (!tooltipLayered()) return;
+    try {
+      if (tooltipRoot.matches(":popover-open")) tooltipRoot.hidePopover();
+    } catch (_) {
+    }
+  }
   function prepareOverflow(el) {
     if (!el._belOverflowTipBound) return;
     const getText = el._belOverflowGetText;
@@ -591,6 +609,7 @@
     tooltipRoot.classList.remove("is-leaving");
     tooltipAnchor = anchor;
     tooltipRoot.hidden = false;
+    raiseTooltipLayer();
     layoutTooltip(anchor);
   }
   function hideTooltip() {
@@ -604,6 +623,7 @@
     if (!inner) {
       tooltipRoot.classList.remove("is-visible", "is-measuring", "is-leaving");
       tooltipRoot.hidden = true;
+      lowerTooltipLayer();
       tooltipRoot.style.left = "";
       tooltipRoot.style.top = "";
       return;
@@ -623,6 +643,7 @@
       tooltipHideFallbackTimer = null;
       tooltipRoot.classList.remove("is-leaving");
       tooltipRoot.hidden = true;
+      lowerTooltipLayer();
       tooltipRoot.style.left = "";
       tooltipRoot.style.top = "";
     };
@@ -644,6 +665,7 @@
     } else if (inner) clearSpout(inner);
     tooltipRoot.classList.remove("is-visible", "is-measuring", "is-leaving");
     tooltipRoot.hidden = true;
+    lowerTooltipLayer();
     tooltipRoot.style.left = "";
     tooltipRoot.style.top = "";
   }
@@ -821,6 +843,9 @@
   function installTooltips() {
     if (typeof document === "undefined") return;
     tooltipRoot = document.getElementById("tooltip-root");
+    if (tooltipRoot && typeof tooltipRoot.showPopover === "function" && !tooltipRoot.hasAttribute("popover")) {
+      tooltipRoot.setAttribute("popover", "manual");
+    }
     bindTooltips();
   }
   if (typeof document !== "undefined") {

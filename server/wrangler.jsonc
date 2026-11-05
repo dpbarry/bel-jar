@@ -15,7 +15,7 @@
   // the Beluga runtime's two files are not assets: the Worker passes them on
   // from DEV_RUNTIME_ORIGIN, where scripts/dev-server.mjs serves them from the
   // working tree. /api/* reaches the Worker first.
-  "assets": { "directory": "..", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "assets": { "directory": "..", "binding": "ASSETS", "run_worker_first": ["/api/*", "/s/*"] },
   "d1_databases": [
     {
       "binding": "DB",

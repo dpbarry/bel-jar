@@ -17,7 +17,10 @@
  * They are taken under the same rules as `putBlobs`, and only those the
  * manifest names; what is still missing after them is answered as `missing`.
  */
-import { sha256, normalizeManifest, isHash, versionsLimit, QUOTA } from '../js/persist/sync/protocol.mjs';
+import {
+  sha256, normalizeManifest, isHash, versionsLimit, QUOTA,
+  SHARE_LIMIT, SHARE_BYTES, isShareId, newShareId, shareVersion, shareOrder, shareView,
+} from '../js/persist/sync/protocol.mjs';
 
 // What one request may carry. Generous for proofs; small enough that no
 // single request can make the Worker run long.
@@ -54,7 +57,8 @@ async function checkedTexts(raw, hash) {
 }
 
 /**
- * @param {{ db: D1Database, texts: R2Bucket, hash?: (text: string) => Promise<string>, now?: () => number, quota?: object }} o
+ * @param {{ db: D1Database, texts: R2Bucket, hash?: (text: string) => Promise<string>, now?: () => number, quota?: object,
+ *   shareId?: () => string, shareBytes?: number, shareLimit?: number }} o
  */
 export function createSyncStore(o) {
   const db = o.db;
@@ -62,6 +66,9 @@ export function createSyncStore(o) {
   const hash = o.hash || sha256;
   const now = o.now || (() => Date.now());
   const quota = Object.assign({}, QUOTA, o.quota || {});
+  const makeShareId = o.shareId || newShareId;
+  const shareBytes = o.shareBytes || SHARE_BYTES;
+  const shareLimit = o.shareLimit || SHARE_LIMIT;
 
   /** The account's counts (migration 0005): { projects, text_bytes }. */
   async function usageOf(account) {
@@ -95,8 +102,8 @@ export function createSyncStore(o) {
    * Move a head from `base` to `base + 1` in one transaction, writing the
    * version row with it. `create` first makes the project row (a first commit);
    * `counted`, after it, moves the account's count in the same transaction (its
-   * `changes()` is the version row's: it counts only a head that moved).
-   * True when it moved.
+   * `changes()` is the version row's: it counts only a head that moved; an
+   * array, each in turn). True when it moved.
    */
   async function advance(table, keyCol, key, owner, base, versionRow, create, counted) {
     const stmts = [];
@@ -106,7 +113,7 @@ export function createSyncStore(o) {
       : db.prepare(`UPDATE ${table} SET head = ? WHERE ${keyCol} = ? AND head = ? AND owner = ?`).bind(base + 1, key, base, owner));
     stmts.push(versionRow);
     const at = stmts.length - 1;
-    if (counted) stmts.push(counted);
+    if (counted) stmts.push(...[].concat(counted));
     const results = await db.batch(stmts);
     return results[at].meta.changes === 1;
   }
@@ -262,9 +269,14 @@ export function createSyncStore(o) {
               + 'SELECT ?, ?, ?, ?, 1, NULL, ? WHERE changes() = 1')
               .bind(pid, req.base + 1, req.base, req.id, now()),
             null,
-            // A deleted project no longer counts (unless it already did not).
-            db.prepare('UPDATE usage SET projects = MAX(0, projects - 1) WHERE account = ? AND changes() = 1 '
-              + 'AND NOT EXISTS (SELECT 1 FROM versions WHERE project = ? AND version = ? AND deleted = 1)').bind(account, pid, req.base));
+            [
+              // A deleted project no longer counts (unless it already did not).
+              db.prepare('UPDATE usage SET projects = MAX(0, projects - 1) WHERE account = ? AND changes() = 1 '
+                + 'AND NOT EXISTS (SELECT 1 FROM versions WHERE project = ? AND version = ? AND deleted = 1)').bind(account, pid, req.base),
+              // And its links go with it (docs/PERSIST.md §5.12), only once the deletion is in.
+              db.prepare('DELETE FROM shares WHERE project = ? AND EXISTS '
+                + '(SELECT 1 FROM versions WHERE project = ? AND version = ? AND deleted = 1 AND commit_id = ?)').bind(pid, pid, req.base + 1, req.id),
+            ]);
         } catch (_) {
           moved = false;
         }
@@ -303,6 +315,46 @@ export function createSyncStore(o) {
         return v ? { version: v.version, createdAt: v.created_at, deleted: !!v.deleted, manifest: v.deleted ? null : JSON.parse(v.manifest) } : null;
       },
 
+      async shares(pid) {
+        const p = await project(pid);
+        if (!p || p.owner !== account) return [];
+        const rows = await db.prepare('SELECT s.id AS id, s.version AS version, s.created_at AS created_at, v.created_at AS version_at FROM shares s '
+          + 'LEFT JOIN versions v ON v.project = s.project AND v.version = s.version WHERE s.project = ? AND s.owner = ?').bind(pid, account).all();
+        return rows.results.map((r) => ({ id: r.id, version: r.version, createdAt: r.created_at, versionAt: r.version ? r.version_at || 0 : 0 })).sort(shareOrder);
+      },
+
+      async share(pid, so) {
+        const p = typeof pid === 'string' ? await project(pid) : null;
+        if (!p || p.owner !== account) return { ok: false, error: 'not-found' };
+        const version = shareVersion(so);
+        if (version == null) return { ok: false, error: 'no-version' };
+        const v = await db.prepare('SELECT deleted FROM versions WHERE project = ? AND version = ?').bind(pid, version || p.head).first();
+        if (!v) return { ok: false, error: 'no-version' };
+        if (v.deleted) return { ok: false, error: 'deleted' };
+        const there = () => db.prepare('SELECT s.id AS id, s.version AS version, s.created_at AS created_at, v.created_at AS version_at FROM shares s '
+          + 'LEFT JOIN versions v ON v.project = s.project AND v.version = s.version WHERE s.project = ? AND s.version = ?').bind(pid, version).first();
+        const answer = (r) => ({ ok: true, id: r.id, version: r.version, createdAt: r.created_at, versionAt: r.version ? r.version_at || 0 : 0 });
+        const had = await there();
+        if (had) return answer(had);
+        const count = await db.prepare('SELECT COUNT(*) AS n FROM shares WHERE project = ?').bind(pid).first();
+        if (count && count.n >= shareLimit) return { ok: false, error: 'too-many' };
+        // Only while the project's head is not a deletion: a link made as the
+        // project is deleted would otherwise outlive it.
+        await db.prepare('INSERT INTO shares (id, project, owner, version, created_at) '
+          + 'SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM projects p JOIN versions v ON v.project = p.id AND v.version = p.head '
+          + 'WHERE p.id = ? AND p.owner = ? AND v.deleted = 0) ON CONFLICT (project, version) DO NOTHING')
+          .bind(makeShareId(), pid, account, version, now(), pid, account).run();
+        const made = await there();
+        return made ? answer(made) : { ok: false, error: 'deleted' };
+      },
+
+      async unshare(pid, id) {
+        if (typeof id === 'string' && typeof pid === 'string') {
+          await db.prepare('DELETE FROM shares WHERE id = ? AND project = ? AND owner = ?').bind(id, pid, account).run();
+        }
+        return { ok: true };
+      },
+
       settings: settingsHead,
 
       async commitSettings(req) {
@@ -337,5 +389,37 @@ export function createSyncStore(o) {
     };
   }
 
-  return { transport };
+  /**
+   * What a link shows, to anyone (protocol.mjs `readShare`): null when there is
+   * no such link, or what it names is gone; { error: 'too-large' } past the limit.
+   * ⛔ Only the version the link names, and only the texts its manifest names,
+   * from its owner's pool.
+   */
+  async function readShare(id) {
+    if (!isShareId(id)) return null;
+    const s = await db.prepare('SELECT s.owner AS owner, s.version AS fixed, p.head AS head, u.handle AS handle FROM shares s '
+      + 'JOIN projects p ON p.id = s.project AND p.owner = s.owner LEFT JOIN users u ON u.id = s.owner WHERE s.id = ?').bind(id).first();
+    if (!s) return null;
+    const v = await db.prepare('SELECT version, deleted, manifest, created_at FROM versions WHERE project = (SELECT project FROM shares WHERE id = ?) AND version = ?')
+      .bind(id, s.fixed || s.head).first();
+    if (!v || v.deleted) return null;
+    const manifest = JSON.parse(v.manifest);
+    const hashes = [...new Set(manifest.files.map((f) => f.hash))];
+    let size = 0;
+    for (let i = 0; i < hashes.length; i += IN_CHUNK) {
+      const chunk = hashes.slice(i, i + IN_CHUNK);
+      const rows = await db.prepare(`SELECT size FROM texts WHERE account = ? AND hash IN (${chunk.map(() => '?').join(',')})`)
+        .bind(s.owner, ...chunk).all();
+      for (const r of rows.results) size += r.size;
+    }
+    if (size > shareBytes) return { error: 'too-large' };
+    const texts = {};
+    await Promise.all(hashes.map(async (h) => {
+      const obj = await r2.get(textKey(s.owner, h));
+      if (obj) texts[h] = await obj.text();
+    }));
+    return shareView({ manifest, version: v.version, createdAt: v.created_at, follows: !s.fixed, by: s.handle || null }, texts);
+  }
+
+  return { transport, readShare };
 }

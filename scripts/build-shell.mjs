@@ -41,6 +41,8 @@ const SHELL_ENTRIES = [
   // Product boot: the editor (edit.html), and home (index.html):
   'shell.mjs',
   'home.mjs',
+  // The reading page of a link (share.html): the parser and the highlighter, no editor.
+  'share.mjs',
 ];
 
 const entryPoints = SHELL_ENTRIES.map((rel) => join(jsRoot, rel));

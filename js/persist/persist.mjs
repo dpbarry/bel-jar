@@ -644,6 +644,11 @@ export const Persist = {
   projectHistory: function (pid, o) { return syncEngine ? syncEngine.history(pid, o) : Promise.resolve(null); },
   readVersion: function (pid, n) { return syncEngine ? syncEngine.readVersion(pid, n) : Promise.resolve(null); },
   restoreVersion: restoreVersion,
+  // Links anyone can read (docs/PERSIST.md §5.12, js/ui/share-window.mjs):
+  // signed in only, null otherwise. They are the server's: nothing is stored here.
+  shareLinks: function (pid) { return syncTransport ? syncTransport.shares(pid) : Promise.resolve(null); },
+  makeShare: function (pid, version) { return syncTransport ? syncTransport.share(pid, { version: version || 0 }) : Promise.resolve(null); },
+  revokeShare: function (pid, id) { return syncTransport ? syncTransport.unshare(pid, id) : Promise.resolve(null); },
   useCloud: function (pid) { return syncEngine ? syncEngine.useCloud(pid) : Promise.resolve(false); },
   projectFileText: function (pid, fid) { return work.getText(fid, pid); },
   releaseSync: function () { return syncStatus.release(); },

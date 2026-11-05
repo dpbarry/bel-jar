@@ -2879,6 +2879,8 @@
         },
         // Signed in only: the versions are the cloud's.
         ...window.VersionHistory && window.VersionHistory.available() ? [{ label: "Version history", onSelect: () => window.VersionHistory.open() }] : [],
+        // Wherever there is a server to keep links; signed out, the window says sign in.
+        ...window.ShareWindow && window.ShareWindow.available() ? [{ label: "Share\u2026", onSelect: () => window.ShareWindow.open() }] : [],
         {
           label: 'Download "' + (currentFile ? currentFile.name : "file") + '"',
           onSelect: downloadCurrentFile
@@ -4193,6 +4195,8 @@ ${doc.documentElement.outerHTML}`;
     { id: "project.download", title: "Download Project", section: "File", scope: "global", palette: true },
     // Every version the cloud keeps, and Restore (js/ui/version-history.mjs): signed in only.
     { id: "project.history", title: "Version History", section: "File", scope: "global", palette: true },
+    // A link anyone can read, and taking it back (js/ui/share-window.mjs): where a server keeps links.
+    { id: "project.share", title: "Share Project\u2026", section: "File", scope: "global", palette: true },
     { id: "tab.next", title: "Next Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bn"] },
     { id: "tab.prev", title: "Previous Tab", section: "File", scope: "global", palette: true, keybindable: true, ex: ["bp"] },
     { id: "tab.close", title: "Close Tab", section: "File", scope: "global", palette: true, keybindable: true },
@@ -5374,10 +5378,13 @@ ${doc.documentElement.outerHTML}`;
   var EDIT_SHORT = /(?:^|\/)edit\/?$/;
   var EDIT_ANY = /(?:^|\/)edit(?:\.html)?\/?$/;
   var PRIVACY_ANY = /(?:^|\/)privacy(?:\.html)?\/?$/;
+  var SHARE_PATH = /(?:^|\/)s\/([^/]*)\/?$/;
+  var SHARE_PAGE = /(?:^|\/)share(?:\.html)?\/?$/;
+  var SHARE_ID = /^[A-Za-z0-9_-]{22}$/;
   function short() {
     if (g4.BELJAR_DEPLOYED) return true;
     const path = g4.location && typeof g4.location.pathname === "string" ? g4.location.pathname : "";
-    return EDIT_SHORT.test(path);
+    return EDIT_SHORT.test(path) || SHARE_PATH.test(path);
   }
   function query(pairs) {
     const parts = [];
@@ -5395,6 +5402,7 @@ ${doc.documentElement.outerHTML}`;
   function homeUrl(opts) {
     const base = short() ? "/" : "index.html";
     if (opts && opts.open) return base + query([["open", opts.open]]);
+    if (opts && opts.copy) return base + query([["copy", opts.copy]]);
     return base + (startsOnLast() ? "?home" : "");
   }
   function editUrl(pid) {
@@ -5402,6 +5410,15 @@ ${doc.documentElement.outerHTML}`;
   }
   function privacyUrl() {
     return short() ? "/privacy" : "privacy.html";
+  }
+  function shareUrl(id, absolute) {
+    const rel = short() ? "/s/" + encodeURIComponent(id) : "share.html" + query([["s", id]]);
+    if (!absolute) return rel;
+    try {
+      return new URL(rel, g4.location && g4.location.href ? g4.location.href : "https://beljar.deanbarry.com/").href;
+    } catch (_) {
+      return rel;
+    }
   }
   function signInUrl(loc) {
     const l = loc || g4.location;
@@ -5411,6 +5428,7 @@ ${doc.documentElement.outerHTML}`;
   function pageOf(loc) {
     const p = String(loc && loc.pathname || "");
     if (EDIT_ANY.test(p)) return "edit";
+    if (SHARE_PATH.test(p) || SHARE_PAGE.test(p)) return "share";
     return PRIVACY_ANY.test(p) ? "privacy" : "home";
   }
   function projectParam(loc, name) {
@@ -5430,6 +5448,36 @@ ${doc.documentElement.outerHTML}`;
   }
   function projectOf(loc) {
     return pageOf(loc) === "edit" ? projectParam(loc, "p") : null;
+  }
+  function param(loc, name) {
+    for (const pair of String(loc && loc.search || "").replace(/^\?/, "").split("&")) {
+      const eq = pair.indexOf("=");
+      if (eq === -1 || pair.slice(0, eq) !== name) continue;
+      try {
+        return decodeURIComponent(pair.slice(eq + 1));
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+  function shareOf(loc) {
+    if (pageOf(loc) !== "share") return null;
+    const m = SHARE_PATH.exec(String(loc.pathname || ""));
+    let id = m ? m[1] : param(loc, "s");
+    if (m) {
+      try {
+        id = decodeURIComponent(id);
+      } catch (_) {
+        return null;
+      }
+    }
+    return id && SHARE_ID.test(id) ? id : null;
+  }
+  function copyOf(loc) {
+    if (pageOf(loc) !== "home") return null;
+    const id = param(loc, "copy");
+    return id && SHARE_ID.test(id) ? id : null;
   }
   function pendingOf(loc) {
     return pageOf(loc) === "home" ? projectParam(loc, "open") : null;
@@ -5459,15 +5507,19 @@ ${doc.documentElement.outerHTML}`;
   }
   var Routes = {
     PROJECT_ID,
+    SHARE_ID,
     ISSUES_URL,
     CONTACT_URL,
     homeUrl,
     editUrl,
     privacyUrl,
+    shareUrl,
     signInUrl,
     pageOf,
     projectOf,
     pendingOf,
+    shareOf,
+    copyOf,
     go,
     settle,
     nameProject,
@@ -5595,6 +5647,7 @@ ${doc.documentElement.outerHTML}`;
       on("file.download", downloadCurrentFile);
       on("project.download", () => downloadProject(), () => (Persist.listFiles() || []).length > 0);
       on("project.history", () => window.VersionHistory.open(), () => !!window.VersionHistory && window.VersionHistory.available());
+      on("project.share", () => window.ShareWindow.open(), () => !!window.ShareWindow && window.ShareWindow.available());
       on("tab.next", () => stepTab(1), () => openTabIds().length > 1);
       on("tab.prev", () => stepTab(-1), () => openTabIds().length > 1);
       on(

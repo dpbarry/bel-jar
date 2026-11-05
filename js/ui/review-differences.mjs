@@ -20,6 +20,13 @@ const g = typeof window !== 'undefined' ? window : globalThis;
 export function lineDiff(theirs, mine) {
   const a = splitLines(theirs);
   const b = splitLines(mine);
+  // A final newline ends the last line; it does not begin another. Kept, it
+  // was an empty row under the diff, and one line too many in a gap's count.
+  // Only one side ending in one is a difference, and stays.
+  if (a[a.length - 1] === '' && b[b.length - 1] === '') {
+    a.pop();
+    b.pop();
+  }
   const match = lcsMatch(a, b);
   const rows = [];
   let j = 0;
@@ -97,24 +104,38 @@ export function resolveDifference(c, choice) {
   return g.Persist.resolveStoredConflict(c.pid, c.fid, choice);
 }
 
-function diffNode(sides) {
-  const pre = el('div', 'review-diff');
-  const rows = compactDiff(lineDiff(sides.theirs, sides.mine), 1);
-  if (!rows.length) {
-    pre.appendChild(el('div', 'review-diff__none', 'Both sides are the same now. Either choice keeps it.'));
-    return pre;
+/** How a run of hidden lines is counted on its row, after the ⋯. */
+export function gapWords(count) {
+  return count === 1 ? '1 line' : count + ' lines';
+}
+
+/**
+ * One file's compact diff, from `theirs` to `mine`, as rows: a line's mark
+ * (− + or none) and its text, and each skipped run a row of its own, ⋯ in the
+ * mark and its count beside it. Review differences, Changes made offline and
+ * Version history all draw it. `none` is said when the two are the same.
+ */
+export function diffNode(theirs, mine, none) {
+  const box = el('div', 'review-diff');
+  const rows = compactDiff(lineDiff(theirs || '', mine || ''), 1);
+  if (!rows.length && none) {
+    box.appendChild(el('div', 'review-diff__none', none));
+    return box;
   }
   for (const r of rows) {
     if (r.kind === 'gap') {
-      pre.appendChild(el('div', 'review-diff__gap', r.count === 1 ? '1 unchanged line' : r.count + ' unchanged lines'));
+      const gap = el('div', 'review-diff__gap');
+      gap.setAttribute('aria-label', r.count === 1 ? '1 unchanged line' : r.count + ' unchanged lines');
+      gap.append(el('span', 'review-diff__mark', '⋯'), el('span', 'review-diff__count', gapWords(r.count)));
+      box.appendChild(gap);
       continue;
     }
     const line = el('div', 'review-diff__line is-' + r.kind);
     line.appendChild(el('span', 'review-diff__mark', r.kind === 'theirs' ? '−' : r.kind === 'mine' ? '+' : ''));
     line.appendChild(el('span', 'review-diff__text', r.text || ' '));
-    pre.appendChild(line);
+    box.appendChild(line);
   }
-  return pre;
+  return box;
 }
 
 let win = null;
@@ -156,7 +177,7 @@ function render(body) {
     }
     head.appendChild(actions);
     section.appendChild(head);
-    section.appendChild(diffNode(sides));
+    section.appendChild(diffNode(sides.theirs, sides.mine, 'Both sides are the same now. Either choice keeps it.'));
     body.appendChild(section);
   }
   if (files.length > 1) {

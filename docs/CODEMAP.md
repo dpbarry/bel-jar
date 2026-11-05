@@ -20,6 +20,10 @@ edit.html                  the editor, on one project (/edit?p=ID)
 index.html                 home: the projects, and signing in (/)
   ├─ css/style.css + css/home.css
   └─ js/home.js            its own bundle (js/home.mjs): no editor, no Beluga
+
+share.html                 a project someone shared, read only (/s/ID)
+  ├─ css/tokens.css + base.css + source-hl.css + share.css   (no style.css)
+  └─ js/share.js           its own bundle (js/share.mjs): the parser and the tags, nothing else
 ```
 
 The two pages, and every address between them, are [PERSIST §5.11](PERSIST.md).
@@ -35,7 +39,8 @@ The two pages, and every address between them, are [PERSIST §5.11](PERSIST.md).
 | Home | `js/home/home.mjs`, `js/home.mjs` (the bundle's entry), `css/home.css`, `index.html` (the x and the λ behind the column: `scripts/home-letters.mjs`) | One column ([UI §0](UI.md)): the name, the ways to start, every project as its name and when, Search. What a row says, the order, the keyboard, a project the address asked for, an empty list that waits to be sure. ⛔ It makes no project and loads nothing of the editor (`tests/test-home.mjs`). What it shares with the editor is shared as modules, never copied: `js/workspace/import-project.mjs` (a folder as a new project), `js/ui/menu-trigger.mjs` (a button that opens a menu) |
 | Between the pages | `js/boot/page-transition-core.mjs`, `css/page-transition.css`; `js/boot/boot-project.mjs` (what early boot may know of a project); `js/home/preload-editor.mjs`; `js/commands/shared-commands.mjs`, `js/home/home-commands.mjs`; `js/ui/list-step.mjs` | The browser's animation of the navigation, and the little of it that is ours (which row, a plain cut when motion is held back, transform-only boxes); the start page; the editor's scripts fetched ahead from home; the commands both pages run, attached once ([PERSIST §5.11](PERSIST.md)) |
 | The kit | `dev/kit.html`, `dev/kit.mjs`, `dev/kit.css`, `scripts/probe-kit.mjs` | Every component on one page, drawn by the app's own modules, for looking at (`npm run probe:kit`). Never uploaded ([UI §6](UI.md)) |
-| Addresses | `js/frame/routes.mjs` | ⛔ The one owner of every address and every navigation: `homeUrl`, `editUrl(id)`, `signInUrl`, `go`, `reportIssue`. Nothing else assigns `location` (`tests/test-routes.mjs`) |
+| Addresses | `js/frame/routes.mjs` | ⛔ The one owner of every address and every navigation: `homeUrl`, `editUrl(id)`, `shareUrl(id)`, `signInUrl`, `go`, `reportIssue`. Nothing else assigns `location` (`tests/test-routes.mjs`) |
+| Sharing | `js/share/` (the reading page: `share-page.mjs` draws, `share-render.mjs` highlights and outlines, `share-fetch.mjs` asks the server), `js/share.mjs`, `share.html`, `css/share.css`; `js/ui/share-window.mjs` (Share…); `server/migrations/0006_shares.sql` | Links anyone can read ([PERSIST §5.12](PERSIST.md)). The highlight tags are one table, `js/editor-src/highlight-tags.mjs`, read by the editor, the Library preview and the reading page; their classes are `css/source-hl.css`. ⛔ The reading page loads no editor and no Persist (`tests/test-share-page.mjs`) |
 | Account | `js/account/` | The page's side of accounts and sync: the avatar (`avatar.mjs`: a GitHub identicon is inset on its own background, a photo fills the circle), sign-in adopting every project, signing out, and sync shown where it belongs (`sync-ui.mjs`: the cloud beside the project name, drawn by `cloud-glyphs.mjs`, the strip, the explorer marks). Review differences is `js/ui/review-differences.mjs`, and Changes made offline `js/ui/review-offline.mjs`; the summary every tab shares is `js/persist/sync/sync-status.mjs` |
 
 **Seam:** shell does **not** ES-import `js/editor-src/`. Glue is `window` system-noun globals (`Persist`, `BelEditor`, `Harpoon`, …) plus `beljar:*` events. Legacy `BelJar*` names are compat aliases ([`beljar-window-aliases.mjs`](../js/compat/beljar-window-aliases.mjs)). Soft `typeof` only at editor / Beluga / session edges; peers inside `shell.js` call each other directly.
